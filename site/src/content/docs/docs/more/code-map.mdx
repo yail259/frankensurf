@@ -1,0 +1,55 @@
+---
+title: Code map and boundaries
+description: What each module does, and what belongs in Frankensurf versus a consumer.
+---
+
+import { FileTree } from "@astrojs/starlight/components";
+
+## What belongs here
+
+Frankensurf is the web substrate. It owns access: routing, providers, pacing,
+policy, identities, receipts and evidence. It does not own meaning.
+
+- **No site-specific Python.** Per-site knowledge is data: route seeds in
+  `bundled_route_seeds.json`, and route memory. `tests/test_substrate_boundary.py`
+  enforces it.
+- **No hard-coded limits.** Every stop, budget or allowlist is a
+  [WebPolicy](/docs/reference/settings/) field with a default.
+- **Everything is a plugin.** New tools go behind the plugin interfaces.
+- **Callers interpret.** What a page means (prices, states, rankings) belongs
+  in the app or agent calling Frankensurf, which pins a tagged release.
+- **Claims need evidence.** A provider counts as working after a live run, not
+  after mocked tests.
+
+## Modules
+
+<FileTree>
+- src/frankensurf/
+  - runtime.py `Runtime` and `WebPolicy`: routing, acquisition, content checks, cache, evidence, traces
+  - providers.py provider interface, registry and built-in registrations
+  - hosted_providers.py Jina Reader, Firecrawl, the unblockers, Exa and Brave transports
+  - managed_browsers.py Browserbase, Steel Cloud, Hyperbrowser, Browserless
+  - bot_auth.py Web Bot Auth keys and request signing
+  - handoff.py human handoff in a visible browser
+  - experimental.py, provider_worker.py isolated Camoufox and Scrapling workers
+  - scrapling_ready.py, public_entry.py seed-only Scrapling and Camoufox routes
+  - crawl4ai_provider.py, crawl4ai_worker.py, crawl4ai_config.py Crawl4AI
+  - browser_use_provider.py, browser_use_worker.py, browser_use_config.py, browser_use_binding.py the Browser Use agent
+  - browser_use_action_provider.py, browser_use_action_worker.py, web_do.py, actions.py typed browser actions
+  - search_plugins.py, search.py search sources and fallback
+  - adapters.py `html`, `json`, `rss`
+  - pagination.py `paginate`
+  - routes.py, bundled_route_seeds.json, bundled_routes.json route seeds and operator recipes
+  - route_memory.py exact-path route memory
+  - plugin_catalog.py third-party plugin discovery and trust
+  - identity.py, identity_snapshots.py identities, leases, secrets, visible snapshots
+  - repair.py, recovery.py failed-extract diagnosis
+  - cli.py, mcp_server.py the `frankensurf` command and MCP server
+- scripts/ installers, local services, benchmarks
+- tests/
+</FileTree>
+
+## Releases
+
+Work on short-lived branches from `main`, merge, and tag a release when a
+change should reach consumers. Consumers pin a tag, never a working checkout.

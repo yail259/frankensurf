@@ -1,0 +1,98 @@
+---
+title: Signed-in pages
+description: Read pages as you, through your own Chrome, without your agent ever seeing a password or cookie.
+---
+
+import { Tabs, TabItem, Steps, Aside } from "@astrojs/starlight/components";
+
+Some pages only exist when you're signed in: orders, saved searches, messages.
+Frankensurf reads them through a Chrome you sign in to yourself. Your agent
+passes a name, never a password, cookie or profile.
+
+<Aside type="tip">
+  For most sites a [profile](/docs/read/profiles/) is simpler: sign in once in a
+  Frankensurf browser and any capable tool can carry the session. Identities
+  are for sites that must only ever see your real Chrome.
+</Aside>
+
+- Each saved login is an **identity**, tied to one Chrome profile and a list of
+  sites.
+- Pages run normally, scripts included, so single-page apps like dashboards
+  and inboxes render.
+- If anything about the browser looks wrong, the read stops. It never falls
+  back to a logged-out read.
+
+## Set up an identity
+
+<Steps>
+
+1. Start a dedicated Chrome with remote debugging on a loopback port and its own
+   profile. Sign in to the site yourself.
+
+2. Register that Chrome.
+
+   ```bash
+   frankensurf executor-enroll my-chrome \
+     --cdp-url http://127.0.0.1:9222 \
+     --user-data-dir /home/you/.frankensurf/profiles/main \
+     --profile-directory Default
+   ```
+
+3. Register the identity: which sites it covers, and how to tell you're signed
+   in.
+
+   ```bash
+   frankensurf identity-enroll shop-me \
+     --executor-id my-chrome --domain www.example-shop.com \
+     --auth-url https://www.example-shop.com/account \
+     --authenticated-selector '#account-menu'
+   ```
+
+</Steps>
+
+`scripts/prepare_local_identity.py` prints a reviewable plan for a dedicated
+profile, and with `--launch` opens it for you to sign in.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read("https://www.example-shop.com/orders",
+                      policy_overrides={"identity": "shop-me"})
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://www.example-shop.com/orders --identity shop-me
+frankensurf identity-status shop-me
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://www.example-shop.com/orders", "identity": "shop-me" } }
+```
+
+</TabItem>
+</Tabs>
+
+## What it guarantees
+
+- Every top-level navigation, including redirects, must stay on the identity's
+  sites. Popups are closed.
+- Frankensurf never clicks or types in a signed-in tab during a read.
+- One process uses an identity at a time; your own browsing in other tabs is
+  unaffected.
+- Output URLs drop credential parameters such as `access_token`.
+
+Remove an identity with `frankensurf identity-revoke shop-me`.
+
+<Aside type="caution">
+  Identities run on your machine only (`LOCAL_ONLY`). Stored secrets are in
+  private files (mode 600) but not yet encrypted at rest.
+</Aside>

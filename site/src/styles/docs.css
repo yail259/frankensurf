@@ -1,0 +1,133 @@
+@import "./fonts.css";
+
+/* Starlight theme. Calm, readable docs in the spirit of the Firecrawl docs: sans-serif labels in
+   normal case, generous spacing, one accent colour, and code that carries the examples.
+   The landing page's mint accent ties the two together. */
+:root {
+  --sl-font: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sl-font-mono: "Geist Mono", ui-monospace, Menlo, Consolas, monospace;
+  --sl-color-accent-low: #12301d;
+  --sl-color-accent: #9af0b0;
+  --sl-color-accent-high: #d9ffe4;
+  --sl-color-white: #f4f7f5;
+  --sl-color-gray-1: #e2e8e4;
+  --sl-color-gray-2: #c4cdc7;
+  --sl-color-gray-3: #8f9a93;
+  --sl-color-gray-4: #5d6862;
+  --sl-color-gray-5: #262d29;
+  --sl-color-gray-6: #121614;
+  --sl-color-black: #0a0c0b;
+  --sl-color-bg-nav: rgba(10, 12, 11, 0.85);
+  --sl-color-bg-sidebar: #0a0c0b;
+  --sl-color-hairline: rgba(255, 255, 255, 0.07);
+  --sl-color-hairline-light: rgba(255, 255, 255, 0.11);
+  --fs-spark: #ffd36b;
+  --fs-sea: #56bfc2;
+  --fs-bad: #f07a6e;
+  --fs-surface: #111514;
+  --sl-text-h1: 2.4rem;
+  --sl-content-width: 44rem;
+  --sl-sidebar-width: 17rem;
+}
+:root[data-theme="light"] {
+  --sl-color-accent-low: #dcf5e3;
+  --sl-color-accent: #187034;
+  --sl-color-accent-high: #0e3b1d;
+  --sl-color-white: #0b0f0d;
+  --sl-color-gray-1: #1c241f;
+  --sl-color-gray-2: #3a4741;
+  --sl-color-gray-3: #5f6c65;
+  --sl-color-gray-4: #8a958f;
+  --sl-color-gray-5: #d9dfdb;
+  --sl-color-gray-6: #f1f4f2;
+  --sl-color-gray-7: #f7f9f8;
+  --sl-color-black: #ffffff;
+  --sl-color-bg-nav: rgba(255, 255, 255, 0.9);
+  --sl-color-bg-sidebar: #ffffff;
+  --sl-color-hairline: rgba(0, 0, 0, 0.07);
+  --sl-color-hairline-light: rgba(0, 0, 0, 0.1);
+  --fs-spark: #946400;
+  --fs-sea: #1b6a70;
+  --fs-bad: #b03a28;
+  --fs-surface: #f7f9f8;
+}
+
+p, li, td { text-wrap: pretty; }
+h1, h2, h3 { text-wrap: balance; }
+
+/* header */
+header.header { backdrop-filter: blur(12px); border-bottom: 1px solid var(--sl-color-hairline); }
+.site-title { font-family: var(--sl-font-mono); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; font-size: 0.85rem; color: var(--sl-color-white); min-height: 44px; }
+.site-title img { height: 1.4rem; width: auto; }
+
+/* sidebar: sentence-case group labels, plain links, a quiet pill for the current page */
+.sidebar-pane { border-inline-end: 1px solid var(--sl-color-hairline); }
+.sidebar-content .group-label .large { font-family: var(--sl-font); font-size: 0.8rem; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--sl-color-white); }
+.sidebar-content ul ul .group-label .large { font-size: 0.875rem; font-weight: 500; color: var(--sl-color-gray-2); }
+.sidebar-content details > summary { padding-block: 0.25rem; }
+.sidebar-content a { border-radius: 7px; color: var(--sl-color-gray-2); font-size: 0.875rem; padding-block: 0.3rem; }
+.sidebar-content a:hover { color: var(--sl-color-white); background: color-mix(in srgb, var(--sl-color-white) 5%, transparent); }
+.sidebar-content a[aria-current="page"], .sidebar-content a[aria-current="page"]:hover {
+  background: color-mix(in srgb, var(--sl-color-white) 7%, transparent); color: var(--sl-color-white); font-weight: 600; }
+.sidebar-content > ul > li + li { margin-top: 0.6rem; }
+
+/* page body */
+.content-panel:first-of-type { border-top: 0; }
+.sl-markdown-content { font-size: 1rem; }
+.sl-markdown-content :is(p, li) { color: var(--sl-color-gray-2); line-height: 1.7; }
+.sl-markdown-content :is(h2, h3) { letter-spacing: -0.02em; font-weight: 620; color: var(--sl-color-white); }
+.sl-markdown-content h2 { font-size: 1.5rem; margin-top: 2.6rem; }
+.sl-markdown-content h3 { font-size: 1.15rem; margin-top: 1.8rem; }
+.sl-markdown-content strong { color: var(--sl-color-white); font-weight: 600; }
+.sl-markdown-content a:not(.card, .sl-link-card *, .sl-link-button) { color: var(--sl-color-white); text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, var(--sl-color-accent) 60%, transparent); }
+.sl-markdown-content a:not(.card, .sl-link-card *, .sl-link-button):hover { text-decoration-color: var(--sl-color-accent); }
+
+/* inline code: light touch, so prose stays readable */
+.sl-markdown-content code:not(pre code) { border-radius: 5px; padding: 0.1em 0.35em; font-size: 0.85em; background: var(--sl-color-gray-6); border: 1px solid var(--sl-color-hairline); color: var(--sl-color-gray-1); }
+
+/* cards: flat panels, accent only on hover */
+.card, .sl-link-card { border-radius: 12px !important; border: 1px solid var(--sl-color-hairline-light) !important; background: var(--fs-surface) !important; box-shadow: none; transition: border-color 0.15s; }
+.sl-link-card:hover, .card:hover { border-color: color-mix(in srgb, var(--sl-color-accent) 50%, transparent) !important; }
+.card .title, .sl-link-card .title { font-size: 1rem !important; font-weight: 600; letter-spacing: -0.01em; }
+.card .icon { color: var(--sl-color-accent) !important; }
+.card .body, .sl-link-card .description { color: var(--sl-color-gray-3); font-size: 0.9rem; }
+.sl-link-card svg { color: var(--sl-color-gray-3); }
+
+/* callouts: one tinted border, sentence-case titles */
+.starlight-aside { border-radius: 10px; border: 1px solid var(--sl-color-hairline-light); background: var(--fs-surface); }
+.starlight-aside--note { border-color: color-mix(in srgb, var(--sl-color-accent) 35%, transparent); }
+.starlight-aside--tip { border-color: color-mix(in srgb, var(--fs-sea) 40%, transparent); }
+.starlight-aside--caution { border-color: color-mix(in srgb, var(--fs-spark) 40%, transparent); }
+.starlight-aside--danger { border-color: color-mix(in srgb, var(--fs-bad) 40%, transparent); }
+.starlight-aside__title { font-family: var(--sl-font); font-size: 0.9rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.starlight-aside--note .starlight-aside__title { color: var(--sl-color-accent); }
+.starlight-aside--tip .starlight-aside__title { color: var(--fs-sea); }
+.starlight-aside--caution .starlight-aside__title { color: var(--fs-spark); }
+
+/* tables: light rules, sentence-case headers */
+.sl-markdown-content table { display: block; overflow-x: auto; max-width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.sl-markdown-content :is(th, td) { border: 0; border-bottom: 1px solid var(--sl-color-hairline-light); padding: 0.6rem 0.9rem 0.6rem 0; vertical-align: top; }
+.sl-markdown-content th { font-family: var(--sl-font); font-size: 0.85rem; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--sl-color-white); background: none; }
+.sl-markdown-content td { color: var(--sl-color-gray-2); }
+
+/* code: tabs read like Firecrawl's language switcher */
+starlight-tabs [role="tablist"] { border-bottom: 1px solid var(--sl-color-hairline-light); }
+starlight-tabs [role="tab"] { font-size: 0.85rem; font-weight: 500; color: var(--sl-color-gray-3); }
+starlight-tabs [role="tab"][aria-selected="true"] { color: var(--sl-color-white); border-color: var(--sl-color-accent); }
+.sl-steps > li::before { background: var(--sl-color-gray-6) !important; color: var(--sl-color-white) !important; border: 1px solid var(--sl-color-hairline-light) !important; }
+
+/* badges */
+.sl-badge { font-family: var(--sl-font); font-size: 0.7rem; font-weight: 600; border-radius: 6px; }
+
+/* right-hand table of contents */
+.right-sidebar-panel h2 { font-family: var(--sl-font); font-size: 0.8rem; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--sl-color-white); }
+starlight-toc a { color: var(--sl-color-gray-3); }
+starlight-toc a[aria-current="true"] { color: var(--sl-color-white); }
+
+/* Phone audit: full-size touch targets in the docs header and page footer. */
+@media (max-width: 50rem) {
+  .sl-menu-button, site-search button[data-open-modal] { min-width: 44px; min-height: 44px; }
+  .sl-markdown-content .sl-anchor-link { min-width: 32px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .sl-markdown-content :is(h2, h3) .sl-anchor-link { padding: 6px; }
+  .pagination-links a, a.sl-link-button, footer .meta a { min-height: 44px; display: inline-flex; align-items: center; }
+}

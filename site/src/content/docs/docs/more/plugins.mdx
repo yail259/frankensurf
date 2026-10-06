@@ -1,0 +1,99 @@
+---
+title: Writing a plugin
+description: Add a provider, search source or adapter without touching Core.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Every tool in Frankensurf is a plugin behind one of three interfaces. A new
+acquisition method, search source or adapter never becomes a branch inside
+`Runtime.read`.
+
+| Kind | Interface | Entry-point group |
+| --- | --- | --- |
+| Provider (gets a page) | `ProviderPlugin` in `providers.py` | `frankensurf.plugins.provider` |
+| Search source | `SearchPlugin` in `search_plugins.py` | `frankensurf.plugins.search` |
+| Adapter (shapes a result) | `AdapterPlugin` in `adapters.py` | `frankensurf.plugins.adapter` |
+
+## A provider
+
+A provider has a manifest and an `acquire` method. It makes the call and
+returns the page. Core does everything else: routing, pacing, content checks,
+retries, cost caps, receipts and evidence.
+
+```python
+from frankensurf.providers import ProviderManifest
+from frankensurf.runtime import WebFailure
+
+class AcmeReader:
+    manifest = ProviderManifest(
+        "acme_reader", "1",
+        rendering=True,        # it runs a browser
+        paid=True,             # joins only with allow_paid_fallbacks
+        cost_bounded=False,    # True if it refuses calls that could pass max_cost_usd
+    )
+
+    def available(self, configured):
+        return bool(load_key())          # unavailable = skipped, not failed
+
+    async def acquire(self, request, services):
+        body = await fetch_somehow(request.url, timeout=request.policy.timeout_seconds)
+        return {"url": final_url, "content": body, "raw": body.encode(),
+                "content_type": "text/html", "http_status": 200, "headers": {},
+                "cost_usd": 0.002}
+```
+
+Raise `WebFailure(code, message)` with a [failure code](/docs/reference/errors/)
+on failure, for example `BLOCKED` or `CAPTCHA`, so Core can climb and cool down
+correctly. Never put a key in a message.
+
+The manifest flags decide where it can run:
+
+| Flag | Meaning |
+| --- | --- |
+| `rendering` | Can satisfy `render=True`. |
+| `requires_local_browser` | Off when `allow_local_browser=False`. |
+| `paid` | Needs `allow_paid_fallbacks=True`. |
+| `cost_bounded` | Refuses a call whose worst case could pass the remaining cap. |
+| `authentication` | Identity-only; never in the public route. |
+| `route_scope_required` | Runs only through a route seed or when named. |
+| `operations` | Which of `read`, `extract`, `do` it supports. |
+
+Plugins with heavy or clashing dependencies can run in their own process; see
+`provider_worker.py` and `experimental.py` for how the stealth browsers do it.
+
+## Installing a third-party plugin
+
+Publish it as a Python package with an entry point in the right group, install
+it into Frankensurf's environment, then trust it explicitly in
+`~/.config/frankensurf/plugins.json`:
+
+```json
+{
+  "schema": "frankensurf.plugin-policy/v1",
+  "trusted": {
+    "provider": {"acme_reader": "frankensurf-acme"},
+    "search": {},
+    "adapter": {}
+  },
+  "disabled": {"provider": [], "search": [], "adapter": []}
+}
+```
+
+Each trusted ID is bound to one exact distribution. A plugin cannot replace a
+bundled one. `disabled` turns off any plugin, bundled or not. The catalogue is
+frozen when a `Runtime` starts, and nothing is installed or downloaded during
+an operation. `Runtime.inspect_plugins()` shows what loaded and what was
+rejected.
+
+<Aside type="note">
+  Plugin code is trusted local code, not a sandbox. Only trust packages you
+  would run yourself.
+</Aside>
+
+## Contributing one upstream
+
+Bundled providers live in `src/frankensurf/` and register in
+`providers.py`; hosted services go in `hosted_providers.py` or
+`managed_browsers.py`. Add mocked-API tests, then run it live before calling it
+working. See [Code map and boundaries](/docs/more/code-map/).

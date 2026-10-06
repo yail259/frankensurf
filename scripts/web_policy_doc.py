@@ -1,0 +1,140 @@
+"""Print the WebPolicy reference tables for site/src/content/docs/docs/reference/web-policy.mdx."""
+import dataclasses
+from frankensurf.runtime import WebPolicy
+
+D = {
+ "freshness": "`now` always fetches; `hour`, `day` and `cached` may reuse a saved copy.",
+ "render": "Require a browser; skips providers that cannot render.",
+ "prefer_markdown": "Ask servers for `text/markdown` first (T0).",
+ "sign_requests": "Sign plain HTTP reads with Web Bot Auth when a key exists (T3).",
+ "timeout_seconds": "Time allowed for each provider attempt.",
+ "unblocker_timeout_seconds": "Time allowed for an unblocker attempt.",
+ "agent_provider_timeout_seconds": "Time allowed for an agent provider such as Skyvern.",
+ "max_bytes": "Largest response accepted.",
+ "pdf_max_pages": "Most PDF pages to extract text from.",
+ "capture_json_responses": "On rendered reads, return the JSON the page fetched for itself as `captured_json`.",
+ "capture_json_max_items": "Most captured JSON responses kept.",
+ "capture_json_max_bytes": "Largest captured JSON response kept.",
+ "include_images": "Download and check the page's images.",
+ "max_images": "Most images to download.",
+ "max_image_bytes": "Largest image accepted.",
+ "image_max_attempts": "Attempts per image.",
+ "image_retry_delay_seconds": "Delay between image attempts.",
+ "image_retry_failures": "Image failures worth another attempt.",
+ "retain_public_failure_evidence": "Keep evidence of failed public reads.",
+ "wait_selector": "Wait for this CSS selector before capture.",
+ "wait_state": "`attached` or `visible`, for `wait_selector`.",
+ "content_ready_selector": "Preferred ready selector; on timeout the current page is captured.",
+ "content_ready_timeout_seconds": "How long to wait for `content_ready_selector`.",
+ "settle_ms": "Extra wait after the page is ready.",
+ "public_browser_headless": "Run public browsers headless.",
+ "navigation_page": "Page 1 to 3 through a site's own Next navigation (seeded routes only).",
+ "html_shell_min_text_chars": "A plain-HTTP page with scripts and less text than this is treated as an app shell.",
+ "html_shell_large_bytes": "A page at least this large ...",
+ "html_shell_large_min_text_chars": "... with less text than this is also an app shell.",
+ "rendered_min_text_chars": "A rendered page with less text than this is `EMPTY_PAGE`.",
+ "second_opinion_text_chars": "Below this much text, a plain HTTP page with scripts is also rendered and the fuller page kept; 0 turns it off.",
+ "scrapling_navigation_wait_until": "Navigation wait condition for Scrapling and entry-page routes.",
+ "scrapling_solve_cloudflare": "Let Scrapling attempt Cloudflare's interstitial.",
+ "scrapling_load_dom": "Wait for Scrapling's DOM load.",
+ "scrapling_google_search": "Scrapling's Google referrer option.",
+ "public_entry_url": "Entry page a `camoufox_entry` route visits first.",
+ "public_entry_continue_failures": "Entry-page failures that still continue to the target.",
+ "provider": "Force one provider. Never falls back.",
+ "provider_candidates": "An exact ordered list of providers.",
+ "compound_source_candidates": "Validated provider list reserved for compound routes; not used by the default route.",
+ "allow_local_browser": "Allow providers that run a browser on your machine.",
+ "allow_paid_fallbacks": "Allow paid providers to join the route.",
+ "max_cost_usd": "Cap on measured provider cost for the whole operation.",
+ "allow_handoff": "Try `handoff` after every automatic provider fails.",
+ "handoff_timeout_seconds": "How long a handoff waits for a person.",
+ "terminal_failures": "Failures that stop the climb.",
+ "context_stop_failures": "Failures that stop later reads of the same domain in this Runtime.",
+ "escalate_after_walls": "Walls in one read before paid providers move ahead; 0 turns it off.",
+ "escalation_failures": "Failures that count as walls.",
+ "use_route_memory": "Let route memory reorder providers.",
+ "route_memory_ttl_seconds": "How far back route memory looks.",
+ "route_memory_min_samples": "Clean reads in a row before a provider is promoted.",
+ "origin_route_hint_ttl_seconds": "How long a site hint lasts.",
+ "provider_max_attempts_per_candidate": "Attempts per provider. Paid and capped reads are never retried.",
+ "provider_retry_delay_seconds": "Delay between attempts.",
+ "provider_retry_failures": "Failures worth another attempt.",
+ "provider_deadline_grace_seconds": "Extra time an isolated worker gets past `timeout_seconds`.",
+ "provider_cleanup_grace_seconds": "Time allowed to close a provider's process tree.",
+ "provider_composition_max_depth": "Deepest nesting when one provider calls another.",
+ "provider_composition_max_attempts": "Most nested provider attempts in one operation.",
+ "origin_min_interval_seconds": "Minimum gap between reads of one origin.",
+ "origin_cooldown_seconds": "Pause after a wall.",
+ "origin_cooldown_failures": "Failures that start a cool-down.",
+ "search_source_candidates": "An exact ordered list of search sources.",
+ "search_source_allow": "Only these sources may run.",
+ "search_source_prefer": "Move these sources to the front.",
+ "search_max_attempts": "Most sources to try.",
+ "search_source_timeout_seconds": "Time per source; `None` uses the operation timeout.",
+ "search_terminal_failures": "Failures that stop search fallback.",
+ "max_pages": "Most pages `paginate` follows.",
+ "identity": "Read as a registered identity.",
+ "action_classes": "Action classes this operation grants.",
+ "browser_do_allowed_contracts": "Action contracts `do` may run.",
+ "browser_do_allowed_origins": "Exact origins `do` may act on.",
+ "browser_do_allowed_tools": "Browser tools `do` may use.",
+ "browser_do_max_actions": "Most actions in one intent.",
+ "browser_do_action_timeout_seconds": "Time per action.",
+ "browser_do_settle_ms": "Wait after each action.",
+ "browser_do_require_auth_check": "Require the identity's signed-in check before acting.",
+ "browser_do_packet_max_bytes": "Largest action intent.",
+ "browser_do_journal_max_bytes": "Largest action journal.",
+ "browser_do_selector_max_bytes": "Longest selector.",
+ "browser_do_value_max_bytes": "Largest field value.",
+ "browser_do_description_max_bytes": "Longest action description.",
+ "browser_do_idempotency_key_max_bytes": "Longest idempotency key.",
+ "browser_agent_task": "A task for the Browser Use agent.",
+ "browser_agent_entry_url": "Where the agent starts, if not the target URL.",
+ "browser_agent_allowed_origins": "Origins the agent may visit; defaults to the target's.",
+ "browser_agent_allowed_actions": "Actions the agent may take.",
+ "browser_agent_max_steps": "Most agent steps.",
+ "browser_agent_max_model_calls": "Most model calls.",
+ "browser_agent_max_actions": "Most actions overall.",
+ "browser_agent_max_actions_per_step": "Most actions per step.",
+ "browser_agent_max_failures": "Failures before the agent stops.",
+ "browser_agent_llm_timeout_seconds": "Time per model call.",
+ "browser_agent_step_timeout_seconds": "Time per step.",
+ "browser_agent_action_timeout_seconds": "Time per action.",
+ "browser_agent_readiness_poll_ms": "Readiness polling interval.",
+ "browser_agent_packet_max_bytes": "Largest agent result packet.",
+ "browser_agent_use_vision": "Send screenshots to the model.",
+ "workload_assertion_max_count": "Most assertions on one extract (for repair).",
+ "workload_assertion_max_bytes": "Largest assertion set.",
+ "repair_overlay_registry_max_bytes": "Largest repair overlay registry.",
+}
+ALL = [x.name for x in dataclasses.fields(WebPolicy)]
+GROUPS = [
+ ("Fetching", ["freshness","render","prefer_markdown","sign_requests","timeout_seconds","unblocker_timeout_seconds","agent_provider_timeout_seconds","max_bytes","pdf_max_pages","capture_json_responses","capture_json_max_items","capture_json_max_bytes","include_images","max_images","max_image_bytes","image_max_attempts","image_retry_delay_seconds","image_retry_failures","retain_public_failure_evidence"]),
+ ("Routing and cost", ["provider","provider_candidates","allow_local_browser","allow_paid_fallbacks","max_cost_usd","allow_handoff","handoff_timeout_seconds","terminal_failures","context_stop_failures","escalate_after_walls","escalation_failures","use_route_memory","route_memory_ttl_seconds","route_memory_min_samples","origin_route_hint_ttl_seconds","provider_max_attempts_per_candidate","provider_retry_delay_seconds","provider_retry_failures","provider_deadline_grace_seconds","provider_cleanup_grace_seconds","provider_composition_max_depth","provider_composition_max_attempts","compound_source_candidates"]),
+ ("Pacing", ["origin_min_interval_seconds","origin_cooldown_seconds","origin_cooldown_failures"]),
+ ("Rendering and content checks", ["wait_selector","wait_state","content_ready_selector","content_ready_timeout_seconds","settle_ms","public_browser_headless","html_shell_min_text_chars","html_shell_large_bytes","html_shell_large_min_text_chars","rendered_min_text_chars","second_opinion_text_chars","navigation_page","public_entry_url","public_entry_continue_failures","scrapling_navigation_wait_until","scrapling_solve_cloudflare","scrapling_load_dom","scrapling_google_search"]),
+ ("Search and paging", ["search_source_candidates","search_source_allow","search_source_prefer","search_max_attempts","search_source_timeout_seconds","search_terminal_failures","max_pages"]),
+ ("Browser agent", [f for f in ALL if f.startswith("browser_agent_")]),
+ ("Identity and actions", ["identity","action_classes"] + [f for f in ALL if f.startswith("browser_do_")]),
+ ("Repair", ["workload_assertion_max_count","workload_assertion_max_bytes","repair_overlay_registry_max_bytes"]),
+]
+fields = {f.name: f for f in dataclasses.fields(WebPolicy)}
+
+def default(f):
+    d = f.default if f.default is not dataclasses.MISSING else f.default_factory()
+    if isinstance(d, tuple):
+        return ", ".join("`%s`" % x for x in d) if d else "`()`"
+    if isinstance(d, int) and not isinstance(d, bool) and d >= 1048576 and d % 1048576 == 0:
+        return "%d MB" % (d // 1048576)
+    return ("`%r`" % (d,)).replace("'", '"')
+
+seen, out = set(), []
+for title, names in GROUPS:
+    out.append("## %s\n\n| Field | Default | What it does |\n| --- | --- | --- |" % title)
+    for n in names:
+        seen.add(n)
+        out.append("| `%s` | %s | %s |" % (n, default(fields[n]), D[n]))
+    out.append("")
+missing = set(fields) - seen
+assert not missing, missing
+print("\n".join(out))

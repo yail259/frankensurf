@@ -1,0 +1,67 @@
+---
+title: Watch
+description: Poll a page and get only the links you haven't seen before.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+`watch` reads a listing, feed or search page and returns the same-site links
+that are new since your last poll. You decide when to poll and what a link
+means.
+
+- Filter links with a regular expression.
+- The first poll returns every current link and sets `first_poll`, so you can
+  treat it as a baseline.
+- Each poll is one ordinary read: paced, receipted, and able to climb past
+  walls.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+poll = await web.watch("https://news.ycombinator.com/", link_pattern=r"item\?id=\d+")
+for link in poll["new"]:
+    print(link["url"])
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf watch https://news.ycombinator.com/ --link-pattern 'item\?id=\d+'
+```
+
+</TabItem>
+</Tabs>
+
+```json title="Response (trimmed)"
+{
+  "url": "https://news.ycombinator.com/",
+  "status": "observed",
+  "first_poll": true,
+  "new": [
+    { "url": "https://news.ycombinator.com/item?id=49969183", "text": "4 hours ago" },
+    { "url": "https://news.ycombinator.com/item?id=49971230", "text": "1 hour ago" }
+  ],
+  "links_on_page": 30,
+  "seen_count": 30,
+  "receipt": { "status": "observed", "method": "http" }
+}
+```
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `link_pattern` | all same-site links | Regular expression a link URL must match. |
+| `state_key` | the URL | Name of the watch, if you watch one URL several ways. |
+| `max_seen` | `5000` | Links remembered per watch. |
+
+Seen links are stored under `<state>/watches/`.
+
+<Aside type="tip">
+  A few polls an hour is plenty for most pages. Pacing and cool-downs apply, so
+  hammering a page only gets it paused.
+</Aside>

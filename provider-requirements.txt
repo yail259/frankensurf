@@ -1,0 +1,5 @@
+# Install in a separate venv: Camoufox pins Playwright below the core version.
+camoufox==0.5.6
+scrapling[fetchers]==0.4.15
+patchright==1.63.0
+playwright==1.62.0

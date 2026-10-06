@@ -1,0 +1,89 @@
+---
+title: Search
+description: Search the web with attributed results and automatic fallback across sources.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+`search` returns ranked results with their URL, title and snippet. Every result
+says which source found it.
+
+- Free by default: your own [SearXNG](/docs/integrations/searxng/), then
+  [DuckDuckGo](/docs/integrations/duckduckgo/) and [Bing](/docs/integrations/bing/).
+- Paid sources [Exa](/docs/integrations/exa/), [Brave](/docs/integrations/brave/),
+  [Tavily](/docs/integrations/tavily/) and [Parallel](/docs/integrations/parallel/)
+  join when their keys are set and you allow paid tools.
+- Name a source and Frankensurf uses only that one, never a substitute.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+results = await web.search("playwright python tutorial", limit=10)
+for hit in results["results"]:
+    print(hit["title"], hit["url"])
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf search playwright python tutorial --limit 10
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "search", "arguments": { "query": "playwright python tutorial", "limit": 10 } }
+```
+
+</TabItem>
+</Tabs>
+
+```json title="Response (trimmed)"
+{
+  "query": "playwright python tutorial",
+  "source": "searxng",
+  "coverage": "partial",
+  "results": [
+    {
+      "url": "https://www.browserstack.com/guide/playwright-python-tutorial",
+      "title": "The ultimate Playwright Python tutorial | BrowserStack",
+      "snippet": "Learn end-to-end web testing with Playwright Python…",
+      "engines": ["duckduckgo"],
+      "verification": "indexed_discovery"
+    },
+    {
+      "url": "https://playwright.dev/python/docs/library",
+      "title": "Getting started - Library | Playwright Python",
+      "snippet": "These commands download the Playwright package and install browser binaries…",
+      "engines": ["duckduckgo"],
+      "verification": "indexed_discovery"
+    }
+  ],
+  "upstream_failures": [["brave", "too many requests"], ["google cse", "too many requests"]]
+}
+```
+
+`coverage: "partial"` and `upstream_failures` show that some of SearXNG's own
+engines were rate-limited. Failures stay visible instead of looking like "no
+results".
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `source` | automatic | One source only: `searxng`, `duckduckgo_html`, `bing_rss`, `exa`, `brave`, `tavily`, `parallel`. |
+| `limit` | `10` | Number of results. |
+| `search_source_prefer` | none | Try these sources first. |
+| `search_source_allow` | all | Only these sources may run. |
+| `search_source_timeout_seconds` | `8` | Time per source. |
+| `allow_paid_fallbacks` | `false` | Let the paid sources join. |
+
+<Aside type="note">
+  A search hit is an indexed candidate, not proof the page is live. Read it to
+  find out.
+</Aside>

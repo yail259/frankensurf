@@ -1,0 +1,136 @@
+{
+  "schema": "frankensurf.scoreboard-corpus/v1",
+  "note": "Deep pages (search, product, listing) where protections actually apply, plus URLs a consumer read in the last day (source=consumer). 'wall' is the protection class; for third-party sites it comes from public reputation, not vendor detection. Rotate the consumer rows from the latest traces before each run.",
+  "cases": [
+    {
+      "url": "https://example.com/",
+      "wall": "static",
+      "source": "general"
+    },
+    {
+      "url": "https://en.wikipedia.org/wiki/Sony_%CE%B17_III",
+      "wall": "static",
+      "source": "general"
+    },
+    {
+      "url": "https://docs.python.org/3/library/asyncio.html",
+      "wall": "static",
+      "source": "general"
+    },
+    {
+      "url": "https://news.ycombinator.com/item?id=1",
+      "wall": "static",
+      "source": "general"
+    },
+    {
+      "url": "https://www.airbnb.com.au/s/Sydney/homes",
+      "wall": "js_app",
+      "source": "general"
+    },
+    {
+      "url": "https://www.reebelo.com.au/search?q=iphone",
+      "wall": "js_app",
+      "source": "general"
+    },
+    {
+      "url": "https://www.cashconverters.com.au/shop?query=sony",
+      "wall": "js_app",
+      "source": "general"
+    },
+    {
+      "url": "https://www.g2.com/products/slack/reviews",
+      "wall": "cloudflare",
+      "source": "general"
+    },
+    {
+      "url": "https://www.crunchbase.com/organization/anthropic",
+      "wall": "cloudflare",
+      "source": "general"
+    },
+    {
+      "url": "https://www.indeed.com/jobs?q=python+developer",
+      "wall": "cloudflare",
+      "source": "general"
+    },
+    {
+      "url": "https://www.tripadvisor.com.au/Hotels-g255060-Sydney_New_South_Wales-Hotels.html",
+      "wall": "datadome",
+      "source": "general"
+    },
+    {
+      "url": "https://www.leboncoin.fr/recherche?text=velo",
+      "wall": "datadome",
+      "source": "general"
+    },
+    {
+      "url": "https://www.nike.com/au/w/mens-shoes-nik1zy7ok",
+      "wall": "akamai",
+      "source": "general"
+    },
+    {
+      "url": "https://www.bestbuy.com/site/searchpage.jsp?st=laptop&intl=nosplash",
+      "wall": "akamai",
+      "source": "general"
+    },
+    {
+      "url": "https://www.zillow.com/homes/for_sale/Austin,-TX_rb/",
+      "wall": "perimeterx",
+      "source": "general"
+    },
+    {
+      "url": "https://www.walmart.com/search?q=laptop",
+      "wall": "perimeterx",
+      "source": "general"
+    },
+    {
+      "url": "https://arxiv.org/pdf/1706.03762",
+      "wall": "pdf",
+      "source": "general"
+    },
+    {
+      "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "wall": "pdf",
+      "source": "general"
+    },
+    {
+      "url": "https://www.ebay.com.au/sch/i.html?_nkw=sony+a7iii&LH_Sold=1&LH_Complete=1",
+      "wall": "bot_check",
+      "source": "consumer"
+    },
+    {
+      "url": "https://www.gumtree.com.au/s-sydney/nvme+enclosure/k0l3003435?sort=date",
+      "wall": "peakhour",
+      "source": "consumer"
+    },
+    {
+      "url": "https://www.gumtree.com.au/s-sydney/ruckus+access+point/k0l3003435?sort=date",
+      "wall": "peakhour",
+      "source": "consumer"
+    },
+    {
+      "url": "https://www.gumtree.com.au/web/listing/other-cameras/1344480479",
+      "wall": "peakhour",
+      "source": "consumer"
+    },
+    {
+      "url": "https://www.gumtree.com.au/web/listing/modems-routers/1344874884",
+      "wall": "peakhour",
+      "source": "consumer"
+    },
+    {
+      "url": "https://www.gumtree.com.au/web/listing/video-camera-accessories/1344551058",
+      "wall": "peakhour",
+      "source": "consumer"
+    },
+    {
+      "url": "https://movebikes.com.au/collections/second-hand/products.json?limit=250&page=1",
+      "wall": "static_json",
+      "source": "consumer"
+    },
+    {
+      "url": "https://www.pedl.com.au/collections/ex-demo-refurbished-e-bikes/products.json?limit=250&page=1",
+      "wall": "static_json",
+      "source": "consumer"
+    }
+  ]
+}

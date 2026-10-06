@@ -1,0 +1,53 @@
+---
+title: "Bing"
+description: "Bing's RSS results as a free fallback."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+Reads Bing's RSS search results. It's the third free source.
+
+- No key needed.
+- Fetched through the `http` provider, so pacing applies.
+- Results are indexed candidates; read them to confirm.
+
+## Set up
+
+Built in.
+
+## Use it
+
+Ask for this source by name. Named sources never fall back to another.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+results = await web.search("playwright python tutorial", source="bing_rss")
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf search playwright python tutorial --source bing_rss
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "search", "arguments": { "query": "playwright python tutorial", "source": "bing_rss" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Source ID | `bing_rss` |
+| Cost | Free |
+| Tested | Live |
+| Docs | [www.bing.com](https://www.bing.com/) |

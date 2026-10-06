@@ -1,0 +1,54 @@
+---
+title: Batch read
+description: Read many pages in one call, politely.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+`batch` reads a list of URLs and returns one result per URL, in the order you
+gave them.
+
+- Runs up to four pages at once, one at a time per site.
+- Every page gets its own receipt; one failure never fails the batch.
+- Signed-in batches run one page at a time.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+pages = await web.batch([
+    "https://example.com/a",
+    "https://example.com/b",
+    "https://another.example/c",
+])
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf batch https://example.com/a https://example.com/b https://another.example/c
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "batch", "arguments": { "urls": ["https://example.com/a", "https://example.com/b"] } }
+```
+
+</TabItem>
+</Tabs>
+
+## Concurrency
+
+Set it when you open the runtime:
+
+```python
+Runtime("state", concurrency=4, per_domain=1, domain_delay=0.25)
+```
+
+Reads to one site are also paced across processes. See
+[Pacing](/docs/blocked/escalation/#pacing).

@@ -1,0 +1,98 @@
+---
+title: Act
+description: Fill, click and assert in your own signed-in browser, under explicit grants and with every step on record.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+`do` runs a typed list of browser steps in your Chrome, through a registered
+[identity](/docs/read/signed-in/). Reading never grants acting: every action
+needs its own grants, and nothing runs automatically.
+
+- Steps are `fill`, `click`, `wait_for`, `assert_text` and `assert_value` on CSS
+  selectors.
+- Every call has an idempotency key. A completed key returns its saved result
+  instead of running again.
+- Values and selectors stay out of receipts; before and after HTML and
+  screenshots are kept privately as evidence.
+
+## Usage
+
+Write the steps as an intent:
+
+```json title="intent.json"
+{
+  "url": "https://www.example-shop.com/account/address",
+  "contract": "browser.raw_control.v1",
+  "action_class": "WRITE_EXTERNAL",
+  "idempotency_key": "update-address-2026-10-06",
+  "description": "Update the delivery address",
+  "actions": [
+    { "tool": "fill", "selector": "#postcode", "value": "2000" },
+    { "tool": "click", "selector": "button[type=submit]" },
+    { "tool": "assert_text", "selector": ".notice", "value": "Saved" }
+  ]
+}
+```
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+import json
+from frankensurf import WebPolicy
+
+policy = WebPolicy(
+    identity="shop-me",
+    action_classes=("WRITE_REVERSIBLE", "WRITE_EXTERNAL", "PURCHASE/FINANCIAL", "ACCOUNT_SECURITY"),
+    browser_do_allowed_contracts=("browser.raw_control.v1",),
+    browser_do_allowed_origins=("https://www.example-shop.com",),
+    browser_do_allowed_tools=("fill", "click", "assert_text"),
+)
+result = await web.do(json.load(open("intent.json")), policy, provider="browser_use_local_cdp_do")
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf do --intent-file intent.json --identity shop-me \
+  --provider browser_use_local_cdp_do \
+  --action-contract browser.raw_control.v1 \
+  --action-origin https://www.example-shop.com \
+  --action-tool fill --action-tool click --action-tool assert_text \
+  --grant-action WRITE_REVERSIBLE --grant-action WRITE_EXTERNAL \
+  --grant-action PURCHASE/FINANCIAL --grant-action ACCOUNT_SECURITY
+```
+
+</TabItem>
+</Tabs>
+
+## Grants
+
+`browser.raw_control.v1` can do anything a click can do, so it needs the full
+set of grants, in both the call and the identity:
+
+| Grant | What it must name |
+| --- | --- |
+| Contract | `browser.raw_control.v1` |
+| Provider | `browser_use_local_cdp_do` |
+| Origins | Every origin the steps may touch |
+| Tools | Exactly the tools the intent uses |
+| Action classes | `WRITE_REVERSIBLE`, `WRITE_EXTERNAL`, `PURCHASE/FINANCIAL`, `ACCOUNT_SECURITY` |
+
+Register the identity with matching `--allow-action` grants.
+
+## What a result means
+
+A completed action means the steps ran as written and the assertions passed.
+The result always says `semantic_result: "unknown"`: Frankensurf doesn't claim
+the address was saved or the order placed. Check that with a read.
+
+If a run fails part-way, its key becomes `EXECUTION_OUTCOME_UNKNOWN` and is
+never replayed, because the site may already have changed.
+
+<Aside type="caution">
+  Password, file and hidden inputs, downloads, popups, WebSockets and your own
+  JavaScript are blocked. Requests outside the allowed origins are blocked too.
+</Aside>

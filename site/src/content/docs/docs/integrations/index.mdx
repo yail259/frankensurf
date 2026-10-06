@@ -1,0 +1,86 @@
+---
+title: Integrations
+description: Every tool Frankensurf stitches together, what it costs, and how far it has been tested.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Frankensurf builds none of its tools. It stitches the best ones together and
+routes each page to the cheapest one that works. Free tools join by themselves
+once installed; paid ones join when their key is set and the call allows paid
+tools.
+
+**Tested** means: **Live**, a real read through Frankensurf against a real site
+or the real service; **Mocks**, checked against the service's published API
+format only. A mock isn't done: add the key and run one read to promote it.
+A key also works under the service's own name (`SCRAPFLY_API_KEY`, `ZYTE_API_KEY`
+and so on); the `FRANKENSURF_` name wins when both are set.
+
+## Fetch and render
+
+| Tool | Rung | Cost | Tested |
+| --- | --- | --- | --- |
+| [HTTP](/docs/integrations/http/) | T0–T1 | Free, built in | Live |
+| [Jina Reader](/docs/integrations/jina-reader/) | T1 | Free, built in | Live |
+| [Chromium](/docs/integrations/local-chromium/) | T2 | Free | Live |
+| [Steel](/docs/integrations/steel/) | T2 | Free self-hosted, or paid cloud | Live |
+| [Crawl4AI](/docs/integrations/crawl4ai/) | T2 | Free | Live health check |
+| [Browserbase](/docs/integrations/browserbase/) | T2 | Paid | Mocks |
+| [Hyperbrowser](/docs/integrations/hyperbrowser/) | T2 | Paid | Mocks |
+| [Browserless](/docs/integrations/browserless/) | T2 | Paid | Mocks |
+| [Kernel](/docs/integrations/kernel/) | T2 | Paid | Mocks |
+| [Anchor](/docs/integrations/anchor/) | T2 | Paid | Mocks |
+| [Cloudflare Browser Run](/docs/integrations/cloudflare-browser-run/) | T2 | Paid | Mocks |
+
+## Stealth
+
+| Tool | Rung | Cost | Tested |
+| --- | --- | --- | --- |
+| [Camoufox](/docs/integrations/camoufox/) | T3 | Free | Live |
+| [Scrapling](/docs/integrations/scrapling/) | T1–T3 | Free | Live |
+| [Patchright](/docs/integrations/patchright/) | T3 | Free | Live (smoke) |
+| [nodriver](/docs/integrations/nodriver/) | T3 | Free | Live (smoke) |
+| [Signed requests](/docs/blocked/signed-requests/) (Web Bot Auth) | T3 | Free | Live (Cloudflare verifier) |
+
+## Scrapers and unblockers
+
+| Tool | Rung | Cost | Tested |
+| --- | --- | --- | --- |
+| [Firecrawl](/docs/integrations/firecrawl/) | T4 | Paid | Live |
+| [ZenRows](/docs/integrations/zenrows/) | T4 | Paid | Live |
+| [fastCRW](/docs/integrations/fastcrw/) | T4 | Paid, or free self-hosted | Live (self-hosted) |
+| [Scrapfly](/docs/integrations/scrapfly/) | T4 | Paid | Live |
+| [Bright Data](/docs/integrations/bright-data/) | T4 | Paid | Mocks |
+| [Zyte](/docs/integrations/zyte/) | T4 | Paid | Live |
+| [Apify](/docs/integrations/apify/) | T4 | Paid | Mocks |
+
+## Agents and people
+
+| Tool | What it does | Tested |
+| --- | --- | --- |
+| [Browser Use](/docs/integrations/browser-use/) | An AI agent explores the page with your model | Live (agent harness) |
+| [Skyvern](/docs/integrations/skyvern/) | A cloud agent returns what it found; only when named | Mocks |
+| [Human handoff](/docs/blocked/handoff/) | You clear the wall in a visible browser | Live (headed test) |
+| [Your Chrome](/docs/read/signed-in/) | Reads signed in as you | Live (identity canary) |
+
+## Search
+
+| Source | Cost | Tested |
+| --- | --- | --- |
+| [SearXNG](/docs/integrations/searxng/) | Free, self-hosted | Live |
+| [DuckDuckGo](/docs/integrations/duckduckgo/) | Free | Fallback only |
+| [Bing](/docs/integrations/bing/) | Free | Live |
+| [Exa](/docs/integrations/exa/) | Paid | Live |
+| [Brave Search](/docs/integrations/brave/) | Paid | Mocks |
+| [Tavily](/docs/integrations/tavily/) | Paid | Mocks |
+| [Parallel](/docs/integrations/parallel/) | Paid | Mocks |
+
+<Aside type="note" title="Pairs with Frankensurf">
+  [Stagehand](https://github.com/browserbase/stagehand) and
+  [Chrome DevTools MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp)
+  drive a browser step by step rather than fetch pages, so they aren't
+  providers. An agent can use either alongside Frankensurf's `read` for pages
+  that need clicking through.
+</Aside>
+
+Want another tool? See [Writing a plugin](/docs/more/plugins/).

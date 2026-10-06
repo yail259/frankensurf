@@ -1,0 +1,60 @@
+---
+title: Repairing failed extracts
+description: Let the Browser Use agent diagnose a failed extract, then promote a checked fix yourself.
+---
+
+import { Steps, Aside } from "@astrojs/starlight/components";
+
+When a site changes its layout, an `extract` can start failing with
+`SCHEMA_CHANGED`. Repair lets the [Browser Use agent](/docs/integrations/browser-use/)
+look at the live page and propose a fix. Nothing changes until you promote it.
+
+- Works on public extracts that you ran with assertions (the fields you expect).
+- The agent proposes; Frankensurf checks the proposal against the saved failure
+  and a fresh live read before you can use it.
+- You promote or disable a fix with one command, and can roll it back.
+
+## How it works
+
+<Steps>
+
+1. **Run an extract with assertions.** When it fails, the result carries a
+   `recovery` object with a trace ID, and Frankensurf keeps a private copy of
+   the failure.
+
+2. **Diagnose.** The agent inspects the current page and proposes exact CSS
+   selectors for each asserted field.
+
+   ```bash
+   frankensurf repair TRACE_ID
+   ```
+
+3. **Check.** Frankensurf tests the proposal against the saved failure and runs
+   an independent live read through another provider. The result records both,
+   with timing and cost.
+
+4. **Promote.** Turn the checked fix on by its ID and hash.
+
+   ```bash
+   frankensurf repair-promote PROPOSAL_ID --proposal-sha256 SHA256
+   ```
+
+</Steps>
+
+A promoted fix only applies to the same URL, adapter version and assertions,
+and only after the original adapter fails. Turn it off at any time:
+
+```bash
+frankensurf repair-disable PROPOSAL_ID --disable-reason "layout changed again"
+```
+
+## Limits
+
+- Public reads only. Signed-in reads, actions and purchases are never repaired.
+- The agent never writes to a site, sees a secret or runs its own code.
+- Route proposals are recorded but can't be promoted yet.
+
+<Aside type="note">
+  Python: `Runtime.repair(trace_id)`, `promote_repair(...)` and
+  `disable_repair(...)`. MCP: the `repair` tool.
+</Aside>

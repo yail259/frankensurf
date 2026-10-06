@@ -1,0 +1,53 @@
+{
+  "schema": "frankenbench.manifest/v1",
+  "version": "adapter-resolution-v1",
+  "coverage_requirements": [
+    {
+      "site_id": "bidsonline-au",
+      "workloads": [
+        "discovery"
+      ],
+      "requires_identity": false,
+      "operational_status": "active",
+      "market_scope": "australian_local",
+      "required_for_release": true,
+      "coverage_status": "declared_live_cases"
+    }
+  ],
+  "cases": [
+    {
+      "id": "bidsonline-core-resolved-directory",
+      "site_id": "bidsonline-au",
+      "workloads": [
+        "discovery"
+      ],
+      "workload_class": "au-equipment-auction-directory",
+      "operation": "extract",
+      "url": "https://www.bidsonline.com.au/equipment-auctions.aspx",
+      "adapter_contract": "frankensurf.au-equipment-auction-directory/v1",
+      "policy": {
+        "timeout_seconds": 40
+      },
+      "assertions": [
+        {
+          "path": "structured.directory_kind",
+          "op": "equals",
+          "value": "equipment_auctions"
+        },
+        {
+          "path": "structured.listings",
+          "op": "nonempty"
+        },
+        {
+          "path": "structured.listings.0.listing_id",
+          "op": "nonempty"
+        },
+        {
+          "path": "structured.source_observation_ids",
+          "op": "nonempty"
+        }
+      ],
+      "benchmark_role": "release"
+    }
+  ]
+}

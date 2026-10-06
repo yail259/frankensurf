@@ -1,0 +1,61 @@
+---
+title: "Camoufox"
+description: "A Firefox fork that spoofs its fingerprint below JavaScript."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Camoufox](https://github.com/daijro/camoufox) looks like an ordinary Firefox to sites that fingerprint browsers. It runs in its own isolated worker process.
+
+- Free and local.
+- `camoufox_entry` is a variant that enters through a site's public entry page first; it runs only through a route seed or when named.
+- Pacing and cool-downs still apply: stealth is for looking ordinary, not for ignoring a site that said no.
+
+## Set up
+
+```bash
+bash scripts/install-public-providers.sh
+```
+
+This installs Camoufox and Scrapling in a separate environment (`FRANKENSURF_PROVIDER_PYTHON`).
+
+## Use it
+
+It joins the default route by itself once installed. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="camoufox",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider camoufox
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "camoufox" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `camoufox` |
+| Rung | T3 |
+| Cost | Free |
+| Tested | Live |
+| Docs | [camoufox.com](https://camoufox.com/) |

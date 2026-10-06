@@ -1,0 +1,56 @@
+---
+title: PDFs
+description: Read PDFs as text, with no extra setup.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+When a URL returns a PDF, Frankensurf extracts its text with
+[pypdf](https://pypdf.readthedocs.io/). Your agent gets text, not bytes.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read("https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf")
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf" } }
+```
+
+</TabItem>
+</Tabs>
+
+```json title="Response"
+{
+  "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+  "text": "Dummy PDF file",
+  "content_type": "application/pdf; qs=0.001",
+  "structured": { "format": "pdf", "pages": 1 },
+  "receipt": { "method": "http", "latency_ms": 414 }
+}
+```
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `pdf_max_pages` | `50` | Most pages to extract. |
+| `max_bytes` | 40 MB | Largest file accepted. |
+
+<Aside type="caution">
+  Scanned PDFs without a text layer return no text. OCR is not built in yet.
+</Aside>

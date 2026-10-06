@@ -1,0 +1,58 @@
+---
+title: Signed requests
+description: Arrive as a verified agent with Web Bot Auth, instead of an anonymous bot.
+---
+
+import { Steps, Aside } from "@astrojs/starlight/components";
+
+[Web Bot Auth](https://datatracker.ietf.org/doc/draft-meunier-web-bot-auth-architecture/)
+signs each request with your key using HTTP Message Signatures (RFC 9421).
+Cloudflare, AWS, Akamai and Vercel can verify the signature and let a known
+agent through.
+
+- Every plain HTTP read is signed once you have a key, including each redirect.
+- The private key never leaves your machine.
+- Without a key, nothing is signed.
+
+## Set it up
+
+<Steps>
+
+1. Create a key and print its public directory.
+
+   ```bash
+   frankensurf bot-auth-init
+   frankensurf bot-auth-directory > directory.json
+   ```
+
+2. Serve `directory.json` at `/.well-known/http-message-signatures-directory`
+   on an HTTPS origin you control.
+
+3. Point Frankensurf at that origin.
+
+   ```bash
+   export FRANKENSURF_SIGNATURE_AGENT=https://agent.example.com
+   ```
+
+4. Register the origin with the networks that verify signed agents, such as
+   [Cloudflare's signed agents](https://blog.cloudflare.com/signed-agents/).
+
+</Steps>
+
+## What gets sent
+
+Each request carries `Signature-Agent`, `Signature-Input` and `Signature`
+headers covering `@authority` and `signature-agent`, with a five-minute lifetime
+and a fresh nonce.
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `sign_requests` | `true` | Set `false` to skip signing for one call. |
+| `FRANKENSURF_BOT_AUTH_KEY_FILE` | `~/.config/frankensurf/web-bot-auth.jwk` | Where the private key lives. |
+
+<Aside type="note" title="Verified">
+  Checked against Cloudflare's public verifier with the RFC 9421 test key: the
+  request is reported as authenticated, and a wrong key is rejected.
+</Aside>

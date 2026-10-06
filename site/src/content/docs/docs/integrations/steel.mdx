@@ -1,0 +1,64 @@
+---
+title: "Steel"
+description: "A self-hosted Steel browser, or Steel Cloud."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Steel](https://github.com/steel-dev/steel-browser) is an open-source browser API. Run it yourself for free as `steel`, or use Steel Cloud as `steel_cloud`.
+
+- `steel` drives your own Steel container.
+- `steel_cloud` opens a hosted session per read and releases it, even on failure. It is paid.
+- Point `steel_cloud` at any Steel API with `FRANKENSURF_STEEL_CLOUD_URL`.
+
+## Set up
+
+Self-hosted:
+
+```bash
+bash scripts/start-steel.sh
+export FRANKENSURF_STEEL_URL=http://127.0.0.1:3100
+```
+
+Steel Cloud: set `FRANKENSURF_STEEL_API_KEY`.
+
+## Use it
+
+It joins the default route by itself once set up. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="steel",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider steel
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "steel" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `steel` |
+| Rung | T2 |
+| Cost | Free |
+| Tested | Live (self-hosted and through `steel_cloud`) |
+| Docs | [steel.dev](https://steel.dev/) |

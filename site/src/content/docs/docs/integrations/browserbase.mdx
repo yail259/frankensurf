@@ -1,0 +1,51 @@
+---
+title: "Browserbase"
+description: "Hosted Chromium sessions from Browserbase."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Browserbase](https://www.browserbase.com/) runs Chromium in the cloud. Each read opens one session, renders the page and releases the session.
+
+- Billed by session time, rounded up to one minute.
+- Refuses a session that could pass your `max_cost_usd`.
+- Your key travels only in the connection URL, never in errors.
+
+## Set up
+
+Set `FRANKENSURF_BROWSERBASE_API_KEY`, and optionally `FRANKENSURF_BROWSERBASE_PROJECT_ID`. Default rate $0.12/hour; set yours with `FRANKENSURF_BROWSERBASE_USD_PER_HOUR`.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="browserbase",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "browserbase", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `browserbase` |
+| Rung | T2 |
+| Cost | Paid |
+| Tested | Mocks only |
+| Docs | [docs.browserbase.com](https://docs.browserbase.com/) |

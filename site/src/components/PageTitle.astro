@@ -1,0 +1,53 @@
+---
+// Starlight page title override, after the Firecrawl docs: a section eyebrow, the title with a
+// "Copy page" button that copies the page as Markdown for an LLM, and the description as a subtitle.
+// Starlight links "Overview" in the table of contents to this id; its constant isn't exported.
+const PAGE_TITLE_ID = "_top";
+
+const { entry } = Astro.locals.starlightRoute;
+const { title, description } = entry.data;
+const sections: Record<string, string> = {
+  read: "Read", search: "Search", watch: "Watch", paginate: "Paginate", act: "Act",
+  blocked: "When a site blocks you", integrations: "Integrations", reference: "Reference",
+  more: "More",
+};
+const segment = entry.id.split("/")[1] ?? "";
+const eyebrow = sections[segment] ?? "Get started";
+// MDX imports and component tags are noise to a model; keep the prose, tables and code.
+const markdown = `# ${title}\n\n${description ? description + "\n\n" : ""}${(entry.body ?? "")
+  .replace(/^import .*$/gm, "")
+  .replace(/^\s*<\/?(Tabs|TabItem|Steps|CardGrid|LinkCard|Card|Aside)\b[^>]*>\s*$/gm, "")
+  .replace(/\n{3,}/g, "\n\n")
+  .trim()}\n`;
+---
+<p class="fs-eyebrow">{eyebrow}</p>
+<div class="fs-title-row">
+  <h1 id={PAGE_TITLE_ID}>{title}</h1>
+  <button class="fs-copy" type="button" data-markdown={markdown} aria-label="Copy this page as Markdown">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
+    <span>Copy page</span>
+  </button>
+</div>
+{description && <p class="fs-subtitle">{description}</p>}
+
+<script>
+  document.querySelectorAll<HTMLButtonElement>(".fs-copy").forEach((button) => {
+    const label = button.querySelector("span")!;
+    button.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(button.dataset.markdown ?? ""); label.textContent = "Copied"; }
+      catch { label.textContent = "Copy failed"; }
+      setTimeout(() => (label.textContent = "Copy page"), 1600);
+    });
+  });
+</script>
+
+<style>
+  .fs-eyebrow { margin: 1rem 0 0.35rem; font-size: 0.85rem; font-weight: 600; color: var(--sl-color-accent); }
+  .fs-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+  h1 { margin: 0; font-size: var(--sl-text-h1); line-height: var(--sl-line-height-headings); font-weight: 650; letter-spacing: -0.035em; color: var(--sl-color-white); }
+  .fs-subtitle { margin: 0.6rem 0 0; font-size: 1.1rem; line-height: 1.55; color: var(--sl-color-gray-2); max-width: 40rem; }
+  .fs-copy { flex: none; display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.45rem; padding: 0.35rem 0.7rem; border-radius: 8px; border: 1px solid var(--sl-color-hairline-light); background: transparent; color: var(--sl-color-gray-2); font: 500 0.8rem var(--sl-font); cursor: pointer; white-space: nowrap; }
+  .fs-copy:hover { color: var(--sl-color-white); border-color: var(--sl-color-gray-4); }
+  .fs-copy svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  @media (max-width: 40rem) { .fs-copy span { display: none; } .fs-copy { padding: 0.45rem; } }
+</style>

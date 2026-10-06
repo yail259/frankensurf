@@ -1,0 +1,56 @@
+---
+title: "SearXNG"
+description: "Your own metasearch engine. The default search source."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[SearXNG](https://github.com/searxng/searxng) runs locally in Docker and fans each query out to many engines. It needs no account or key.
+
+- First in the default search order.
+- Upstream engine failures are shown in `upstream_failures`, not hidden.
+- Bound to `127.0.0.1:8088`.
+
+## Set up
+
+```bash
+bash scripts/start-search.sh
+export FRANKENSURF_SEARCH_URL=http://127.0.0.1:8088
+```
+
+## Use it
+
+Ask for this source by name. Named sources never fall back to another.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+results = await web.search("playwright python tutorial", source="searxng")
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf search playwright python tutorial --source searxng
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "search", "arguments": { "query": "playwright python tutorial", "source": "searxng" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Source ID | `searxng` |
+| Cost | Free |
+| Tested | Live |
+| Docs | [docs.searxng.org](https://docs.searxng.org/) |

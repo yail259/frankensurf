@@ -1,0 +1,53 @@
+---
+title: "DuckDuckGo"
+description: "DuckDuckGo's HTML results as a free fallback."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+Reads DuckDuckGo's HTML results page. It's the second free source, used when SearXNG isn't available.
+
+- No key needed.
+- Fetched through the `http` provider, so pacing applies.
+- May be blocked; the next source is tried.
+
+## Set up
+
+Built in.
+
+## Use it
+
+Ask for this source by name. Named sources never fall back to another.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+results = await web.search("playwright python tutorial", source="duckduckgo_html")
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf search playwright python tutorial --source duckduckgo_html
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "search", "arguments": { "query": "playwright python tutorial", "source": "duckduckgo_html" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Source ID | `duckduckgo_html` |
+| Cost | Free |
+| Tested | Live smoke failed; fallback only |
+| Docs | [duckduckgo.com](https://duckduckgo.com/) |

@@ -1,0 +1,51 @@
+---
+title: "Skyvern"
+description: "Skyvern's cloud browser agent reads the page and returns what it found."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Skyvern](https://www.skyvern.com/) runs a vision-based browser agent in the cloud. Frankensurf sends it a task and returns the agent's findings as JSON, not the page.
+
+- Runs only when you name it; never part of the default route.
+- Gets a longer timeout (`agent_provider_timeout_seconds`, 300 s by default).
+- Point it at a self-hosted Skyvern with `FRANKENSURF_SKYVERN_URL`.
+
+## Set up
+
+Set `FRANKENSURF_SKYVERN_API_KEY`.
+
+## Use it
+
+It runs only when you ask for it by name:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="skyvern",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "skyvern", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `skyvern` |
+| Rung | Agent |
+| Cost | Paid |
+| Tested | Mocks only |
+| Docs | [docs.skyvern.com](https://docs.skyvern.com/) |

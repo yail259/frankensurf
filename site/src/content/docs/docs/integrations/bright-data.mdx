@@ -1,0 +1,51 @@
+---
+title: "Bright Data"
+description: "Bright Data's Web Unlocker for the hardest walls."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Bright Data Web Unlocker](https://brightdata.com/products/web-unlocker) handles proxies, fingerprints and challenges on Bright Data's network.
+
+- Needs a Web Unlocker zone as well as a key.
+- Bright Data doesn't report per-request cost, so `cost_usd` is unknown and it can't run under a `max_cost_usd` cap.
+- Counts as working only after a live run with a real key.
+
+## Set up
+
+Set `FRANKENSURF_BRIGHTDATA_API_KEY` and `FRANKENSURF_BRIGHTDATA_ZONE`.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="brightdata_unlocker",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "brightdata_unlocker", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `brightdata_unlocker` |
+| Rung | T4 |
+| Cost | Paid |
+| Tested | Mocks only |
+| Docs | [docs.brightdata.com/scraping-automation/web-unlocker/introduction](https://docs.brightdata.com/scraping-automation/web-unlocker/introduction) |

@@ -1,0 +1,7 @@
+{
+  "provider_candidates": ["http", "camoufox", "scrapling"],
+  "terminal_failures": ["AUTH_REQUIRED", "AUTH_EXPIRED", "NOT_FOUND"],
+  "context_stop_failures": ["AUTH_REQUIRED", "AUTH_EXPIRED"],
+  "settle_ms": 1500,
+  "timeout_seconds": 40
+}

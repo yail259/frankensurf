@@ -1,0 +1,57 @@
+---
+title: Markdown
+description: Ask sites for markdown first, so your agent reads clean text.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+With `prefer_markdown`, the first request asks for `text/markdown`. Sites that
+support [Markdown for Agents](https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents)
+answer with markdown directly; everyone else gets the usual HTML route.
+
+- No browser and no extra request when the site supports it.
+- On by default in the MCP `read` tool.
+- [Jina Reader](/docs/integrations/jina-reader/) returns markdown for sites that don't.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read("https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/",
+                      policy_overrides={"prefer_markdown": True})
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/ --markdown
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/" } }
+```
+
+</TabItem>
+</Tabs>
+
+```json title="Response"
+{
+  "title": "Markdown for Agents",
+  "content_type": "text/markdown; charset=utf-8",
+  "text": "---\ndescription: Cloudflare's Markdown for Agents converts HTML to Markdown at the edge…",
+  "structured": { "format": "markdown" },
+  "receipt": { "method": "http", "latency_ms": 261 }
+}
+```
+
+## When to turn it off
+
+Markdown keeps links and headings, so it is not always shorter than
+Frankensurf's extracted text. If you need the page's HTML structure, pass
+`prefer_markdown: false` (over MCP, in `acquisition_policy`).

@@ -1,0 +1,51 @@
+---
+title: "Zyte"
+description: "Zyte API browser rendering through its anti-ban network."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Zyte API](https://www.zyte.com/zyte-api/) renders the page in a browser behind Zyte's anti-ban network, as an unblocker rung.
+
+- Returns the rendered HTML.
+- An explicit Zyte read isn't held by a site's cool-down.
+- Cost isn't reported per request, so `cost_usd` is unknown; it can't run under a `max_cost_usd` cap.
+
+## Set up
+
+Set `FRANKENSURF_ZYTE_API_KEY`, or the service's own name `ZYTE_API_KEY`.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="zyte",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "zyte", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `zyte` |
+| Rung | T4 |
+| Cost | Paid |
+| Tested | Live (6 Oct 2026) |
+| Docs | [docs.zyte.com/zyte-api](https://docs.zyte.com/zyte-api/) |

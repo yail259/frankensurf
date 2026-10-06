@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 80" width="128" height="80">
+  <defs>
+    <mask id="stitched-wave-seams" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="80">
+      <path fill="white" d="M1 76 C12 70 20 59 23 51 C38 23 53 1 80 1 C100 1 112 13 112 26 C112 33 108 38 104 39 C107 32 104 26 99 24 C87 18 73 23 69 34 C66 43 68 51 76 56 C72 49 74 38 80 34 C83 32 87 31 91 31 C85 39 87 51 97 60 C106 67 116 72 127 76 Q129 78 126 78 H2 Q-1 78 1 76 Z" />
+      <g fill="none" stroke="black" stroke-width="3.6" stroke-linecap="round">
+        <path d="M23 54 C30 50 36 62 40 78 M97 61 C93 64 92 72 91 78" />
+        <path d="m29 64 7-3 m-3 10 7-3 m50-2 7 2 m-10 5 7 2" />
+      </g>
+    </mask>
+  </defs>
+  <g>
+    <path fill="currentColor" mask="url(#stitched-wave-seams)" d="M1 76 C12 70 20 59 23 51 C38 23 53 1 80 1 C100 1 112 13 112 26 C112 33 108 38 104 39 C107 32 104 26 99 24 C87 18 73 23 69 34 C66 43 68 51 76 56 C72 49 74 38 80 34 C83 32 87 31 91 31 C85 39 87 51 97 60 C106 67 116 72 127 76 Q129 78 126 78 H2 Q-1 78 1 76 Z" />
+  </g>
+</svg>

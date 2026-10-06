@@ -1,0 +1,95 @@
+---
+title: Introduction
+description: One call that gets your agent through any site, on any model.
+---
+
+import { Tabs, TabItem, LinkCard, CardGrid } from "@astrojs/starlight/components";
+
+Frankensurf is an open-source web layer for AI agents. Ask for a URL or a
+search, and it picks the right browsing tool for that page, climbs to a stronger
+one when the site pushes back, and returns clean page data with a receipt of
+how it got there.
+
+- **Every site.** Plain HTTP, real browsers, stealth browsers, unblockers and, as
+  a last resort, you. Six rungs, one call.
+- **Every agent.** The same tools and the same results on Claude, GPT, Gemini or
+  an open-weight model, through MCP, Python or the command line.
+- **Shows its work.** Every result says which tools ran, how long each took and
+  what it cost.
+
+## Get started
+
+<CardGrid>
+  <LinkCard title="Add to your agent" description="Claude Code, Claude Desktop, Cursor, Codex or any MCP client." href="/docs/agents/" />
+  <LinkCard title="Install" description="Install the package and read your first page in two commands." href="/docs/install/" />
+</CardGrid>
+
+## Read your first page
+
+No account or key needed.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+from frankensurf import Runtime
+
+async with Runtime("state") as web:
+    page = await web.read("https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/",
+                          policy_overrides={"prefer_markdown": True})
+    print(page["title"], page["receipt"]["method"])
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/ --markdown
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/" } }
+```
+
+</TabItem>
+</Tabs>
+
+```json title="Response"
+{
+  "url": "https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/",
+  "title": "Markdown for Agents",
+  "content_type": "text/markdown; charset=utf-8",
+  "text": "---\ndescription: Cloudflare's Markdown for Agents converts HTML to Markdown at the edge…",
+  "structured": { "format": "markdown" },
+  "receipt": {
+    "status": "observed",
+    "method": "http",
+    "latency_ms": 261,
+    "cost_usd": 0.0,
+    "attempts": [{ "provider": "http", "status": "observed", "latency_ms": 261 }]
+  }
+}
+```
+
+## What you can do
+
+<CardGrid>
+  <LinkCard title="Read" description="Get any page as text or markdown, with its structured data, images and PDFs." href="/docs/read/" />
+  <LinkCard title="Search" description="Search the web with attributed results and automatic fallback." href="/docs/search/" />
+  <LinkCard title="Watch" description="Poll a page and get only the links you haven't seen." href="/docs/watch/" />
+  <LinkCard title="Get past walls" description="How Frankensurf climbs from plain HTTP to a person clearing the page." href="/docs/blocked/escalation/" />
+</CardGrid>
+
+## Why Frankensurf
+
+Every browsing tool breaks somewhere. A model's built-in fetch skips
+JavaScript. A browser gets challenged. A stealth browser gets flagged. An
+unblocker costs money on pages that never needed it. Frankensurf stitches
+[30-plus tools](/docs/integrations/) together and routes each page to the cheapest
+one that works, so your agent stops dead-ending.
+
+It returns raw page data, not answers. Your agent has a model; it decides what
+the page means.

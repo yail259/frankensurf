@@ -1,0 +1,823 @@
+{
+  "schema": "frankensurf.public-route-recipes/v1",
+  "recipes": [
+    {
+      "id": "legacy_ebay_search_read",
+      "version": "1",
+      "origin": "https://www.ebay.com.au",
+      "path_pattern": "/sch/i\\.html",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_ebay_search_extract",
+      "version": "1",
+      "origin": "https://www.ebay.com.au",
+      "path_pattern": "/sch/i\\.html",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_ebay_item_read",
+      "version": "1",
+      "origin": "https://www.ebay.com.au",
+      "path_pattern": "/itm/(?:[^/]+/)?[0-9]+/?",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_ebay_item_extract",
+      "version": "1",
+      "origin": "https://www.ebay.com.au",
+      "path_pattern": "/itm/(?:[^/]+/)?[0-9]+/?",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_category_www_read",
+      "version": "1",
+      "origin": "https://www.gumtree.com.au",
+      "path_pattern": "/s-[^/]+/[^/]+(?:/page-[1-9][0-9]*)?/c[0-9]+l[0-9]+",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "wait_selector": "section.search-results-page__user-ad-collection a.user-ad-row-new-design[href], #search-results [data-testid=\"search-results-grid\"] [data-testid=\"search-result-listing\"] a[data-testid=\"listing-link\"][href]",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_keyword_search_www_read",
+      "version": "1",
+      "origin": "https://www.gumtree.com.au",
+      "path_pattern": "/s-[^/]+/[^/]+(?:/[^/]+)?(?:/page-[1-9][0-9]*)?/k0(?:c[0-9]+)?l[0-9]+",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "wait_selector": "section.search-results-page__user-ad-collection a.user-ad-row-new-design[href], #search-results [data-testid=\"search-results-grid\"] [data-testid=\"search-result-listing\"] a[data-testid=\"listing-link\"][href]",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_category_www_extract",
+      "version": "1",
+      "origin": "https://www.gumtree.com.au",
+      "path_pattern": "/s-[^/]+/[^/]+(?:/page-[1-9][0-9]*)?/c[0-9]+l[0-9]+",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "wait_selector": "section.search-results-page__user-ad-collection a.user-ad-row-new-design[href], #search-results [data-testid=\"search-results-grid\"] [data-testid=\"search-result-listing\"] a[data-testid=\"listing-link\"][href]",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_keyword_search_www_extract",
+      "version": "1",
+      "origin": "https://www.gumtree.com.au",
+      "path_pattern": "/s-[^/]+/[^/]+(?:/[^/]+)?(?:/page-[1-9][0-9]*)?/k0(?:c[0-9]+)?l[0-9]+",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "wait_selector": "section.search-results-page__user-ad-collection a.user-ad-row-new-design[href], #search-results [data-testid=\"search-results-grid\"] [data-testid=\"search-result-listing\"] a[data-testid=\"listing-link\"][href]",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_listing_www_read",
+      "version": "1",
+      "origin": "https://www.gumtree.com.au",
+      "path_pattern": "/(?:web/listing|s-ad)/.*",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "wait_selector": "h1",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_listing_www_extract",
+      "version": "1",
+      "origin": "https://www.gumtree.com.au",
+      "path_pattern": "/(?:web/listing|s-ad)/.*",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "wait_selector": "h1",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_category_root_read",
+      "version": "1",
+      "origin": "https://gumtree.com.au",
+      "path_pattern": "/s-[^/]+/[^/]+(?:/page-[1-9][0-9]*)?/c[0-9]+l[0-9]+",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "wait_selector": "section.search-results-page__user-ad-collection a.user-ad-row-new-design[href], #search-results [data-testid=\"search-results-grid\"] [data-testid=\"search-result-listing\"] a[data-testid=\"listing-link\"][href]",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_keyword_search_root_read",
+      "version": "1",
+      "origin": "https://gumtree.com.au",
+      "path_pattern": "/s-[^/]+/[^/]+(?:/[^/]+)?(?:/page-[1-9][0-9]*)?/k0(?:c[0-9]+)?l[0-9]+",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "wait_selector": "section.search-results-page__user-ad-collection a.user-ad-row-new-design[href], #search-results [data-testid=\"search-results-grid\"] [data-testid=\"search-result-listing\"] a[data-testid=\"listing-link\"][href]",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_category_root_extract",
+      "version": "1",
+      "origin": "https://gumtree.com.au",
+      "path_pattern": "/s-[^/]+/[^/]+(?:/page-[1-9][0-9]*)?/c[0-9]+l[0-9]+",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "wait_selector": "section.search-results-page__user-ad-collection a.user-ad-row-new-design[href], #search-results [data-testid=\"search-results-grid\"] [data-testid=\"search-result-listing\"] a[data-testid=\"listing-link\"][href]",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_keyword_search_root_extract",
+      "version": "1",
+      "origin": "https://gumtree.com.au",
+      "path_pattern": "/s-[^/]+/[^/]+(?:/[^/]+)?(?:/page-[1-9][0-9]*)?/k0(?:c[0-9]+)?l[0-9]+",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "wait_selector": "section.search-results-page__user-ad-collection a.user-ad-row-new-design[href], #search-results [data-testid=\"search-results-grid\"] [data-testid=\"search-result-listing\"] a[data-testid=\"listing-link\"][href]",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_listing_root_read",
+      "version": "1",
+      "origin": "https://gumtree.com.au",
+      "path_pattern": "/(?:web/listing|s-ad)/.*",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "wait_selector": "h1",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_gumtree_listing_root_extract",
+      "version": "1",
+      "origin": "https://gumtree.com.au",
+      "path_pattern": "/(?:web/listing|s-ad)/.*",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "wait_selector": "h1",
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_tradingpost_search_www_read",
+      "version": "1",
+      "origin": "https://www.tradingpost.com.au",
+      "path_pattern": "/search-results(?:/in-au/[1-9][0-9]*-page)?/?",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_tradingpost_search_www_extract",
+      "version": "1",
+      "origin": "https://www.tradingpost.com.au",
+      "path_pattern": "/search-results(?:/in-au/[1-9][0-9]*-page)?/?",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_tradingpost_listing_www_read",
+      "version": "1",
+      "origin": "https://www.tradingpost.com.au",
+      "path_pattern": "/(?:.*/)?ad-[a-z0-9]+/?",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_tradingpost_listing_www_extract",
+      "version": "1",
+      "origin": "https://www.tradingpost.com.au",
+      "path_pattern": "/(?:.*/)?ad-[a-z0-9]+/?",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_tradingpost_search_root_read",
+      "version": "1",
+      "origin": "https://tradingpost.com.au",
+      "path_pattern": "/search-results(?:/in-au/[1-9][0-9]*-page)?/?",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_tradingpost_search_root_extract",
+      "version": "1",
+      "origin": "https://tradingpost.com.au",
+      "path_pattern": "/search-results(?:/in-au/[1-9][0-9]*-page)?/?",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_tradingpost_listing_root_read",
+      "version": "1",
+      "origin": "https://tradingpost.com.au",
+      "path_pattern": "/(?:.*/)?ad-[a-z0-9]+/?",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_tradingpost_listing_root_extract",
+      "version": "1",
+      "origin": "https://tradingpost.com.au",
+      "path_pattern": "/(?:.*/)?ad-[a-z0-9]+/?",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_carsales_used_read",
+      "version": "1",
+      "origin": "https://www.carsales.com.au",
+      "path_pattern": "/cars/used/",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_carsales_used_extract",
+      "version": "1",
+      "origin": "https://www.carsales.com.au",
+      "path_pattern": "/cars/used/",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_carsales_listing_read",
+      "version": "1",
+      "origin": "https://www.carsales.com.au",
+      "path_pattern": "/cars/details/[a-z0-9_-]+/(?:OAG-AD|SSE-AD)-[0-9]+/?",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_carsales_listing_extract",
+      "version": "1",
+      "origin": "https://www.carsales.com.au",
+      "path_pattern": "/cars/details/[a-z0-9_-]+/(?:OAG-AD|SSE-AD)-[0-9]+/?",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_carsales_gallery_read",
+      "version": "1",
+      "origin": "https://www.carsales.com.au",
+      "path_pattern": "/_api/gallery-core/(?:OAG-AD|SSE-AD)-[0-9]+/?",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_carsales_gallery_extract",
+      "version": "1",
+      "origin": "https://www.carsales.com.au",
+      "path_pattern": "/_api/gallery-core/(?:OAG-AD|SSE-AD)-[0-9]+/?",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_public_api_read",
+      "version": "1",
+      "origin": "https://www.depop.com",
+      "path_pattern": "/presentation/api/v1/search/products/",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_public_api_extract",
+      "version": "1",
+      "origin": "https://www.depop.com",
+      "path_pattern": "/presentation/api/v1/search/products/",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_listing_www_read",
+      "version": "1",
+      "origin": "https://www.depop.com",
+      "path_pattern": "/products/.*",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 6000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_listing_www_extract",
+      "version": "1",
+      "origin": "https://www.depop.com",
+      "path_pattern": "/products/.*",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 6000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_search_www_read",
+      "version": "1",
+      "origin": "https://www.depop.com",
+      "path_pattern": "/search/",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_search_www_extract",
+      "version": "1",
+      "origin": "https://www.depop.com",
+      "path_pattern": "/search/",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_listing_root_read",
+      "version": "1",
+      "origin": "https://depop.com",
+      "path_pattern": "/products/.*",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 6000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_listing_root_extract",
+      "version": "1",
+      "origin": "https://depop.com",
+      "path_pattern": "/products/.*",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 6000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_search_root_read",
+      "version": "1",
+      "origin": "https://depop.com",
+      "path_pattern": "/search/",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_depop_search_root_extract",
+      "version": "1",
+      "origin": "https://depop.com",
+      "path_pattern": "/search/",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_cash_shop_www_read",
+      "version": "1",
+      "origin": "https://www.cashconverters.com.au",
+      "path_pattern": "/shop/.*",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_cash_shop_www_extract",
+      "version": "1",
+      "origin": "https://www.cashconverters.com.au",
+      "path_pattern": "/shop/.*",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_cash_shop_root_read",
+      "version": "1",
+      "origin": "https://cashconverters.com.au",
+      "path_pattern": "/shop/.*",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "legacy_cash_shop_root_extract",
+      "version": "1",
+      "origin": "https://cashconverters.com.au",
+      "path_pattern": "/shop/.*",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "adapter_scope": "any",
+      "policy_defaults": {
+        "settle_ms": 1500
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "airbnb_search_read",
+      "version": "1",
+      "origin": "https://www.airbnb.com.au",
+      "path_pattern": "/s/[^?]+",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 5000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "airbnb_search_extract",
+      "version": "1",
+      "origin": "https://www.airbnb.com.au",
+      "path_pattern": "/s/[^?]+",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 5000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page",
+      "adapter_scope": "any"
+    },
+    {
+      "id": "cex_search_read",
+      "version": "1",
+      "origin": "https://au.webuy.com",
+      "path_pattern": "/search",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 5000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "cex_search_extract",
+      "version": "1",
+      "origin": "https://au.webuy.com",
+      "path_pattern": "/search",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 5000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page",
+      "adapter_scope": "any"
+    },
+    {
+      "id": "airbnb_room_read",
+      "version": "1",
+      "origin": "https://www.airbnb.com.au",
+      "path_pattern": "/rooms/\\d+",
+      "operation": "read",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 6000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "airbnb_room_extract",
+      "version": "1",
+      "origin": "https://www.airbnb.com.au",
+      "path_pattern": "/rooms/\\d+",
+      "operation": "extract",
+      "provider": "camoufox",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 6000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page",
+      "adapter_scope": "any"
+    },
+    {
+      "id": "cashconverters_search_read",
+      "version": "1",
+      "origin": "https://www.cashconverters.com.au",
+      "path_pattern": "/shop",
+      "operation": "read",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 5000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page"
+    },
+    {
+      "id": "cashconverters_search_extract",
+      "version": "1",
+      "origin": "https://www.cashconverters.com.au",
+      "path_pattern": "/shop",
+      "operation": "extract",
+      "provider": "scrapling",
+      "provider_version": "legacy",
+      "policy_defaults": {
+        "settle_ms": 5000
+      },
+      "provenance": {},
+      "enabled": true,
+      "representation": "single_page",
+      "adapter_scope": "any"
+    }
+  ]
+}

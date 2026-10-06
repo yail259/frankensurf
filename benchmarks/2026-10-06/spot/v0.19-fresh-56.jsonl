@@ -1,0 +1,57 @@
+{"site": "falabella", "valid": true, "why": null, "provider": "http", "seconds": 1.6, "steps": []}
+{"site": "noon", "valid": true, "why": null, "provider": "http", "seconds": 1.9, "steps": []}
+{"site": "liverpool-mx", "valid": true, "why": null, "provider": "http", "seconds": 2.2, "steps": []}
+{"site": "magalu", "valid": true, "why": null, "provider": "http", "seconds": 3.1, "steps": []}
+{"site": "yodobashi", "valid": true, "why": null, "provider": "http", "seconds": 2.4, "steps": []}
+{"site": "americanas", "valid": true, "why": null, "provider": "local", "seconds": 8.7, "steps": []}
+{"site": "emag", "valid": true, "why": null, "provider": "http", "seconds": 3.7, "steps": []}
+{"site": "walmart-mx", "valid": false, "why": "NOT_FOUND", "provider": "jina_reader", "seconds": 18.6, "steps": []}
+{"site": "tokopedia", "valid": true, "why": null, "provider": "jina_reader", "seconds": 21.9, "steps": ["jina_reader"]}
+{"site": "takealot", "valid": true, "why": null, "provider": "firecrawl", "seconds": 25.4, "steps": []}
+{"site": "coupang", "valid": true, "why": null, "provider": "firecrawl", "seconds": 24.1, "steps": []}
+{"site": "power-no", "valid": true, "why": null, "provider": "jina_reader", "seconds": 9.0, "steps": ["jina_reader"]}
+{"site": "alza", "valid": true, "why": null, "provider": "firecrawl", "seconds": 24.0, "steps": []}
+{"site": "allegro", "valid": true, "why": null, "provider": "firecrawl", "seconds": 34.2, "steps": []}
+{"site": "menards", "valid": true, "why": null, "provider": "jina_reader", "seconds": 13.5, "steps": ["jina_reader"]}
+{"site": "lazada", "valid": true, "why": null, "provider": "scrapling", "seconds": 44.9, "steps": ["jina_reader", "scrapling"]}
+{"site": "acehardware", "valid": true, "why": null, "provider": "firecrawl", "seconds": 14.4, "steps": []}
+{"site": "harborfreight", "valid": true, "why": null, "provider": "firecrawl", "seconds": 15.7, "steps": []}
+{"site": "elgiganten", "valid": true, "why": null, "provider": "jina_reader", "seconds": 37.9, "steps": ["jina_reader"]}
+{"site": "verkkokauppa", "valid": true, "why": null, "provider": "scrapling", "seconds": 33.9, "steps": ["jina_reader", "scrapling"]}
+{"site": "bjs", "valid": true, "why": null, "provider": "firecrawl", "seconds": 20.4, "steps": []}
+{"site": "heb", "valid": true, "why": null, "provider": "jina_reader", "seconds": 12.3, "steps": ["jina_reader"]}
+{"site": "safeway", "valid": true, "why": null, "provider": "firecrawl", "seconds": 16.2, "steps": []}
+{"site": "therealreal", "valid": false, "why": "NOT_FOUND", "provider": "jina_reader", "seconds": 3.7, "steps": []}
+{"site": "vestiaire", "valid": true, "why": null, "provider": "jina_reader", "seconds": 10.6, "steps": ["jina_reader"]}
+{"site": "ssense", "valid": true, "why": null, "provider": "http", "seconds": 1.4, "steps": []}
+{"site": "patagonia", "valid": true, "why": null, "provider": "http", "seconds": 2.3, "steps": []}
+{"site": "samsclub", "valid": true, "why": null, "provider": "camoufox", "seconds": 35.4, "steps": []}
+{"site": "northerntool", "valid": false, "why": "expect_missing", "provider": "firecrawl", "seconds": 48.0, "steps": ["jina_reader", "scrapling", "zyte", "zenrows", "scrapfly"]}
+{"site": "wholefoods", "valid": true, "why": null, "provider": "zyte", "seconds": 37.9, "steps": ["jina_reader", "scrapling", "camoufox", "firecrawl", "zyte"]}
+{"site": "newbalance", "valid": true, "why": null, "provider": "firecrawl", "seconds": 9.0, "steps": ["firecrawl"]}
+{"site": "rightmove", "valid": true, "why": null, "provider": "http", "seconds": 1.3, "steps": []}
+{"site": "gap", "valid": true, "why": null, "provider": "local", "seconds": 3.9, "steps": []}
+{"site": "tractorsupply", "valid": true, "why": null, "provider": "firecrawl", "seconds": 56.0, "steps": ["jina_reader", "scrapling", "camoufox", "firecrawl"]}
+{"site": "netaporter", "valid": true, "why": null, "provider": "firecrawl", "seconds": 24.6, "steps": []}
+{"site": "zoopla", "valid": true, "why": null, "provider": "camoufox", "seconds": 10.2, "steps": []}
+{"site": "farfetch", "valid": true, "why": null, "provider": "firecrawl", "seconds": 32.6, "steps": []}
+{"site": "lululemon", "valid": false, "why": "expect_count:2", "provider": "http", "seconds": 18.0, "steps": []}
+{"site": "immoscout", "valid": true, "why": null, "provider": "firecrawl", "seconds": 12.3, "steps": []}
+{"site": "seloger", "valid": true, "why": null, "provider": "camoufox", "seconds": 12.6, "steps": []}
+{"site": "adidas", "valid": true, "why": null, "provider": "firecrawl", "seconds": 39.1, "steps": ["jina_reader", "firecrawl"]}
+{"site": "usajobs", "valid": true, "why": null, "provider": "scrapling", "seconds": 13.2, "steps": ["jina_reader", "scrapling"]}
+{"site": "autotrader-uk", "valid": true, "why": null, "provider": "zyte", "seconds": 19.0, "steps": []}
+{"site": "espn", "valid": true, "why": null, "provider": "http", "seconds": 0.4, "steps": []}
+{"site": "bbc-sport", "valid": true, "why": null, "provider": "http", "seconds": 3.5, "steps": []}
+{"site": "cargurus", "valid": true, "why": null, "provider": "jina_reader", "seconds": 22.5, "steps": ["jina_reader"]}
+{"site": "unix-se", "valid": true, "why": null, "provider": "firecrawl", "seconds": 11.0, "steps": []}
+{"site": "washpost", "valid": true, "why": null, "provider": "http", "seconds": 2.9, "steps": []}
+{"site": "spiegel", "valid": true, "why": null, "provider": "http", "seconds": 1.6, "steps": []}
+{"site": "theatlantic", "valid": true, "why": null, "provider": "camoufox", "seconds": 12.7, "steps": []}
+{"site": "lemonde", "valid": true, "why": null, "provider": "jina_reader", "seconds": 7.6, "steps": ["jina_reader"]}
+{"site": "shopee", "valid": false, "why": "thin", "provider": "jina_reader", "seconds": 140.3, "steps": ["firecrawl", "zyte", "zenrows", "scrapfly"]}
+{"site": "edmunds", "valid": true, "why": null, "provider": "zyte", "seconds": 53.1, "steps": ["jina_reader", "firecrawl", "zyte"]}
+{"site": "careerbuilder", "valid": true, "why": null, "provider": "jina_reader", "seconds": 75.2, "steps": ["jina_reader", "scrapling", "camoufox", "firecrawl", "zyte"]}
+{"site": "idealista", "valid": false, "why": "CAPTCHA", "provider": "jina_reader", "seconds": 146.9, "steps": []}
+{"site": "economist", "valid": false, "why": "BLOCKED", "provider": "jina_reader", "seconds": 132.0, "steps": []}
+{"valid": 49, "cases": 56, "rate": 0.875}

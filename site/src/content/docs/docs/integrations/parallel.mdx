@@ -1,0 +1,49 @@
+---
+title: "Parallel"
+description: "Parallel's web search API."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+
+[Parallel](https://parallel.ai/) offers a search API tuned for accurate answers.
+
+- Cost is $0.005 per query by default; set yours with `FRANKENSURF_PARALLEL_COST_PER_QUERY`.
+- Joins after the free sources when paid tools are allowed.
+- Skipped until the key is set.
+
+## Set up
+
+Set `FRANKENSURF_PARALLEL_API_KEY`.
+
+## Use it
+
+Ask for this source by name. Named sources never fall back to another.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+from frankensurf import WebPolicy
+
+results = await web.search("playwright python tutorial", source="parallel", policy=WebPolicy(allow_paid_fallbacks=True))
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "search", "arguments": { "query": "playwright python tutorial", "source": "parallel", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Source ID | `parallel` |
+| Cost | Paid |
+| Tested | Mocks only |
+| Docs | [docs.parallel.ai](https://docs.parallel.ai/) |

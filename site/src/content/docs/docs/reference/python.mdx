@@ -1,0 +1,77 @@
+---
+title: Python
+description: The Runtime class, its methods and what they return.
+---
+
+```python
+from frankensurf import Runtime, WebPolicy
+```
+
+## Runtime
+
+Open it with `async with`. It owns the state directory: cache, evidence,
+traces, route memory and pacing.
+
+```python
+Runtime(
+    state_dir="state",          # cache, evidence, traces, route memory
+    steel_api_url=None,         # a self-hosted Steel, or FRANKENSURF_STEEL_URL
+    local_cdp_url=None,         # used only through a registered identity
+    concurrency=4,              # pages at once in a batch
+    per_domain=1,               # pages at once per site in a batch
+    domain_delay=0.25,          # seconds between batch requests to one site
+    identity_registry=None,     # or FRANKENSURF_IDENTITIES
+    plugin_config_path=None,    # or ~/.config/frankensurf/plugins.json
+)
+```
+
+## Methods
+
+Every read-like method takes `policy` (a whole `WebPolicy`) or, preferably,
+`policy_overrides` (a dict of only the fields you mean). See
+[WebPolicy](/docs/reference/settings/).
+
+| Method | Returns | What it does |
+| --- | --- | --- |
+| `await read(url, policy=None, provider=None, adapter=None, *, policy_overrides=None)` | result | Read a page. |
+| `await extract(url, adapter="html", policy=None, provider=None, *, policy_overrides=None)` | result | Read through an explicit adapter: `html`, `json` or `rss`. |
+| `await batch(urls, policy=None, adapter=None)` | list of results | Several pages, in order. Identity batches run one at a time. |
+| `await search(query, source=None, limit=10, engine_config=None, policy=None)` | search result | Search with fallback; a named `source` never falls back. |
+| `await watch(url, *, link_pattern=None, policy_overrides=None, state_key=None, max_seen=5000)` | `{"new": [...], "first_poll": bool, "receipt": ...}` | One poll for links not seen before. |
+| `await paginate(url, adapter, policy=None, *, continuation_adapter=None, policy_overrides=None)` | pages and aggregate receipt | Follow a bounded run of pages. |
+| `await download_images(urls, policy=None)` | list of images | Download and check images. |
+| `await do(intent, policy=None, provider=None)` | action result | A typed browser action. See [Browser actions](/docs/act/). |
+| `trace(trace_id)` | dict | The full record of one request. |
+| `capabilities(domain=None)` | list | Success and speed per site and provider, from traces. |
+| `identity_status(identity_id=None)` | dict | Health of your identities, without secrets or paths. |
+| `import_evidence(content, url, observed_at, …)` | result | Store something you captured yourself, with its real time. |
+| `inspect_plugins()` | dict | The frozen plugin catalogue. |
+| `await repair(trace_id, policy=None)` | dict | Diagnose one retained public extract failure. |
+
+## Results
+
+```python
+{
+  "url": "https://example.com/",
+  "title": "Example Domain",
+  "text": "…",
+  "content": "…",                 # raw body
+  "content_type": "text/html",
+  "headers": {…},                 # never cookies
+  "structured": {"jsonld": [], "embedded_json": []},
+  "image_urls": […],
+  "images": […],                  # with include_images=True
+  "field_status": {"availability": "unknown", "transaction_price": "unknown", "content": "observed"},
+  "receipt": {…},
+}
+```
+
+See [Reading pages](/docs/read/) for every field and
+[Receipts](/docs/reference/receipts/) for the receipt.
+
+## Failures
+
+A failed operation returns a result whose `receipt.status` is `"failed"` and
+whose `receipt.failure` holds `{"code", "message"}`. Invalid arguments and
+invalid policies raise `ValueError` straight away. See
+[Error codes](/docs/reference/errors/).

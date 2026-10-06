@@ -1,0 +1,51 @@
+---
+title: "Cloudflare Browser Run"
+description: "Cloudflare's hosted browser renders a page at the edge and returns its HTML."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Cloudflare Browser Run](https://developers.cloudflare.com/browser-rendering/) (Browser Rendering) renders a page on Cloudflare's network. Frankensurf calls its `/content` endpoint for the rendered HTML.
+
+- No browser to run yourself.
+- Needs an API token and your account ID.
+- Billed by your Cloudflare plan; cost isn't reported per request.
+
+## Set up
+
+Set `FRANKENSURF_CLOUDFLARE_API_TOKEN` and `FRANKENSURF_CLOUDFLARE_ACCOUNT_ID`.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="cloudflare_browser_run",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "cloudflare_browser_run", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `cloudflare_browser_run` |
+| Rung | T2 |
+| Cost | Paid |
+| Tested | Mocks only |
+| Docs | [developers.cloudflare.com/browser-rendering](https://developers.cloudflare.com/browser-rendering/) |

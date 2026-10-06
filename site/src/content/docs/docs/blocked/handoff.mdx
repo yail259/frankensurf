@@ -1,0 +1,73 @@
+---
+title: Human handoff
+description: When no tool can clear a wall, open the page for a person and resume the read in the same tab.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+Some walls need a person: a CAPTCHA no tool clears, a 2FA code, a consent page,
+a sign-in. Handoff is the last rung (T5). Frankensurf opens the page in a
+visible browser, tells you, and waits. Once the page shows real content, the
+read resumes in that same tab.
+
+- Frankensurf only watches the tab. It never clicks or types.
+- What you clear is kept in a persistent profile, so the next visit is usually
+  automatic.
+- Runs only when a call asks for it.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+# After every automatic tool has failed
+page = await web.read(url, policy_overrides={"allow_handoff": True})
+
+# Straight to a person
+page = await web.read(url, provider="handoff")
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/account --handoff
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/account", "allow_handoff": true } }
+```
+
+</TabItem>
+</Tabs>
+
+You get a message on stderr and, where `notify-send` exists, a desktop
+notification.
+
+## Offering it from an agent
+
+A read that stops at a wall a person could clear carries a suggestion:
+
+```json title="receipt.next_step"
+{ "provider": "handoff", "reason": "CAPTCHA" }
+```
+
+Your agent can show that to its user and retry with `allow_handoff: true`.
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `allow_handoff` | `false` | Try handoff after every automatic tool fails. |
+| `handoff_timeout_seconds` | `300` | How long to wait for a person. |
+| `FRANKENSURF_HANDOFF_PROFILE` | `~/.local/share/frankensurf/handoff-profile` | Browser profile to use. |
+| `FRANKENSURF_HANDOFF_CDP_URL` | none | Open the page as a tab in a browser you already run. |
+
+<Aside type="note">
+  Handoff needs a display, or `FRANKENSURF_HANDOFF_CDP_URL`. Without either it
+  reports itself unavailable and is skipped.
+</Aside>

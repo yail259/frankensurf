@@ -1,0 +1,2 @@
+# Optional isolated agent environment; never install into Core/provider-venv.
+browser-use==0.13.10

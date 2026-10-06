@@ -1,0 +1,51 @@
+---
+title: "Firecrawl"
+description: "Firecrawl's scrape API as a paid rung for hard pages."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Firecrawl](https://www.firecrawl.dev/) scrapes a page on its own infrastructure and returns clean content.
+
+- Cost comes from the credits each call uses.
+- Refuses a call that could pass your `max_cost_usd` (one credit; a PDF costs one credit per page).
+- Gets the longer unblocker timeout (90 s).
+
+## Set up
+
+Set `FRANKENSURF_FIRECRAWL_API_KEY`. Default rate $0.0038/credit; set yours with `FRANKENSURF_FIRECRAWL_USD_PER_CREDIT`.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="firecrawl",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "firecrawl", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `firecrawl` |
+| Rung | T4 |
+| Cost | Paid |
+| Tested | Live |
+| Docs | [docs.firecrawl.dev](https://docs.firecrawl.dev/) |

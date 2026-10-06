@@ -1,0 +1,85 @@
+---
+title: Receipts
+description: How every result shows how it was fetched, when, at what cost, and what is still unknown.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Every result carries a receipt. It says how the page was fetched, when, what it
+cost and what Frankensurf could not confirm. Raw content stays on your machine,
+linked to the receipt by hash.
+
+## A receipt
+
+```json
+{
+  "trace_id": "6f1c…",
+  "status": "observed",
+  "operation": "read",
+  "method": "local",
+  "observed_at": "2026-10-06T03:14:07Z",
+  "freshness_seconds": 0,
+  "cache_hit": false,
+  "requested_url": "https://example.com",
+  "final_url": "https://example.com/",
+  "http_status": 200,
+  "latency_ms": 2267,
+  "cost_usd": 0,
+  "evidence": [{"path": "state/evidence/2a8c….html", "sha256": "2a8c…", "bytes": 23}],
+  "attempts": [
+    {"provider": "http", "status": "failed", "failure": "VISUAL_REQUIRED", "latency_ms": 90},
+    {"provider": "local", "status": "observed", "latency_ms": 2176}
+  ],
+  "routing": {"provider_plan": {
+    "ordered": ["http", "local", "camoufox", "scrapling", "scrapling_http", "browser_use", "crawl4ai", "jina_reader"],
+    "basis": "registration order; insufficient exact-scope evidence"
+  }}
+}
+```
+
+Trimmed from a real read. `routing.provider_plan.ordered` is the route this
+read planned, after skipping anything unavailable.
+
+- **`attempts`** lists every provider tried, in order, with its outcome, time
+  and cost.
+- **`evidence`** points to saved copies, named by their SHA256 hash, under the
+  state directory.
+- **`requested_url`** and **`final_url`** stay separate, so redirects show.
+- **`cost_usd`** is the sum of measured provider costs. If any attempt's cost
+  is unknown, the total is `null`, never a guess.
+- **`next_step`** appears when a read stopped at a wall a person could clear;
+  it names `handoff`.
+- Cookies, keys and credential URL parameters never appear.
+
+## Freshness
+
+| `freshness` | What happens |
+| --- | --- |
+| `now` (default) | Always fetches. |
+| `hour`, `day`, `cached` | May reuse a saved copy. The receipt keeps the original time and reports its age. |
+
+An old copy is never passed off as new.
+
+## Unknown stays unknown
+
+A page loading doesn't prove what's on it is current, and a 404 doesn't prove
+why it's gone. `field_status` keeps availability and price `unknown`; the caller
+decides what the page means.
+
+## Images
+
+With `include_images=True`, images are downloaded and checked, not just linked.
+Each one has a hash, its real format and size, and its own error if it failed.
+`max_images` (default 50) caps the count; it does not mean the gallery is
+complete.
+
+## Traces
+
+Every read saves a trace. `frankensurf trace <trace_id>` or
+`Runtime.trace(trace_id)` shows one. `Runtime.capabilities()` adds traces up into
+success and speed per site and provider, with sample counts.
+
+<Aside type="note">
+  Evidence lives under the state directory (`--state`, default `state`; the MCP
+  server uses `FRANKENSURF_STATE`). It is never sent anywhere.
+</Aside>

@@ -1,0 +1,35 @@
+---
+title: Environment and files
+description: Every environment variable and file Frankensurf reads.
+---
+
+## Environment variables
+
+| Variable | What it sets |
+| --- | --- |
+| `FRANKENSURF_STATE` | State directory for the MCP server. |
+| `FRANKENSURF_STEEL_URL` | A self-hosted Steel for the `steel` provider. |
+| `FRANKENSURF_SEARCH_URL` | Your SearXNG. |
+| `FRANKENSURF_IDENTITIES` | Identity registry (default `~/.frankensurf/identities.json`). |
+| `FRANKENSURF_PROVIDER_PYTHON` | Python for the isolated stealth browsers. |
+| `FRANKENSURF_CRAWL4AI_DIR`, `FRANKENSURF_CRAWL4AI_PYTHON`, `FRANKENSURF_CRAWL4AI_BROWSERS_PATH`, `FRANKENSURF_CRAWL4AI_HEALTH` | The isolated Crawl4AI install. |
+| `FRANKENSURF_BROWSER_USE_PYTHON`, `FRANKENSURF_BROWSER_USE_BROWSER`, `FRANKENSURF_BROWSER_USE_MODEL_FACTORY`, `FRANKENSURF_BROWSER_USE_BILLING`, `FRANKENSURF_BROWSER_USE_BINDING_REVISION` | The Browser Use agent. |
+| `FRANKENSURF_SIGNATURE_AGENT`, `FRANKENSURF_BOT_AUTH_KEY_FILE` | [Signed requests](/docs/blocked/signed-requests/). |
+| `FRANKENSURF_HANDOFF_PROFILE`, `FRANKENSURF_HANDOFF_CDP_URL` | [Handoff](/docs/blocked/handoff/). |
+| `FRANKENSURF_<SERVICE>_API_KEY` and rate settings | Paid services. See [Keys and costs](/docs/blocked/paid-tools/). |
+
+## Files
+
+| Path | What it holds |
+| --- | --- |
+| `./state/` (or `--state`) | Cache, evidence, traces, route memory, `origin-pacing.json`, `watches/`. |
+| `~/.config/frankensurf/.env` | Keys and settings as `FRANKENSURF_…=…` lines. |
+| `~/.config/frankensurf/services.json` | Keys under `api_keys`. |
+| `~/.config/frankensurf/web-bot-auth.jwk` | Your Web Bot Auth private key. |
+| `~/.config/frankensurf/browser-agent.json` | Browser Use model configuration. |
+| `~/.config/frankensurf/plugins.json` | Which installed third-party plugins to trust. |
+| `~/.frankensurf/identities.json` | Registered executors and identities. |
+| `~/.local/share/frankensurf/handoff-profile/` | The handoff browser profile. |
+| `~/.local/share/frankensurf/crawl4ai-venv/` | The Crawl4AI environment. |
+
+Keep everything under `~/.config/frankensurf` readable only by you.

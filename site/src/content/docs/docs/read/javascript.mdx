@@ -1,0 +1,67 @@
+---
+title: JavaScript pages
+description: Render single-page apps in a real browser, and wait for the content you need.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+You rarely need to ask for a browser. When plain HTTP returns an app shell, an
+unrendered template or almost no text, Frankensurf reports `VISUAL_REQUIRED`
+and moves on to a browser by itself.
+
+- Force a browser with `render=True` when you already know the page needs one.
+- Wait for a specific element before capture.
+- Browsers: local [Chromium](/docs/integrations/local-chromium/),
+  [Steel](/docs/integrations/steel/), [Crawl4AI](/docs/integrations/crawl4ai/),
+  stealth browsers and hosted ones.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read("https://app.example.com/dashboard", policy_overrides={
+    "render": True,
+    "wait_selector": "[data-testid=results]",
+    "settle_ms": 800,
+})
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://app.example.com/dashboard --render --wait-selector '[data-testid=results]'
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://app.example.com/dashboard", "render": true,
+  "acquisition_policy": { "wait_selector": "[data-testid=results]", "settle_ms": 800 } } }
+```
+
+</TabItem>
+</Tabs>
+
+Here is what automatic escalation looks like on a page plain HTTP can't use:
+
+```json title="receipt.attempts"
+[
+  { "provider": "http", "status": "failed", "failure": "VISUAL_REQUIRED", "latency_ms": 88 },
+  { "provider": "local", "status": "observed", "latency_ms": 1310 }
+]
+```
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `render` | `false` | Use a browser from the start. |
+| `wait_selector` | none | Wait for this CSS selector. |
+| `wait_state` | `"attached"` | `attached` or `visible`. |
+| `content_ready_selector` | none | Wait for this selector, but capture anyway when it times out. |
+| `settle_ms` | `400` | Extra wait after the page is ready. |
+| `allow_local_browser` | `true` | Set `false` to use only remote browsers. |

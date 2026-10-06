@@ -1,0 +1,344 @@
+---
+import "../styles/global.css";
+import StitchedWave from "../assets/stitched-wave.svg";
+import stitchedWaveMint from "../assets/stitched-wave-mint.svg?url";
+import { sources, marquee, walls, toolRows, usRow, cellClass, chipLogos, layers, stats, failures, versus, usVersus, ledger, rungs } from "../data/site";
+
+const repo = "https://github.com/yail259/frankensurf";
+const half = Math.ceil(marquee.length / 2);
+const rowA = marquee.slice(0, half), rowB = marquee.slice(half);
+const maxFail = Math.max(...failures.map((f) => Math.max(f.today, f.target)));
+const gap = (f: { today: number; target: number }) => {
+  const d = f.today - f.target;
+  return Math.abs(d) < 0.05 ? "even" : d > 0 ? `−${d.toFixed(1)} pts` : `+${(-d).toFixed(1)} pts`;
+};
+const pct = ([v, n]: [number, number]) => (v / n * 100).toFixed(1);
+const kindLabel = { oss: "Open source", managed: "Managed", standard: "Open standard" };
+// Unblockers patch: a short wall across the read's path, with the middle course knocked out.
+const bricks = [2, 19, 45, 62].flatMap((y, row) =>
+  row % 2 ? [{ x: 100, y, w: 18 }, { x: 122, y, w: 18 }] : [{ x: 100, y, w: 8 }, { x: 112, y, w: 18 }, { x: 134, y, w: 6 }]);
+---
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Frankensurf</title>
+  <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon-stitched-wave.svg" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+  <meta name="description" content="One call that gets your agent through any site, on any model. Stitched from the best browsing tools on the web." />
+  <script is:inline>
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches || new URLSearchParams(location.search).get("motion") === "reduced") document.documentElement.dataset.motion = "reduced";
+  </script>
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="nav" id="nav">
+  <div class="nav-shell">
+    <a class="brand" href="#top" aria-label="Frankensurf home">
+      <StitchedWave class="brand-mark" aria-hidden="true" />
+      <span class="brand-word">FRANKEN<span>SURF</span></span>
+    </a>
+    <div class="volt" aria-label="Lab voltage">
+      <canvas id="ekg" width="120" height="28" aria-hidden="true"></canvas>
+      <span class="volt-read"><b id="kv">0.0</b> kV</span>
+    </div>
+    <nav class="nav-actions">
+      <a class="docs-link" href="/docs/" data-astro-prefetch>Docs</a>
+      <a class="gh" href={repo} aria-label="FrankenSurf on GitHub">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z" /></svg>
+        <span>GitHub</span>
+      </a>
+    </nav>
+  </div>
+</header>
+<p class="sr-only" id="strike-status" role="status"></p>
+
+<main id="main">
+  <section class="hero" id="top">
+    <canvas id="surf" aria-label="ASCII art: Frankenstein's monster surfing a barreling wave"></canvas>
+    <div class="hero-copy">
+      <h1>Every site.<br />Every agent.<br /><em class="horror">One call.</em></h1>
+      <p class="sub">The right browsing tool for every page. Your agent finishes the task.</p>
+      <div class="actions">
+        <a class="btn primary" href={repo}>Star on GitHub <span aria-hidden="true">→</span></a>
+        <a class="btn" href="#router">See it route</a>
+      </div>
+    </div>
+    <p class="hint" aria-hidden="true"><kbd>click</kbd> strike lightning · <kbd>move</kbd> over the water</p>
+  </section>
+
+  <section class="container window-wrap" id="router">
+    <div class="window" data-router>
+      <div class="w-bar">
+        <div class="w-dots"><i></i><i></i><i></i></div>
+        <span class="w-title">router</span>
+        <div class="seg" data-providers role="group" aria-label="Model provider"></div>
+      </div>
+      <div class="w-body">
+        <div class="w-left">
+          <span class="label">your agent</span>
+          <pre class="code" data-code></pre>
+          <div class="native" data-native></div>
+        </div>
+        <div class="w-right">
+          <span class="label">frankensurf</span>
+          <ol class="ladder" data-ladder></ol>
+        </div>
+      </div>
+      <div class="w-foot">
+        <div class="seg" data-sites role="group" aria-label="Page type"></div>
+        <div class="summary" data-summary role="status"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="marquee-sec" aria-label="Tools Frankensurf is built on">
+    <div class="marquee">
+      <div class="track">{[...rowA, ...rowA].map((t, i) => <span class:list={["logo", { "logo-repeat": i >= rowA.length }]} aria-hidden={i >= rowA.length ? "true" : undefined}><img src={`/logos/${t.logo}`} alt="" width="22" height="22" loading="lazy" />{t.name}</span>)}</div>
+      <div class="track rev">{[...rowB, ...rowB].map((t, i) => <span class:list={["logo", { "logo-repeat": i >= rowB.length }]} aria-hidden={i >= rowB.length ? "true" : undefined}><img src={`/logos/${t.logo}`} alt="" width="22" height="22" loading="lazy" />{t.name}</span>)}</div>
+    </div>
+  </section>
+
+  <section class="container sec" id="problem">
+    <div class="sec-head" data-reveal>
+      <h2>Every tool breaks somewhere.</h2>
+    </div>
+    <div class="panel" data-reveal>
+      <div class="matrix" role="region" aria-label="Tool capability comparison" tabindex="0">
+        <table>
+          <thead><tr><th scope="col"><span class="sr-only">Approach</span></th>{walls.map((w) => <th scope="col">{w}</th>)}</tr></thead>
+          <tbody>
+            {toolRows.map((r) => (
+              <tr><th scope="row">{r.name}</th>{r.cells.map((c) => <td title={`${c.v} of ${c.n} pages read right`}><span class={`d ${cellClass(c)}`} role="img" aria-label={`${Math.round(c.v / c.n * 100)}%`}></span><span class="pct">{Math.round(c.v / c.n * 100)}%</span></td>)}</tr>
+            ))}
+            <tr class="us"><th scope="row">Frankensurf</th>{usRow.map((c, i) => <td title={`${c.v} of ${c.n} pages read right`}><span class={`d ${cellClass(c)}`} style={`--i:${i}`} role="img" aria-label={`${Math.round(c.v / c.n * 100)}%`}></span><span class="pct">{Math.round(c.v / c.n * 100)}%</span></td>)}</tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="legend"><span><i class="d o"></i>80%+ read right</span><span><i class="d p"></i>40–79%</span><span><i class="d x"></i>under 40%</span><span>Measured 6 Oct 2026 on 127 pages. Single tools read logged-in pages without your session.</span></div>
+    </div>
+    <div class="facts">
+      <a class="panel fact" href={sources.fcclaude.url} data-spot data-reveal><b>Native fetch skips JavaScript</b><span class="src">Firecrawl ↗</span></a>
+      <a class="panel fact" href={sources.omega.url} data-spot data-reveal><b>Cloudflare blocks agents by default</b><span class="src">O-mega ↗</span></a>
+      <a class="panel fact" href={sources.egotok.url} data-spot data-reveal><b>Snapshots burn 114k tokens a task</b><span class="src">ego.app ↗</span></a>
+    </div>
+  </section>
+
+  <section class="container sec" id="how">
+    <div class="sec-head" data-reveal>
+      <h2>Capability first. Cost aware.</h2>
+    </div>
+    <div class="how">
+      <div class="panel" data-spot data-reveal>
+        <div class="mini-rungs">
+          {rungs.map((r, i) => <div><span>{r.id}</span><i style={`--w:${Math.max(4, r.share / 40 * 100)}%;--i:${i}`}></i><span>{r.share}%</span></div>)}
+        </div>
+        <h3>40% never open a browser</h3>
+      </div>
+      <div class="panel" data-spot data-reveal>
+        <div class="cache">
+          <div>docs.acme.dev <span class="chip-r">T0</span></div>
+          <div>app.acme.dev <span class="chip-r">T2</span></div>
+          <div>shop.example.com <span class="chip-r">T3</span></div>
+          <div>retail.example.com <span class="chip-r">T4</span></div>
+        </div>
+        <h3>It remembers what worked</h3>
+      </div>
+      <div class="panel" data-spot data-reveal>
+        <div class="notif">
+          <div class="notif-top"><span class="ic">FS</span>Approval needed<small>now</small></div>
+          <p>Your agent reached a 2FA prompt on bank.example.com.</p>
+          <div class="notif-act"><span>Approve</span><span>Decline</span></div>
+        </div>
+        <h3>Walls it can't pass come to you</h3>
+      </div>
+    </div>
+  </section>
+
+  <section class="container sec" id="parts">
+    <div class="sec-head" data-reveal>
+      <h2>We <em class="horror">stitch.</em> We don't reinvent.</h2>
+    </div>
+    <div class="bento">
+      {layers.map((l) => (
+        <div class="patch" data-spot data-reveal>
+          {/* One drawing language: grey hairlines and boxes, one green element for the outcome.
+              Each reads complete when still; motion only runs along the green path. */}
+          <svg class={`viz v-${l.key}`} viewBox="0 0 240 76" aria-hidden="true">
+            {l.key === "provider" && <>
+              {[8, 28, 48, 68].map((y) => <><circle class="node" cx="6" cy={y} r="3.5" /><path class="wire" d={`M10 ${y} C 60 ${y}, 64 38, 98 38`} /></>)}
+              <rect class="hub" x="98" y="26" width="34" height="24" rx="7" />
+              <path class="acc" d="M105 41c3-6 6-6 9 0s6 6 9 0" />
+              <path class="acc flow" d="M132 38 H 152" />
+              <rect class="box" x="152" y="10" width="86" height="56" rx="8" />
+              <rect class="ln" x="162" y="24" width="44" height="5" rx="2.5" /><rect class="ln" x="162" y="35" width="62" height="5" rx="2.5" /><rect class="ln" x="162" y="46" width="34" height="5" rx="2.5" />
+              <path class="acc" d="M214 25l4 4 8-9" />
+            </>}
+            {l.key === "fetch" && <>
+              <rect class="box" x="1" y="1" width="96" height="74" rx="8" />
+              {[0, 1, 2, 3, 4].map((r) => <><rect class="ln faint" x="10" y={11 + r * 12} width={[26, 44, 18, 36, 30][r]} height="5" rx="2.5" /><rect class="ln faint" x={[40, 58, 32, 50, 44][r]} y={11 + r * 12} width={[44, 26, 52, 34, 40][r]} height="5" rx="2.5" /></>)}
+              <path class="acc flow" d="M104 38 H 124" /><path class="acc" d="M120 33l5 5-5 5" />
+              <rect class="box on" x="132" y="20" width="106" height="36" rx="8" />
+              <text class="mark" x="141" y="36">#</text>
+              <rect class="ln" x="153" y="31" width="60" height="5" rx="2.5" /><rect class="ln" x="141" y="42" width="80" height="5" rx="2.5" />
+            </>}
+            {l.key === "runtime" && [0, 1, 2, 3].map((i) => {
+              const x = 1 + i * 60, live = i === 0;
+              return <>
+                <rect class={live ? "box on" : "box"} x={x} y="8" width="54" height="60" rx="7" />
+                {[0, 1, 2].map((d) => <circle class="node faint" cx={x + 8 + d * 6} cy="17" r="2" />)}
+                <circle class={live ? "dot-on" : "dot-ready"} cx={x + 46} cy="17" r="3" />
+                <rect class={live ? "ln" : "ln faint"} x={x + 7} y="30" width="38" height="4" rx="2" />
+                <rect class={live ? "ln" : "ln faint"} x={x + 7} y="40" width="28" height="4" rx="2" />
+                <rect class={live ? "ln" : "ln faint"} x={x + 7} y="50" width="34" height="4" rx="2" />
+              </>;
+            })}
+            {l.key === "search" && <>
+              <rect class="box" x="1" y="25" width="68" height="26" rx="13" />
+              <circle class="wire" cx="17" cy="37" r="5" /><path class="wire" d="M21 41l4 4" />
+              <rect class="ln" x="31" y="35" width="28" height="5" rx="2.5" />
+              {[8, 28, 48, 68].map((y, i) => <><path class={i === 1 ? "acc flow" : "wire"} d={`M69 38 C 130 38, 140 ${y}, 222 ${y}`} /><circle class={i === 1 ? "dot-on" : "node"} cx="229" cy={y} r="4.5" /></>)}
+            </>}
+            {l.key === "control" && <>
+              <rect class="box" x="30" y="3" width="180" height="20" rx="6" /><rect class="ln" x="39" y="11" width="64" height="4" rx="2" />
+              <rect class="box" x="30" y="29" width="180" height="20" rx="6" /><rect class="ln" x="39" y="37" width="40" height="4" rx="2" />
+              <rect class="btn-fill" x="150" y="55" width="60" height="19" rx="6" />
+              <path class="cursor" d="M192 60v13l3.5-3.5 2.6 6 2.6-1-2.6-6h5.2Z" />
+            </>}
+            {l.key === "stealth" && <>
+              {/* fingerprint after Lucide's "fingerprint" icon (ISC licence), scaled */}
+              <g class="print" transform="translate(89 7) scale(2.6)">
+                <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" /><path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+                <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" /><path d="M2 12a10 10 0 0 1 18-6" /><path d="M2 16h.01" />
+                <path d="M21.8 16c.2-2 .131-5.354 0-6" /><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+                <path d="M8.65 22c.21-.66.45-1.32.57-2" /><path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+              </g>
+              <circle class="badge-bg" cx="152" cy="58" r="11" /><path class="acc" d="M147 58l3.5 3.5 6.5-7" />
+            </>}
+            {l.key === "unblock" && <>
+              {bricks.map((b) => <rect class="brick" x={b.x} y={b.y} width={b.w} height="13" rx="2" />)}
+              <circle class="node" cx="12" cy="38" r="4.5" />
+              <path class="acc flow" d="M17 38 H 223" />
+              <circle class="dot-on" cx="228" cy="38" r="4.5" />
+            </>}
+            {l.key === "identity" && <>
+              <rect class="box" x="1" y="4" width="238" height="68" rx="8" />
+              <text class="t m" x="12" y="22">GET</text><text class="t" x="44" y="22">/account/orders</text>
+              <text class="t h" x="12" y="42">Signature-Agent</text><rect class="pill ok" x="174" y="32" width="58" height="14" rx="4" /><text class="t ok" x="180" y="42">verified</text>
+              <text class="t h" x="12" y="61">Cookie</text><text class="t" x="58" y="61">session=••••••</text><rect class="pill you" x="190" y="51" width="42" height="14" rx="4" /><text class="t you" x="196" y="61">yours</text>
+            </>}
+          </svg>
+          <h3>{l.name}</h3>
+          <div class="chips">
+            {l.parts.map((p) => (
+              <details class="chip" name={`tools-${l.key}`}><summary>{chipLogos[p.name] ? <img src={`/logos/${chipLogos[p.name]}`} alt="" width="14" height="14" loading="lazy" /> : <span class="mono" aria-hidden="true">{p.name[0]}</span>}{p.name}</summary>
+                <div class="tip"><span class="kind">{kindLabel[p.kind]}</span>{p.take}<a href={sources[p.src].url}>{sources[p.src].label} ↗</a></div>
+              </details>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section class="container sec" id="targets">
+    <div class="sec-head" data-reveal>
+      <h2>Half the <em class="horror">dead ends.</em></h2>
+      <p class="sec-sub">Measured 6 October 2026 on 152 sites picked before any was read: every tool alone, then Frankensurf, one run, the same content checks. Frankensurf read 19 sites Firecrawl missed; Firecrawl read 5 it missed. The trade is time: a median 9.5 s against 5.6 s.</p>
+    </div>
+    <div class="stats" data-reveal>
+      {stats.map((s) => <div class="stat"><span class="v">{s.value}</span><span class="l">{s.label}</span><span class="n">{s.note}</span></div>)}
+    </div>
+    <div class="panel bars" data-reveal>
+      <div class="bars-key"><span class="kt">Firecrawl Only</span><span class="kg">Frankensurf</span><a class="bars-src" href={sources.bench.url}>Share of 152 sites failed · source ↗</a></div>
+      {failures.map((f) => (
+        <div class="bar-row">
+          <span class="lbl">{f.label}</span>
+          <div class="track2">
+            <div class="t"><i style={`--w:${f.today / maxFail * 100}%`}></i><span>{f.today.toFixed(1)}%</span></div>
+            <div class="g"><i style={`--w:${f.target / maxFail * 100}%`}></i><span>{f.target.toFixed(1)}%</span></div>
+          </div>
+          <span class:list={["cut", { worse: f.target > f.today + 0.05 }]}>{gap(f)}</span>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section class="container sec" id="versus">
+    <div class="sec-head" data-reveal>
+      <h2>Stronger <em class="horror">stitched.</em></h2>
+      <p class="sec-sub">Measured 6 October 2026. Frankensurf against each of its own providers used on its own, on the same 152 sites picked before any was read, in one run.</p>
+    </div>
+    <div class="panel vs" data-versus data-reveal>
+      <div class="vs-tabs" role="tablist" aria-label="Frankensurf compared with one provider on its own">
+        {versus.map((t, i) => <button type="button" role="tab" id={`vs-tab-${i}`} aria-controls={`vs-${i}`} aria-selected={i === 0 ? "true" : "false"} tabindex={i === 0 ? 0 : -1}><img src={`/logos/${t.logo}`} alt="" width="20" height="20" loading="lazy" /><span>{t.name} Only</span><i></i></button>)}
+      </div>
+      {versus.map((t, i) => (
+        <div class="vs-slide" role="tabpanel" id={`vs-${i}`} aria-labelledby={`vs-tab-${i}`} hidden={i !== 0}>
+          <div class="vs-score">
+            <div class="vs-side us"><span class="vs-v">{pct(usVersus.all)}%</span><span class="vs-n"><img class="fs" src={stitchedWaveMint} alt="" width="20" height="20" />Frankensurf</span></div>
+            <span class="vs-mid" aria-hidden="true">vs</span>
+            <div class="vs-side"><span class="vs-v">{pct(t.all)}%</span><span class="vs-n"><img src={`/logos/${t.logo}`} alt="" width="20" height="20" loading="lazy" />{t.name} Only</span></div>
+          </div>
+          <p class="vs-cap">of 152 fresh sites read right</p>
+          <dl class="vs-rows">
+            <div><dt>Of sites any tool could read</dt><dd class:list={{ lose: t.unseen > usVersus.unseen }}>{usVersus.unseen.toFixed(1)}% vs {t.unseen.toFixed(1)}%</dd></div>
+            <div><dt>Cost per 1,000 pages read</dt><dd>{usVersus.cost} vs {t.cost}</dd></div>
+          </dl>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section class="container sec" id="always">
+    <div class="sec-head" data-reveal>
+      <h2>A better tool ships. We <em class="horror">bolt</em> it on.</h2>
+    </div>
+    <div class="ledger" data-reveal>
+      {ledger.map((e) => (
+        <div class="entry">
+          <span class="when">{e.when}</span>
+          <div class="node"><i></i></div>
+          <div><h3>{e.change}</h3><p>{e.detail}</p></div>
+          <span class="delta">{e.delta}</span>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <section class="cta" id="start">
+    <div class="cta-card" data-reveal>
+      <h2><em class="horror">Ride</em> the whole web.</h2>
+      <p>Open source.</p>
+      <div class="cta-row">
+        <a class="btn primary big" href={repo}>View on GitHub <span aria-hidden="true">→</span></a>
+        <div class="cmd"><span class="p">$</span><span>git clone {repo}.git</span><button class="copy" type="button" data-copy={`git clone ${repo}.git`}>Copy</button></div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer><span class="footer-brand"><img src={stitchedWaveMint} width="28" height="18" alt="" loading="lazy" />FRANKENSURF</span><span class="horror">It's alive.</span></footer>
+
+<script>
+  import { mountSurf } from "../scripts/surf";
+  import { mountNav } from "../scripts/nav";
+  import { mountPage } from "../scripts/page";
+
+  const canvas = document.getElementById("surf") as HTMLCanvasElement;
+  const nav = mountNav();
+  mountSurf(canvas, { onStrike: (p) => nav.jolt(p) });
+  mountPage();
+
+  document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((b) => {
+    b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copy!); b.textContent = "Copied"; }
+      catch { b.textContent = "Select it"; }
+      setTimeout(() => (b.textContent = "Copy"), 1600);
+    });
+  });
+</script>
+</body>
+</html>

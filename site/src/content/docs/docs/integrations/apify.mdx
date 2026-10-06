@@ -1,0 +1,51 @@
+---
+title: "Apify"
+description: "Apify's RAG Web Browser actor: one page as HTML or markdown."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Apify](https://apify.com/)'s RAG Web Browser actor fetches a page on Apify's platform, in standby mode so each read is a single fast call.
+
+- One generic actor, no per-site scrapers: per-site knowledge stays in route seeds.
+- Returns the page for your agent to interpret, like every other provider.
+- Cost depends on your Apify plan and isn't reported per request.
+
+## Set up
+
+Set `FRANKENSURF_APIFY_API_TOKEN`.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="apify",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "apify", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `apify` |
+| Rung | T4 |
+| Cost | Paid |
+| Tested | Mocks only |
+| Docs | [apify.com/apify/rag-web-browser](https://apify.com/apify/rag-web-browser) |

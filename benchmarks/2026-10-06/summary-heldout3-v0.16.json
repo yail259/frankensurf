@@ -1,0 +1,150 @@
+{
+ "arms": {
+  "http": {
+   "valid": 70,
+   "n": 152,
+   "pct": 46.1,
+   "reachable_pct": 47.9,
+   "false": 28,
+   "p50": 1671,
+   "p90": 3389,
+   "cost": 0,
+   "unknown_cost_reads": 0
+  },
+  "jina_reader": {
+   "valid": 97,
+   "n": 152,
+   "pct": 63.8,
+   "reachable_pct": 66.4,
+   "false": 13,
+   "p50": 7430,
+   "p90": 15482,
+   "cost": 0,
+   "unknown_cost_reads": 0
+  },
+  "local": {
+   "valid": 49,
+   "n": 152,
+   "pct": 32.2,
+   "reachable_pct": 33.6,
+   "false": 15,
+   "p50": 3815,
+   "p90": 13200,
+   "cost": 0,
+   "unknown_cost_reads": 0
+  },
+  "camoufox": {
+   "valid": 74,
+   "n": 152,
+   "pct": 48.7,
+   "reachable_pct": 50.7,
+   "false": 17,
+   "p50": 11483,
+   "p90": 21119,
+   "cost": 0,
+   "unknown_cost_reads": 0
+  },
+  "scrapling": {
+   "valid": 81,
+   "n": 152,
+   "pct": 53.3,
+   "reachable_pct": 55.5,
+   "false": 11,
+   "p50": 13642,
+   "p90": 23562,
+   "cost": 0,
+   "unknown_cost_reads": 0
+  },
+  "patchright": {
+   "valid": 49,
+   "n": 152,
+   "pct": 32.2,
+   "reachable_pct": 33.6,
+   "false": 13,
+   "p50": 5232,
+   "p90": 13992,
+   "cost": 0,
+   "unknown_cost_reads": 0
+  },
+  "firecrawl": {
+   "valid": 122,
+   "n": 152,
+   "pct": 80.3,
+   "reachable_pct": 83.6,
+   "false": 13,
+   "p50": 5563,
+   "p90": 11191,
+   "cost": 0.528,
+   "unknown_cost_reads": 13
+  },
+  "zenrows": {
+   "valid": 84,
+   "n": 152,
+   "pct": 55.3,
+   "reachable_pct": 57.5,
+   "false": 20,
+   "p50": 12919,
+   "p90": 29897,
+   "cost": 2.6,
+   "unknown_cost_reads": 48
+  },
+  "scrapfly": {
+   "valid": 0,
+   "n": 152,
+   "pct": 0.0,
+   "reachable_pct": 0.0,
+   "false": 0,
+   "p50": null,
+   "p90": null,
+   "cost": 0,
+   "unknown_cost_reads": 152
+  },
+  "zyte": {
+   "valid": 112,
+   "n": 152,
+   "pct": 73.7,
+   "reachable_pct": 76.7,
+   "false": 14,
+   "p50": 19063,
+   "p90": 41048,
+   "cost": 0,
+   "unknown_cost_reads": 152
+  },
+  "stitched_free": {
+   "valid": 112,
+   "n": 152,
+   "pct": 73.7,
+   "reachable_pct": 76.7,
+   "false": 26,
+   "p50": 5408,
+   "p90": 25233,
+   "cost": 0,
+   "unknown_cost_reads": 0
+  },
+  "stitched_paid": {
+   "valid": 136,
+   "n": 152,
+   "pct": 89.5,
+   "reachable_pct": 93.2,
+   "false": 11,
+   "p50": 9483,
+   "p90": 40636,
+   "cost": 0.099,
+   "unknown_cost_reads": 10
+  },
+  "stitched_agent": {
+   "valid": 135,
+   "n": 152,
+   "pct": 88.8,
+   "reachable_pct": 92.5,
+   "false": 10,
+   "p50": 21854,
+   "p90": 65649,
+   "cost": 0.16,
+   "unknown_cost_reads": 17
+  }
+ },
+ "sites": 152,
+ "reachable": 146,
+ "union_single": 146
+}

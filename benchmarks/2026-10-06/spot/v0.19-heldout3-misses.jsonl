@@ -1,0 +1,12 @@
+{"site": "arstechnica", "valid": true, "why": null, "provider": "http", "seconds": 1.7, "steps": []}
+{"site": "ziprecruiter", "valid": true, "why": null, "provider": "firecrawl", "seconds": 11.9, "steps": ["firecrawl"]}
+{"site": "binglee", "valid": false, "why": "expect_missing", "provider": "firecrawl", "seconds": 15.4, "steps": []}
+{"site": "bom", "valid": false, "why": "expect_count:1", "provider": "http", "seconds": 16.0, "steps": []}
+{"site": "boots", "valid": false, "why": "expect_count:1", "provider": "firecrawl", "seconds": 16.8, "steps": []}
+{"site": "mercadolibre", "valid": false, "why": "expect_count:2", "provider": "jina_reader", "seconds": 5.1, "steps": []}
+{"site": "leroymerlin", "valid": false, "why": "expect_missing", "provider": "firecrawl", "seconds": 15.9, "steps": []}
+{"site": "kayak", "valid": true, "why": null, "provider": "jina_reader", "seconds": 19.8, "steps": ["jina_reader"]}
+{"site": "temu", "valid": false, "why": "thin", "provider": "jina_reader", "seconds": 41.1, "steps": ["jina_reader"]}
+{"site": "dymocks", "valid": false, "why": "thin", "provider": "nodriver", "seconds": 51.1, "steps": []}
+{"site": "very", "valid": false, "why": "BLOCKED", "provider": "jina_reader", "seconds": 164.7, "steps": []}
+{"valid": 3, "cases": 11, "rate": 0.273}

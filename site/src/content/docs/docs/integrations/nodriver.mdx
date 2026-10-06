@@ -1,0 +1,59 @@
+---
+title: "nodriver"
+description: "Chrome driven directly over CDP, without WebDriver."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[nodriver](https://github.com/ultrafunkamsterdam/nodriver) drives Chrome over the DevTools protocol directly, with no WebDriver layer to detect. It runs in the same isolated environment as Camoufox.
+
+- Free and local.
+- nodriver doesn't report the page's HTTP status, so its reads count as 200 and rely on Frankensurf's content checks.
+- Pin 0.47.0: later versions ship a file Python 3.14 refuses to import.
+
+## Set up
+
+```bash
+~/.local/share/frankensurf/provider-venv/bin/pip install "nodriver==0.47.0"
+```
+
+## Use it
+
+It joins the default route by itself once set up. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="nodriver",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider nodriver
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "nodriver" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `nodriver` |
+| Rung | T3 |
+| Cost | Free |
+| Tested | Live (smoke, 6 Oct 2026) |
+| Docs | [ultrafunkamsterdam.github.io/nodriver](https://ultrafunkamsterdam.github.io/nodriver/) |

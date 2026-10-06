@@ -1,0 +1,164 @@
+---
+title: Settings
+description: Every option a read, search or action accepts, with its default.
+---
+
+Every option is a field on `WebPolicy`, with a default. Nothing is hard-coded:
+if a read stops, waits or skips something, an option here decides it.
+
+- **Python**: pass `policy_overrides={...}` with only the options you mean.
+- **CLI**: common options have flags; see [Command line](/docs/reference/cli/).
+- **MCP**: pass them in `acquisition_policy`.
+
+```python
+await web.read(url, policy_overrides={"allow_paid_fallbacks": True, "max_cost_usd": 0.05})
+```
+
+Passing a whole `WebPolicy` instead fixes every option, which overrides a
+site's route seed and returns `EXPLICIT_POLICY_CONFLICT` where they disagree.
+
+These tables are generated from the code with `scripts/web_policy_doc.py`.
+
+## Fetching
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `freshness` | `"now"` | `now` always fetches; `hour`, `day` and `cached` may reuse a saved copy. |
+| `render` | `False` | Require a browser; skips providers that cannot render. |
+| `prefer_markdown` | `False` | Ask servers for `text/markdown` first (T0). |
+| `sign_requests` | `True` | Sign plain HTTP reads with Web Bot Auth when a key exists (T3). |
+| `timeout_seconds` | `25` | Time allowed for each provider attempt. |
+| `unblocker_timeout_seconds` | `90.0` | Time allowed for an unblocker attempt. |
+| `agent_provider_timeout_seconds` | `300.0` | Time allowed for an agent provider such as Skyvern. |
+| `max_bytes` | 40 MB | Largest response accepted. |
+| `pdf_max_pages` | `50` | Most PDF pages to extract text from. |
+| `capture_json_responses` | `False` | On rendered reads, return the JSON the page fetched for itself as `captured_json`. |
+| `capture_json_max_items` | `20` | Most captured JSON responses kept. |
+| `capture_json_max_bytes` | 2 MB | Largest captured JSON response kept. |
+| `include_images` | `False` | Download and check the page's images. |
+| `max_images` | `50` | Most images to download. |
+| `max_image_bytes` | 20 MB | Largest image accepted. |
+| `image_max_attempts` | `2` | Attempts per image. |
+| `image_retry_delay_seconds` | `0.25` | Delay between image attempts. |
+| `image_retry_failures` | `PROVIDER_DOWN`, `TIMEOUT` | Image failures worth another attempt. |
+| `retain_public_failure_evidence` | `True` | Keep evidence of failed public reads. |
+
+## Routing and cost
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `provider` | `None` | Force one provider. Never falls back. |
+| `provider_candidates` | `None` | An exact ordered list of providers. |
+| `allow_local_browser` | `True` | Allow providers that run a browser on your machine. |
+| `allow_paid_fallbacks` | `False` | Allow paid providers to join the route. |
+| `max_cost_usd` | `None` | Cap on measured provider cost for the whole operation. |
+| `allow_handoff` | `False` | Try `handoff` after every automatic provider fails. |
+| `handoff_timeout_seconds` | `300.0` | How long a handoff waits for a person. |
+| `terminal_failures` | `AUTH_REQUIRED`, `AUTH_EXPIRED`, `NOT_FOUND` | Failures that stop the climb. |
+| `context_stop_failures` | `AUTH_REQUIRED`, `AUTH_EXPIRED` | Failures that stop later reads of the same domain in this Runtime. |
+| `escalate_after_walls` | `4` | Walls in one read before paid providers move ahead; 0 turns it off. |
+| `escalation_failures` | `BLOCKED`, `CAPTCHA` | Failures that count as walls. |
+| `use_route_memory` | `True` | Let route memory reorder providers. |
+| `route_memory_ttl_seconds` | `3600` | How far back route memory looks. |
+| `route_memory_min_samples` | `3` | Clean reads in a row before a provider is promoted. |
+| `origin_route_hint_ttl_seconds` | `86400.0` | How long a site hint lasts. |
+| `provider_max_attempts_per_candidate` | `2` | Attempts per provider. Paid and capped reads are never retried. |
+| `provider_retry_delay_seconds` | `1.0` | Delay between attempts. |
+| `provider_retry_failures` | `PROVIDER_DOWN` | Failures worth another attempt. |
+| `provider_deadline_grace_seconds` | `10` | Extra time an isolated worker gets past `timeout_seconds`. |
+| `provider_cleanup_grace_seconds` | `5` | Time allowed to close a provider's process tree. |
+| `provider_composition_max_depth` | `8` | Deepest nesting when one provider calls another. |
+| `provider_composition_max_attempts` | `64` | Most nested provider attempts in one operation. |
+| `compound_source_candidates` | `http`, `camoufox`, `scrapling` | Validated provider list reserved for compound routes; not used by the default route. |
+
+## Pacing
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `origin_min_interval_seconds` | `2.0` | Minimum gap between reads of one origin. |
+| `origin_cooldown_seconds` | `900.0` | Pause after a wall. |
+| `origin_cooldown_failures` | `BLOCKED`, `CAPTCHA`, `RATE_LIMITED` | Failures that start a cool-down. |
+
+## Rendering and content checks
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `wait_selector` | `None` | Wait for this CSS selector before capture. |
+| `wait_state` | `"attached"` | `attached` or `visible`, for `wait_selector`. |
+| `content_ready_selector` | `None` | Preferred ready selector; on timeout the current page is captured. |
+| `content_ready_timeout_seconds` | `10` | How long to wait for `content_ready_selector`. |
+| `settle_ms` | `400` | Extra wait after the page is ready. |
+| `public_browser_headless` | `True` | Run public browsers headless. |
+| `html_shell_min_text_chars` | `200` | A plain-HTTP page with scripts and less text than this is treated as an app shell. |
+| `html_shell_large_bytes` | `250000` | A page at least this large ... |
+| `html_shell_large_min_text_chars` | `1000` | ... with less text than this is also an app shell. |
+| `rendered_min_text_chars` | `50` | A rendered page with less text than this is `EMPTY_PAGE`. |
+| `second_opinion_text_chars` | `5000` | Below this much text, a plain HTTP page with scripts is also rendered and the fuller page kept; 0 turns it off. |
+| `navigation_page` | `1` | Page 1 to 3 through a site's own Next navigation (seeded routes only). |
+| `public_entry_url` | `None` | Entry page a `camoufox_entry` route visits first. |
+| `public_entry_continue_failures` | `BLOCKED` | Entry-page failures that still continue to the target. |
+| `scrapling_navigation_wait_until` | `None` | Navigation wait condition for Scrapling and entry-page routes. |
+| `scrapling_solve_cloudflare` | `False` | Let Scrapling attempt Cloudflare's interstitial. |
+| `scrapling_load_dom` | `True` | Wait for Scrapling's DOM load. |
+| `scrapling_google_search` | `False` | Scrapling's Google referrer option. |
+
+## Search and paging
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `search_source_candidates` | `None` | An exact ordered list of search sources. |
+| `search_source_allow` | `None` | Only these sources may run. |
+| `search_source_prefer` | `()` | Move these sources to the front. |
+| `search_max_attempts` | `None` | Most sources to try. |
+| `search_source_timeout_seconds` | `8` | Time per source; `None` uses the operation timeout. |
+| `search_terminal_failures` | `POLICY_DENIED`, `BUDGET_EXHAUSTED` | Failures that stop search fallback. |
+| `max_pages` | `2` | Most pages `paginate` follows. |
+
+## Browser agent
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `browser_agent_max_steps` | `40` | Most agent steps. |
+| `browser_agent_max_model_calls` | `40` | Most model calls. |
+| `browser_agent_max_actions` | `80` | Most actions overall. |
+| `browser_agent_max_actions_per_step` | `3` | Most actions per step. |
+| `browser_agent_max_failures` | `3` | Failures before the agent stops. |
+| `browser_agent_allowed_actions` | `navigate_public`, `inspect_page`, `follow_link`, `click_element`, `search_site`, `wait_readiness`, `scroll_page`, `done` | Actions the agent may take. |
+| `browser_agent_allowed_origins` | `None` | Origins the agent may visit; defaults to the target's. |
+| `browser_agent_entry_url` | `None` | Where the agent starts, if not the target URL. |
+| `browser_agent_task` | `None` | A task for the Browser Use agent. |
+| `browser_agent_llm_timeout_seconds` | `20` | Time per model call. |
+| `browser_agent_step_timeout_seconds` | `30` | Time per step. |
+| `browser_agent_action_timeout_seconds` | `10` | Time per action. |
+| `browser_agent_readiness_poll_ms` | `100` | Readiness polling interval. |
+| `browser_agent_packet_max_bytes` | 48 MB | Largest agent result packet. |
+| `browser_agent_use_vision` | `False` | Send screenshots to the model. |
+
+## Identity and actions
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `identity` | `None` | Read as a registered identity. |
+| `action_classes` | `READ_PUBLIC`, `READ_AUTHENTICATED` | Action classes this operation grants. |
+| `browser_do_allowed_tools` | `fill`, `click`, `wait_for`, `assert_text`, `assert_value` | Browser tools `do` may use. |
+| `browser_do_allowed_contracts` | `local_fixture.reversible_draft.v1` | Action contracts `do` may run. |
+| `browser_do_allowed_origins` | `None` | Exact origins `do` may act on. |
+| `browser_do_max_actions` | `20` | Most actions in one intent. |
+| `browser_do_action_timeout_seconds` | `10` | Time per action. |
+| `browser_do_settle_ms` | `200` | Wait after each action. |
+| `browser_do_packet_max_bytes` | 48 MB | Largest action intent. |
+| `browser_do_journal_max_bytes` | 16 MB | Largest action journal. |
+| `browser_do_selector_max_bytes` | `4096` | Longest selector. |
+| `browser_do_value_max_bytes` | 1 MB | Largest field value. |
+| `browser_do_description_max_bytes` | `8192` | Longest action description. |
+| `browser_do_idempotency_key_max_bytes` | `256` | Longest idempotency key. |
+| `browser_do_require_auth_check` | `True` | Require the identity's signed-in check before acting. |
+
+## Repair
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `workload_assertion_max_count` | `32` | Most assertions on one extract (for repair). |
+| `workload_assertion_max_bytes` | `65536` | Largest assertion set. |
+| `repair_overlay_registry_max_bytes` | 4 MB | Largest repair overlay registry. |
+

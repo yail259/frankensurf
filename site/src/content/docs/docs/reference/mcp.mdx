@@ -1,0 +1,37 @@
+---
+title: MCP tools
+description: The tools frankensurf-mcp gives your agent, and their arguments.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+`frankensurf-mcp` speaks MCP over stdio. To connect it, see
+[Add to your agent](/docs/agents/).
+
+| Tool | Arguments | Returns |
+| --- | --- | --- |
+| `read` | `url`, `provider`, `render`, `include_images`, `freshness`, `identity`, `allow_handoff`, `profile`, `try_harder_than`, `acquisition_policy` | The page and its receipt. Asks for markdown by default. `try_harder_than` takes an earlier read's `trace_id` and skips every tool it used. |
+| `trace` | `trace_id` | The full record of an earlier read: tools tried, failures, timings, completeness steps. No page content. |
+| `extract` | `url`, `adapter`, `include_images`, `identity`, `provider`, `freshness`, `acquisition_policy` | The page through an adapter: `html` (default), `json` or `rss`. |
+| `batch` | `urls`, `provider`, `adapter`, `identity`, `include_images`, `freshness` | One result per URL. |
+| `search` | `query`, `source`, `limit`, `identity`, `provider`, `acquisition_policy` | Attributed results. |
+| `paginate` | `url`, `adapter`, `continuation_adapter`, `acquisition_policy` | Every page with an aggregate receipt. |
+| `images` | `urls`, `identity`, `max_images`, `provider` | Checked images. |
+| `identity_status` | `identity` | Health of your identities. |
+| `import_evidence` | `content`, `url`, `observed_at`, `content_type`, `image_urls` | A stored capture. |
+| `import_image_evidence` | `path`, `url`, `observed_at` | A stored image capture. |
+| `do` | `intent`, `identity`, `action_classes`, … | A typed browser action. See [Act](/docs/act/). |
+| `repair` | `trace_id`, `repair_policy` | A diagnosis of a failed extract. |
+
+`acquisition_policy` takes any [setting](/docs/reference/settings/), for example
+`{"allow_paid_fallbacks": true, "max_cost_usd": 0.05}`. JSON `null`, `false` and
+`0` count as set.
+
+MCP results leave out the raw page body. Pass
+`acquisition_policy: {"prefer_markdown": false}` to `read` when you need the
+HTML structure instead of markdown.
+
+<Aside type="note">
+  Identities and keys are set up from the command line, never through MCP.
+  `watch` is available from Python and the CLI.
+</Aside>

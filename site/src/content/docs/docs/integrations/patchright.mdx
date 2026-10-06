@@ -1,0 +1,61 @@
+---
+title: "Patchright"
+description: "Playwright patched to avoid the usual automation tells."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python) is a drop-in Playwright that removes the signals sites use to spot automation. It runs in the same isolated environment as Camoufox.
+
+- Free and local.
+- Runs in its own worker process.
+- Pacing and cool-downs still apply.
+
+## Set up
+
+Install it into the stealth environment:
+
+```bash
+~/.local/share/frankensurf/provider-venv/bin/pip install patchright
+```
+
+## Use it
+
+It joins the default route by itself once set up. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="patchright",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider patchright
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "patchright" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `patchright` |
+| Rung | T3 |
+| Cost | Free |
+| Tested | Live (smoke, 6 Oct 2026) |
+| Docs | [github.com/Kaliiiiiiiiii-Vinyzu/patchright-python](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python) |

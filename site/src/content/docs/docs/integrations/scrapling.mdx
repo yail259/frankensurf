@@ -1,0 +1,59 @@
+---
+title: "Scrapling"
+description: "Scrapling's stealth browser and its browser-like HTTP fetcher."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Scrapling](https://github.com/D4Vinci/Scrapling) provides three providers, all running in an isolated worker process.
+
+- `scrapling`: the stealth browser fetcher (T3).
+- `scrapling_http`: an HTTP fetcher with a browser-like TLS fingerprint (T1).
+- `scrapling_ready`: the stealth browser waiting for a site's ready signal; runs only through a route seed or when named.
+
+## Set up
+
+```bash
+bash scripts/install-public-providers.sh
+```
+
+## Use it
+
+It joins the default route by itself once set up. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="scrapling",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider scrapling
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "scrapling" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `scrapling` |
+| Rung | T1–T3 |
+| Cost | Free |
+| Tested | Live |
+| Docs | [scrapling.readthedocs.io](https://scrapling.readthedocs.io/) |

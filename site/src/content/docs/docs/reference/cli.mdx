@@ -1,0 +1,73 @@
+---
+title: Command line
+description: Every frankensurf command and option.
+---
+
+```bash
+frankensurf <command> [targets] [options]
+```
+
+Output is JSON. The raw page body is left out unless you pass `--raw`. State
+goes to `--state` (default `./state`).
+
+## Commands
+
+| Command | Targets | What it does |
+| --- | --- | --- |
+| `read` | one URL | Read a page. |
+| `extract` | one URL | Read through `--adapter` (default `html`). |
+| `batch` | URLs | Read several pages. |
+| `search` | query words | Search. `--source` picks one source; `--limit` (default 10). |
+| `watch` | one URL | One poll for new links; `--link-pattern RE`. |
+| `paginate` | one URL | Follow pages; needs `--adapter`; `--max-pages`, `--continuation-adapter`. |
+| `images` | image URLs | Download and check images. |
+| `trace` | one trace ID | Show how a result was fetched. |
+| `import` | one URL | Store a capture you made: `--evidence-file`, `--observed-at`, `--content-type`. |
+| `do` | none | A typed browser action from `--intent-file`; needs `--identity`, `--grant-action`, `--action-origin`. |
+| `repair` | one trace ID | Diagnose a retained extract failure; `--repair-policy-file`. |
+| `repair-promote`, `repair-disable` | one proposal or overlay ID | Activate (`--proposal-sha256`) or disable (`--disable-reason`) a repair overlay. |
+| `executor-enroll` | executor ID | Register a Chrome: `--cdp-url`, `--user-data-dir`, `--profile-directory`, `--network-context`, `--geography`. |
+| `identity-enroll` | identity ID | Register a login: `--executor-id`, `--domain`, `--image-domain`, `--auth-url`, `--authenticated-selector`, `--login-selector`, `--allow-action`. |
+| `identity-status` | optional identity ID | Health of your identities. |
+| `identity-revoke` | identity ID | Remove an identity. |
+| `bot-auth-init` | none | Create a Web Bot Auth key. |
+| `bot-auth-directory` | none | Print the public key directory to serve. |
+
+## Read options
+
+These map to [WebPolicy](/docs/reference/settings/) fields and work on
+`read`, `extract`, `batch`, `watch` and `paginate`.
+
+| Option | Field |
+| --- | --- |
+| `--provider ID` | `provider` |
+| `--provider-candidate ID` (repeat) | `provider_candidates` |
+| `--markdown` | `prefer_markdown` |
+| `--render` | `render` |
+| `--handoff` | `allow_handoff` |
+| `--capture-json` | `capture_json_responses` |
+| `--images`, `--max-images N` | `include_images`, `max_images` |
+| `--freshness now\|hour\|day\|cached` | `freshness` |
+| `--timeout S` | `timeout_seconds` |
+| `--wait-selector CSS` | `wait_selector` |
+| `--content-ready-selector CSS`, `--content-ready-timeout S` | `content_ready_selector`, `content_ready_timeout_seconds` |
+| `--agent-task TEXT` | `browser_agent_task` |
+| `--identity ID` | `identity` |
+| `--max-pages N` | `max_pages` |
+| `--provider-max-attempts-per-candidate N`, `--provider-retry-delay S`, `--provider-retry-failure CODE` | retry fields |
+
+Search adds `--search-source-candidate`, `--search-source-allow`,
+`--search-source-prefer` (each repeatable), `--search-max-attempts`,
+`--search-source-timeout` (0 means the operation timeout) and `--search-url`.
+
+Fields without a flag, such as `allow_paid_fallbacks` and `max_cost_usd`, are
+set from Python or MCP.
+
+## Other options
+
+| Option | What it does |
+| --- | --- |
+| `--state DIR` | State directory (default `state`). |
+| `--steel-url URL` | A self-hosted Steel. |
+| `--identity-registry PATH` | Identity registry (default `FRANKENSURF_IDENTITIES` or `~/.frankensurf/identities.json`). |
+| `--raw` | Include the raw page body. |

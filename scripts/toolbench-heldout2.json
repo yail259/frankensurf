@@ -1,0 +1,28 @@
+{
+  "schema": "frankensurf.toolbench-heldout/v1",
+  "note": "Second held-out set, chosen on 2026-10-06 after the first held-out run and before any of its pages were read. Nothing was tuned on it: it validates the second-opinion change, which was designed on the tuned set only. Same rules as toolbench-heldout.json.",
+  "cases": [
+    {"site": "jaycar", "wall": "js_app", "url": "https://www.jaycar.com.au/search?text=arduino", "expect": "arduino"},
+    {"site": "rebelsport", "wall": "akamai", "url": "https://www.rebelsport.com.au/search?q=running%20shoes", "expect": "shoe"},
+    {"site": "myer", "wall": "akamai", "url": "https://www.myer.com.au/search?query=dress", "expect": "dress"},
+    {"site": "davidjones", "wall": "akamai", "url": "https://www.davidjones.com/search?q=shirt", "expect": "shirt"},
+    {"site": "chemistwarehouse", "wall": "cloudflare", "url": "https://www.chemistwarehouse.com.au/search?searchtext=vitamin", "expect": "vitamin"},
+    {"site": "woolworths", "wall": "akamai", "url": "https://www.woolworths.com.au/shop/search/products?searchTerm=milk", "expect": "milk"},
+    {"site": "coles", "wall": "imperva", "url": "https://www.coles.com.au/search/products?q=bread", "expect": "bread"},
+    {"site": "thegoodguys", "wall": "js_app", "url": "https://www.thegoodguys.com.au/search?q=fridge", "expect": "fridge"},
+    {"site": "catch", "wall": "js_app", "url": "https://www.catch.com.au/search?query=headphones", "expect": "headphone"},
+    {"site": "drive", "wall": "static", "url": "https://www.drive.com.au/news/", "expect": "drive"},
+    {"site": "wayfair", "wall": "perimeterx", "url": "https://www.wayfair.com/keyword.php?keyword=floor%20lamp", "expect": "lamp"},
+    {"site": "lowes", "wall": "akamai", "url": "https://www.lowes.com/search?searchTerm=cordless%20drill", "expect": "drill"},
+    {"site": "costco", "wall": "akamai", "url": "https://www.costco.com/CatalogSearch?keyword=television", "expect": "television|tv"},
+    {"site": "newegg", "wall": "cloudflare", "url": "https://www.newegg.com/p/pl?d=ssd", "expect": "ssd"},
+    {"site": "yelp", "wall": "datadome", "url": "https://www.yelp.com/search?find_desc=pizza&find_loc=San+Francisco", "expect": "pizza"},
+    {"site": "ticketmaster", "wall": "bot_check", "url": "https://www.ticketmaster.com/search?q=coldplay", "expect": "coldplay"},
+    {"site": "producthunt", "wall": "cloudflare", "url": "https://www.producthunt.com/search?q=notion", "expect": "notion"},
+    {"site": "hackernews", "wall": "static", "url": "https://news.ycombinator.com/", "expect": "points"},
+    {"site": "quora", "wall": "login", "url": "https://www.quora.com/search?q=python", "expect": "python"},
+    {"site": "shein", "wall": "bot_check", "url": "https://au.shein.com/pdsearch/dress/", "expect": "dress"},
+    {"site": "asos", "wall": "akamai", "url": "https://www.asos.com/au/search/?q=jeans", "expect": "jeans"},
+    {"site": "uniqlo", "wall": "js_app", "url": "https://www.uniqlo.com/au/en/search?q=jacket", "expect": "jacket"}
+  ]
+}

@@ -1,0 +1,49 @@
+---
+title: "Tavily"
+description: "Tavily's search API for AI agents."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+
+[Tavily](https://tavily.com/) is a search API built for agents.
+
+- Cost is $0.008 per query by default (one credit, pay-as-you-go); set yours with `FRANKENSURF_TAVILY_COST_PER_QUERY`.
+- Joins after the free sources when paid tools are allowed.
+- Skipped until the key is set.
+
+## Set up
+
+Set `FRANKENSURF_TAVILY_API_KEY`.
+
+## Use it
+
+Ask for this source by name. Named sources never fall back to another.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+from frankensurf import WebPolicy
+
+results = await web.search("playwright python tutorial", source="tavily", policy=WebPolicy(allow_paid_fallbacks=True))
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "search", "arguments": { "query": "playwright python tutorial", "source": "tavily", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Source ID | `tavily` |
+| Cost | Paid |
+| Tested | Mocks only |
+| Docs | [docs.tavily.com](https://docs.tavily.com/) |

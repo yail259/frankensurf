@@ -1,0 +1,51 @@
+---
+title: "fastCRW"
+description: "A Firecrawl-compatible scrape API, hosted or self-hosted."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[fastCRW](https://fastcrw.com/) exposes a Firecrawl-compatible `/v1/scrape`. Use the hosted API with a key, or point it at your own CRW server.
+
+- Self-hosted CRW needs no key: set `FRANKENSURF_FASTCRW_URL`.
+- Returns clean page content.
+- Cost isn't reported per request.
+
+## Set up
+
+Hosted: set `FRANKENSURF_FASTCRW_API_KEY`. Self-hosted: set `FRANKENSURF_FASTCRW_URL` to your CRW server.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="fastcrw",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "fastcrw", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `fastcrw` |
+| Rung | T4 |
+| Cost | Paid |
+| Tested | Live (self-hosted CRW, 6 Oct 2026) |
+| Docs | [fastcrw.com](https://fastcrw.com/) |

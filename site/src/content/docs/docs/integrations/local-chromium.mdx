@@ -1,0 +1,59 @@
+---
+title: "Chromium"
+description: "Headless Chromium on your machine, through Playwright."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+The `local` provider renders pages in a headless Chromium driven by [Playwright](https://playwright.dev/python/). It is the first browser in the default route.
+
+- Free and private: nothing leaves your machine.
+- Supports `wait_selector`, `settle_ms` and `capture_json_responses`.
+- Off when `allow_local_browser` is `false`.
+
+## Set up
+
+```bash
+.venv/bin/playwright install chromium
+```
+
+## Use it
+
+It joins the default route by itself once set up. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="local",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider local
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "local" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `local` |
+| Rung | T2 |
+| Cost | Free |
+| Tested | Live |
+| Docs | [playwright.dev/python](https://playwright.dev/python/) |

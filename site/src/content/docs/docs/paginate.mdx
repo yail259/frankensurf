@@ -1,0 +1,50 @@
+---
+title: Paginate
+description: Follow a bounded run of pages and get every page with one combined receipt.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+`paginate` follows a sequence of pages through one adapter, such as a JSON
+API's `?page=` parameter, and returns each page with an aggregate receipt.
+
+- Bounded by `max_pages`, so it never runs away.
+- Each page is an ordinary read: paced, receipted and able to climb past walls.
+- Use `continuation_adapter` when later pages need a different adapter from the
+  first.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+run = await web.paginate("https://shop.example.com/products.json?page=1", "json",
+                         policy_overrides={"max_pages": 5})
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf paginate 'https://shop.example.com/products.json?page=1' --adapter json --max-pages 5
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "paginate", "arguments": { "url": "https://shop.example.com/products.json?page=1",
+  "adapter": "json", "acquisition_policy": { "max_pages": 5 } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `adapter` | required | `html`, `json` or `rss`. |
+| `max_pages` | `2` | Most pages to follow. |
+| `continuation_adapter` | same as `adapter` | Adapter for pages after the first. |

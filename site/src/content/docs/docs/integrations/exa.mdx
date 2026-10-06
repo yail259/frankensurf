@@ -1,0 +1,49 @@
+---
+title: "Exa"
+description: "Exa's neural search API."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+
+[Exa](https://exa.ai/) is a search API built for AI agents.
+
+- Cost comes from Exa's own `costDollars`.
+- Joins after the free sources when paid tools are allowed.
+- Skipped until the key is set.
+
+## Set up
+
+Set `FRANKENSURF_EXA_API_KEY`.
+
+## Use it
+
+Ask for this source by name. Named sources never fall back to another.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+from frankensurf import WebPolicy
+
+results = await web.search("playwright python tutorial", source="exa", policy=WebPolicy(allow_paid_fallbacks=True))
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "search", "arguments": { "query": "playwright python tutorial", "source": "exa", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Source ID | `exa` |
+| Cost | Paid |
+| Tested | Live |
+| Docs | [docs.exa.ai](https://docs.exa.ai/) |

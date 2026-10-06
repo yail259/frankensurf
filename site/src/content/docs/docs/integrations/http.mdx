@@ -1,0 +1,56 @@
+---
+title: "HTTP"
+description: "Plain HTTP with markdown negotiation and request signing. Always first."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+The built-in HTTP provider is the first rung of every read. Most pages never need anything else.
+
+- Asks for `text/markdown` when `prefer_markdown` is on (T0).
+- Signs every request, redirects included, once you have a [Web Bot Auth key](/docs/blocked/signed-requests/) (T3).
+- Reports `VISUAL_REQUIRED` on app shells, so the read moves on to a browser.
+
+## Set up
+
+Built in. Nothing to install.
+
+## Use it
+
+It joins the default route by itself once set up. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="http",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider http
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "http" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `http` |
+| Rung | T0–T1 |
+| Cost | Free |
+| Tested | Live |

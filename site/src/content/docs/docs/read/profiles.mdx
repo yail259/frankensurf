@@ -1,0 +1,111 @@
+---
+title: Profiles
+description: Sign in once in a Frankensurf browser, then read signed-in pages through any tool that can carry the session.
+---
+
+import { Tabs, TabItem, Steps, Aside } from "@astrojs/starlight/components";
+
+A **profile** is a login that belongs to Frankensurf, not to one browser. You
+sign in once; after that, a read can carry the session through whichever tool
+gets the page, and signed-in reads climb the same
+[escalation ladder](/docs/blocked/escalation/) as everything else.
+
+- The session (cookies and local storage) is encrypted on disk. Your agent
+  passes a profile name, never a cookie.
+- Each profile covers a list of sites. Its cookies go only to those sites, and a
+  profile read of any other site is refused.
+- A profile pins one fingerprint (user agent, locale, timezone, window size), so
+  the site sees the same browser every time.
+- Each read saves the refreshed cookies back, so sessions stay current.
+
+## Create a profile
+
+<Steps>
+
+1. Sign in once.
+
+   ```bash
+   frankensurf profile-login shopping --site example-shop.com
+   ```
+
+   A Frankensurf browser window opens. Sign in as you normally would (2FA
+   included), then close the window. Frankensurf never types or clicks here.
+
+2. Check it.
+
+   ```bash
+   frankensurf profile-list
+   ```
+
+</Steps>
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read("https://www.example-shop.com/orders",
+                      policy_overrides={"profile": "shopping"})
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://www.example-shop.com/orders --profile shopping
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://www.example-shop.com/orders", "profile": "shopping" } }
+```
+
+</TabItem>
+</Tabs>
+
+`receipt.profile` shows the profile, its version and the tool that carried it.
+
+## Which tools carry a profile
+
+| Sharing | Tools |
+| --- | --- |
+| `local` (default) | [HTTP](/docs/integrations/http/) with the cookies, [Chromium](/docs/integrations/local-chromium/), [Patchright](/docs/integrations/patchright/) |
+| `hosted` | adds [Steel](/docs/integrations/steel/), [Browserbase](/docs/integrations/browserbase/), [Hyperbrowser](/docs/integrations/hyperbrowser/), [Browserless](/docs/integrations/browserless/), [Kernel](/docs/integrations/kernel/), [Anchor](/docs/integrations/anchor/) |
+
+Choose with `--sharing hosted` on `profile-login`. `hosted` puts the session on
+that service's servers while it reads. Camoufox is Firefox, so it would
+contradict a profile's Chromium fingerprint and doesn't carry profiles. Scrape
+APIs don't carry them either.
+
+## When the session expires
+
+A read that lands on a sign-in page fails with `AUTH_REQUIRED`, and
+`receipt.next_step` names the command that fixes it:
+`frankensurf profile-login shopping --site example-shop.com`. Signing in again
+updates the same profile.
+
+## Where it's stored
+
+Profiles are AES-GCM files in `~/.local/share/frankensurf/profiles`, readable
+only by you. The key is `FRANKENSURF_PROFILE_KEY` (32 random bytes, base64) if
+you set it, which lets you keep it in a secrets manager such as Infisical;
+otherwise a key file is created at `~/.config/frankensurf/profile.key` with
+mode 600. Without the key, the profile files are unreadable.
+
+<Aside type="note">
+  Profiles and [identities](/docs/read/signed-in/) are separate. An identity
+  reads through your own running Chrome and never moves its session. A profile
+  is Frankensurf's own copy of a login, so any capable tool can use it. Use an
+  identity when the site must only ever see your real browser.
+</Aside>
+
+## Commands
+
+| Command | Does |
+| --- | --- |
+| `profile-login NAME --site SITE [--site ...] [--sharing local\|hosted]` | Sign in and save, or refresh an existing profile |
+| `profile-list` | Names, sites, sharing level and cookie counts; never the session |
+| `profile-delete NAME` | Remove a profile |

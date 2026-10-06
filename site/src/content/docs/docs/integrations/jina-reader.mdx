@@ -1,0 +1,57 @@
+---
+title: "Jina Reader"
+description: "Clean markdown from any URL through r.jina.ai. Free, no key needed."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Jina Reader](https://jina.ai/reader/) turns a URL into markdown on Jina's servers. It is the last free tool in the default route.
+
+- Works without a key; a key raises the rate limit.
+- Returns markdown, with the page title as a heading.
+- A challenge seen through Jina is reported as `CAPTCHA`, so the read keeps climbing.
+
+## Set up
+
+Built in. Optionally set `FRANKENSURF_JINA_API_KEY`.
+
+## Use it
+
+It joins the default route by itself once set up. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="jina_reader",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider jina_reader
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "jina_reader" } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `jina_reader` |
+| Rung | T1 |
+| Cost | Free |
+| Tested | Live |
+| Docs | [jina.ai/reader](https://jina.ai/reader/) |

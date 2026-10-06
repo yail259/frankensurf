@@ -1,0 +1,5 @@
+{"site": "boots", "valid": false, "why": "expect_count:1", "provider": "firecrawl", "seconds": 10.3, "steps": []}
+{"site": "binglee", "valid": false, "why": "expect_missing", "provider": "firecrawl", "seconds": 11.1, "steps": []}
+{"site": "leroymerlin", "valid": false, "why": "expect_missing", "provider": "firecrawl", "seconds": 11.5, "steps": []}
+{"site": "northerntool", "valid": false, "why": "expect_missing", "provider": "firecrawl", "seconds": 60.0, "steps": ["jina_reader", "scrapling", "zyte", "zenrows", "scrapfly"]}
+{"valid": 0, "cases": 4, "rate": 0.0}

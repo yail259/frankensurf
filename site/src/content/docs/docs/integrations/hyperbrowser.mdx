@@ -1,0 +1,51 @@
+---
+title: "Hyperbrowser"
+description: "Hosted Chromium sessions from Hyperbrowser."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Hyperbrowser](https://www.hyperbrowser.ai/) runs browser fleets in the cloud. Each read opens one session, renders the page and releases the session.
+
+- Billed by session time, rounded up to one minute.
+- Refuses a session that could pass your `max_cost_usd`.
+- Your key travels only in the connection URL, never in errors.
+
+## Set up
+
+Set `FRANKENSURF_HYPERBROWSER_API_KEY`. Default rate $0.10/hour; set yours with `FRANKENSURF_HYPERBROWSER_USD_PER_HOUR`.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="hyperbrowser",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "hyperbrowser", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `hyperbrowser` |
+| Rung | T2 |
+| Cost | Paid |
+| Tested | Mocks only |
+| Docs | [docs.hyperbrowser.ai](https://docs.hyperbrowser.ai/) |

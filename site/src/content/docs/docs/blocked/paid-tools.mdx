@@ -1,0 +1,96 @@
+---
+title: Paid tools and budgets
+description: Turn on paid browsers, unblockers and search, and cap what a read can spend.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+The free stack needs no keys. Paid tools join a read only when two things are
+true: the key is set, and the call allows it.
+
+- Paid tools are tried after the free ones, unless [escalation](/docs/blocked/escalation/) moves them up.
+- They are never retried automatically.
+- A tool without a key is skipped, not failed.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(url, policy_overrides={
+    "allow_paid_fallbacks": True,
+    "max_cost_usd": 0.05,
+})
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://www.g2.com/",
+  "acquisition_policy": { "allow_paid_fallbacks": true, "max_cost_usd": 0.05 } } }
+```
+
+</TabItem>
+</Tabs>
+
+`receipt.cost_usd` is the total measured cost. If any tool's cost is unknown,
+the total is `null`, never a guess.
+
+## Add keys
+
+Frankensurf looks for each key in this order:
+
+1. the environment, as `FRANKENSURF_<NAME>`;
+2. `~/.config/frankensurf/.env`;
+3. the `api_keys` object in `~/.config/frankensurf/services.json`.
+
+```bash title="~/.config/frankensurf/.env"
+FRANKENSURF_ZENROWS_API_KEY=...
+FRANKENSURF_FIRECRAWL_API_KEY=...
+FRANKENSURF_EXA_API_KEY=...
+```
+
+Keep the file readable only by you (`chmod 600`). With a secrets manager such as 1Password,
+Doppler or Infisical, store the keys under these names and run through it, for
+example `op run -- frankensurf read …`. Keys never appear in results,
+receipts or errors.
+
+| Tool | Keys |
+| --- | --- |
+| [Jina Reader](/docs/integrations/jina-reader/) | `JINA_API_KEY` (optional) |
+| [Firecrawl](/docs/integrations/firecrawl/) | `FIRECRAWL_API_KEY` |
+| [ZenRows](/docs/integrations/zenrows/) | `ZENROWS_API_KEY` |
+| [Scrapfly](/docs/integrations/scrapfly/) | `SCRAPFLY_API_KEY` |
+| [Bright Data](/docs/integrations/bright-data/) | `BRIGHTDATA_API_KEY`, `BRIGHTDATA_ZONE` |
+| [Browserbase](/docs/integrations/browserbase/) | `BROWSERBASE_API_KEY` |
+| [Steel Cloud](/docs/integrations/steel/) | `STEEL_API_KEY` |
+| [Hyperbrowser](/docs/integrations/hyperbrowser/) | `HYPERBROWSER_API_KEY` |
+| [Browserless](/docs/integrations/browserless/) | `BROWSERLESS_API_KEY` |
+| [Kernel](/docs/integrations/kernel/) | `KERNEL_API_KEY` |
+| [Anchor](/docs/integrations/anchor/) | `ANCHOR_API_KEY` |
+| [Cloudflare Browser Run](/docs/integrations/cloudflare-browser-run/) | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
+| [Zyte](/docs/integrations/zyte/) | `ZYTE_API_KEY` |
+| [Apify](/docs/integrations/apify/) | `APIFY_API_TOKEN` |
+| [fastCRW](/docs/integrations/fastcrw/) | `FASTCRW_API_KEY`, or `FASTCRW_URL` for self-hosted |
+| [Skyvern](/docs/integrations/skyvern/) | `SKYVERN_API_KEY` |
+| [Exa](/docs/integrations/exa/) | `EXA_API_KEY` |
+| [Brave](/docs/integrations/brave/) | `BRAVE_API_KEY` |
+| [Tavily](/docs/integrations/tavily/) | `TAVILY_API_KEY` |
+| [Parallel](/docs/integrations/parallel/) | `PARALLEL_API_KEY` |
+
+All prefixed with `FRANKENSURF_`.
+
+## Budgets
+
+`max_cost_usd` caps the whole read, fallbacks included. Tools that can bound
+their worst case (ZenRows, Firecrawl and the hosted browsers) refuse a call that
+could pass what's left, with `BUDGET_EXHAUSTED`. Tools that can't report cost
+don't run under a cap.
+
+<Aside type="note">
+  Hosted browsers bill by session time. The default rates are list prices; set
+  yours with `FRANKENSURF_<ID>_USD_PER_HOUR`, for example
+  `FRANKENSURF_BROWSERBASE_USD_PER_HOUR=0.10`.
+</Aside>

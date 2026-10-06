@@ -1,0 +1,119 @@
+---
+title: How escalation works
+description: Frankensurf starts with the cheapest tool and climbs a six-rung ladder only when a site pushes back.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Every way to fetch a page is a rung. Low rungs are fast and free; high rungs get
+through more. Each read starts low and climbs only as far as it has to.
+
+| Rung | What it does | Tools |
+| --- | --- | --- |
+| **T0** Markdown | Asks the site for `text/markdown` | [HTTP](/docs/integrations/http/) |
+| **T1** Light fetch | Plain HTTP or a reader, no browser | [HTTP](/docs/integrations/http/), [Scrapling](/docs/integrations/scrapling/), [Jina Reader](/docs/integrations/jina-reader/) |
+| **T2** Browser | A real browser renders the page | [Chromium](/docs/integrations/local-chromium/), [Steel](/docs/integrations/steel/), [Crawl4AI](/docs/integrations/crawl4ai/), [Browserbase](/docs/integrations/browserbase/), [Hyperbrowser](/docs/integrations/hyperbrowser/), [Browserless](/docs/integrations/browserless/), [Kernel](/docs/integrations/kernel/), [Anchor](/docs/integrations/anchor/), [Cloudflare](/docs/integrations/cloudflare-browser-run/) |
+| **T3** Stealth and signed | Looks like a person, or signs as a verified agent | [Camoufox](/docs/integrations/camoufox/), [Scrapling](/docs/integrations/scrapling/), [Patchright](/docs/integrations/patchright/), [nodriver](/docs/integrations/nodriver/), [signed requests](/docs/blocked/signed-requests/) |
+| **T4** Unblocker | Paid services built for the hardest walls | [Firecrawl](/docs/integrations/firecrawl/), [ZenRows](/docs/integrations/zenrows/), [fastCRW](/docs/integrations/fastcrw/), [Scrapfly](/docs/integrations/scrapfly/), [Bright Data](/docs/integrations/bright-data/), [Zyte](/docs/integrations/zyte/), [Apify](/docs/integrations/apify/) |
+| **T5** You | A person clears the wall | [Human handoff](/docs/blocked/handoff/) |
+
+## What counts as a failure
+
+A tool "succeeding" isn't enough. Frankensurf checks what came back and climbs
+when it sees:
+
+- an app shell or unrendered template (`VISUAL_REQUIRED`);
+- a rendered page with almost no text (`EMPTY_PAGE`);
+- a challenge or "Just a moment…" page (`CAPTCHA`, `BLOCKED`);
+- a sign-in page where content should be (`AUTH_REQUIRED`).
+
+Sites also fake walls for bots: a sign-in redirect, or a 404, that a real
+browser never sees. So on a public read:
+
+- a `NOT_FOUND` from a plain fetch, or after another wall, gets one more try;
+- a sign-in wall stops the climb only after `auth_wall_confirmations` (default
+  5) tools in a row hit one;
+- after a suspected fake wall, the tools that look most different from the one
+  that was fooled go next (`fake_wall_confirmers`: Jina Reader, Camoufox, then
+  the paid unblockers).
+
+A page that is plainly a site's bot page (a final URL such as `/help/bots.html`
+or `/captcha`, or text like "thinks you are a bot") counts as `CAPTCHA`, and a
+short page that only asks you to sign in, in English, Spanish, Portuguese,
+French, German, Italian or Dutch, counts as `AUTH_REQUIRED`.
+
+Signed-in reads (identities and profiles) keep the strict rule: a sign-in wall
+there means the session needs renewing, and the climb stops.
+
+### Second opinion
+
+A plain HTTP page can pass every check and still lack its content: a site that
+loads results with JavaScript serves only its header and footer as text. So when
+an automatic read lands on plain HTTP with scripts and under 5,000 characters of
+text (`second_opinion_text_chars`), Frankensurf also asks a browser and keeps
+whichever page has clearly more content (at least 1.5 times as much, and 1,000
+characters more). `receipt.second_opinion` shows both. If the render fails or
+isn't better, the HTTP page stands; the only cost is time.
+
+### Completeness
+
+Then every automatic read gets a structural check (`completeness.py`).
+Frankensurf never looks at what you searched for, only at the page's shape:
+
+- **Search and category pages** (a query parameter, or a path such as `/search`)
+  need at least 10 distinct same-site item links (product, listing or detail
+  URLs; never assets or service and legal pages) or 4 prices.
+- **Item pages** need a price or 1,500 characters of text.
+- **Other pages** need 1,500 characters, or 400 without scripts.
+
+An incomplete page is re-read along `completeness_ladder`: Scrapling, Camoufox,
+then Firecrawl, Zyte, Scrapfly and ZenRows when paid tools are allowed, then
+Patchright and Bright Data. Each step is an ordinary read pinned to one tool,
+with the usual checks and receipt. Frankensurf stops at the first complete page
+and keeps the most complete one it saw. A search page that passes only narrowly
+(fewer than `completeness_borderline_items`, 20, item links and few prices) also
+gets one read from the strongest allowed tool, a paid one when allowed. `completeness_max_extra_reads` (default
+4) and `completeness_deadline_seconds` (default 150) bound the extra work, and
+`receipt.completeness` lists every step.
+
+## Skipping ahead
+
+Three things reorder the ladder so repeat visits are fast:
+
+| | What it does | Setting |
+| --- | --- | --- |
+| **Escalation** | After 4 walls in one read, allowed paid tools move ahead of the free ones left. | `escalate_after_walls` |
+| **Site hints** | When a read succeeds only after earlier tools failed, the tool that got through goes first on that site for 24 hours. | `origin_route_hint_ttl_seconds` |
+| **Route memory** | After 3 clean reads in a row on the same path pattern, that tool goes first for that path. | `route_memory_min_samples` |
+
+Measured on g2.com: 63.5 s before hints, 8.5 s on the first read with
+escalation, 2.4 s with the hint.
+
+A few sites need a particular tool from the first visit. Those live as data in
+`bundled_route_seeds.json`, never as site code, and your own settings always
+win.
+
+## Pacing
+
+Frankensurf is polite by default.
+
+- Reads to one site are at least 2 seconds apart, across processes
+  (`origin_min_interval_seconds`).
+- A `BLOCKED`, `CAPTCHA` or `RATE_LIMITED` answer pauses direct reads of that
+  site for 15 minutes (`origin_cooldown_seconds`).
+- Paid unblockers and handoff aren't held by the pause: a different service or a
+  person is handling the wall.
+
+## Choosing yourself
+
+| You want | Set |
+| --- | --- |
+| One specific tool, no fallback | `provider="zenrows"` |
+| An exact order | `provider_candidates=["http", "camoufox"]` |
+| Paid tools allowed, within a budget | `allow_paid_fallbacks=True`, `max_cost_usd=0.05` |
+| Nothing on your machine | `allow_local_browser=False` |
+
+<Aside type="tip">
+  `receipt.attempts` shows every tool tried and why each stopped, and
+  `receipt.routing.provider_plan.ordered` shows the order that was planned.
+</Aside>

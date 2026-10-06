@@ -1,0 +1,51 @@
+---
+title: Images
+description: Download and check a page's images, not just their URLs.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+Every read returns `image_urls`. With `include_images`, Frankensurf also
+downloads them and checks each one.
+
+- Each image gets a SHA256 hash, its real format and size, and its own error if
+  it failed. A file extension is not trusted.
+- One bad image never fails the read.
+- Download exact URLs on their own with `download_images`.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(url, policy_overrides={"include_images": True, "max_images": 10})
+
+images = await web.download_images(["https://example.com/a.jpg", "https://example.com/b.png"])
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/p/2231 --images --max-images 10
+frankensurf images https://example.com/a.jpg https://example.com/b.png
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "images", "arguments": { "urls": ["https://example.com/a.jpg"], "max_images": 10 } }
+```
+
+</TabItem>
+</Tabs>
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `include_images` | `false` | Download the page's images. |
+| `max_images` | `50` | Most images to download. It caps the count; it doesn't mean the gallery is complete. |
+| `max_image_bytes` | 20 MB | Largest image accepted. |

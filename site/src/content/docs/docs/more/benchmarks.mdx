@@ -1,0 +1,78 @@
+---
+title: Benchmarks
+description: Is stitching better than any one tool? What has been measured, and how to run it yourself.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Two benchmarks back the numbers on the landing page. Both judge every read by
+its content, not its status code: a product page must have a price, a search page
+must have result links, an article must have real text. A challenge page or an
+empty app shell counts as a failure.
+
+## Tool benchmark
+
+Every tool reads the same pages on its own, then the stitched router reads them
+too. **Tuned** is 78 pages from the site benchmark, which route seeds were
+built on. **Unseen** is 45 sites in two held-out lists that nothing was tuned
+on. Measured 6 October 2026.
+
+| Arm | Tuned (78) | Unseen (45) | $ per 1k valid pages, unseen |
+| --- | --- | --- | --- |
+| Headless Chromium | 32.1% | 15.6% | $0 |
+| Plain HTTP | 43.6% | 33.3% | $0 |
+| Jina Reader | 35.9% | 51.1% | $0 |
+| Camoufox | 60.3% | 48.9% | $0 |
+| Scrapling | 61.5% | 60.0% | $0 |
+| Firecrawl | 88.5% | 73.3% | $4.61 |
+| Frankensurf, free tools only | 89.7% | 53.3% | $0 |
+| **Frankensurf** | **98.7%** | **71.1%** | **$1.07** |
+
+- On tuned sites, stitching beats every single tool.
+- On unseen sites it is 2 points behind Firecrawl, at a quarter of the cost,
+  and slower: median 6.6 s against 2.8 s.
+- Some single tool read 89% of the unseen pages. The gap is the router's
+  choices: 11 of its 13 unseen misses were pages that looked fine but lacked
+  their content.
+
+ZenRows is left out: the plan's rate limit rejected its first reads, so its
+numbers say more about the account than about ZenRows.
+
+```bash
+PYTHONPATH=.:src python scripts/toolbench.py --state /tmp/tb \
+  --rows benchmarks/2026-10-06/sitebench-paid-v0.14.jsonl
+```
+
+Raw rows and the summary are in
+[`benchmarks/2026-10-06/`](https://github.com/yail259/frankensurf/tree/main/benchmarks/2026-10-06).
+
+## Site benchmark
+
+`scripts/sitebench.py` reads real deep pages (product pages, search results,
+articles, PDFs, JSON) behind named walls, and follows search results to the
+pages they link to.
+
+| Version | Arm | Valid content | False successes | p50 | Paid cost |
+| --- | --- | --- | --- | --- | --- |
+| v0.11.0 | free | 61/72 (85%) | 4 | 3.0 s | $0 |
+| v0.11.0 | paid | 67/72 (93%) | 4 | 3.5 s | $0.07 |
+| v0.12.0 | paid | 77/82 | 4 | 3.5 s | $0.033 |
+| v0.13.0 | paid | 82/82 | 0 | 4.1 s | $0.029 |
+| v0.14.0 | paid | 82/82 | 0 | 4.4 s | $0.015 |
+
+```bash
+PYTHONPATH=.:src python scripts/sitebench.py --state /tmp/sb-1          # free
+PYTHONPATH=.:src python scripts/sitebench.py --state /tmp/sb-2 --paid   # paid fallbacks
+```
+
+<Aside type="tip">
+  Use a fresh `--state` for every run. One run's blocks would otherwise cool
+  down sites for the next.
+</Aside>
+
+## Not measured yet
+
+- Completion on agent task suites such as Online-Mind2Web and WebVoyager.
+- Tokens per task, and the gap between models.
+- Browserbase, Hyperbrowser, Browserless, Scrapfly, Bright Data and Brave with
+  real keys.

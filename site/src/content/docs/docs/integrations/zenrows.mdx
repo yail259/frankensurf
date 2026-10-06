@@ -1,0 +1,51 @@
+---
+title: "ZenRows"
+description: "ZenRows' web unblocker for heavily protected pages."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[ZenRows](https://www.zenrows.com/) renders pages through premium proxies and anti-bot handling.
+
+- Cost comes from ZenRows' own response header.
+- Refuses a call whose worst case ($0.025 by default) could pass your `max_cost_usd`.
+- An explicit ZenRows read isn't held by a site's cool-down.
+
+## Set up
+
+Set `FRANKENSURF_ZENROWS_API_KEY`.
+
+## Use it
+
+Once its key is set, it joins any read that allows paid tools. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="zenrows",
+    policy_overrides={"allow_paid_fallbacks": True},
+)
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "zenrows", "acquisition_policy": { "allow_paid_fallbacks": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `zenrows` |
+| Rung | T4 |
+| Cost | Paid |
+| Tested | Live |
+| Docs | [docs.zenrows.com](https://docs.zenrows.com/) |

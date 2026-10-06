@@ -1,0 +1,115 @@
+{
+  "schema": "frankensurf.identity-sprint-benchmark/v1",
+  "scope": "Public retrieval plus separate historical operator evidence. Observation success is not live-status accuracy.",
+  "historical_baseline_date": "2026-10-01",
+  "cases": [
+    {
+      "id": "static-reference",
+      "url": "https://example.com",
+      "adapter": "html",
+      "historical_listing_state": null,
+      "note": "static public reference",
+      "rendered_url": "https://example.com",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "pedl-collection",
+      "url": "https://www.pedl.com.au/collections/ex-demo-refurbished-e-bikes/products.json?limit=250",
+      "adapter": "shopify_catalogue",
+      "historical_listing_state": null,
+      "note": "scheduled feed; variants must be evaluated separately",
+      "rendered_url": "https://www.pedl.com.au/collections/ex-demo-refurbished-e-bikes",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "movebikes-unavailable",
+      "url": "https://movebikes.com.au/collections/second-hand/products.json?limit=250",
+      "adapter": "shopify_catalogue",
+      "historical_listing_state": "UNAVAILABLE",
+      "note": "historical 4 unavailable variants, not confirmed sold",
+      "rendered_url": "https://movebikes.com.au/collections/second-hand",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "beyondbyron-collection",
+      "url": "https://beyondbyronebikes.com.au/collections/e-bikes-ex-hire-bikes/products.json?limit=250",
+      "adapter": "shopify_catalogue",
+      "historical_listing_state": null,
+      "note": "historical mixed availability by exact variant",
+      "rendered_url": "https://beyondbyronebikes.com.au/collections/e-bikes-ex-hire-bikes",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "townie-demo",
+      "url": "https://freedommachine.com.au/products/electra-townie-go-step-thru.js",
+      "adapter": "json",
+      "historical_listing_state": "ACTIVE",
+      "note": "historical exact Mango variant available; pickup unresolved",
+      "rendered_url": "https://freedommachine.com.au/products/electra-townie-go-step-thru",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "pedl-demo",
+      "url": "https://www.pedl.com.au/products/ncm-t3s-step-thru-trekking-city-electric-bike-ex-demo.js",
+      "adapter": "json",
+      "historical_listing_state": "ACTIVE",
+      "note": "historical public merchant variant",
+      "rendered_url": "https://www.pedl.com.au/products/ncm-t3s-step-thru-trekking-city-electric-bike-ex-demo",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "marin-dsx",
+      "url": "https://www.bikesonline.com.au/products/marin-dsx-1-flat-bar-gravel-bike-new.js",
+      "adapter": "json",
+      "historical_listing_state": "ACTIVE",
+      "note": "new retail comparator; not used resale evidence",
+      "rendered_url": "https://www.bikesonline.com.au/products/marin-dsx-1-flat-bar-gravel-bike-new",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "kona-nsw-excluded",
+      "url": "https://bikesonline.com.au/products/kona-dew-hd-commuter-cruiser-ebike.js",
+      "adapter": "json",
+      "historical_listing_state": "ACTIVE",
+      "note": "merchant purchase restriction excluded NSW previously",
+      "rendered_url": "https://bikesonline.com.au/products/kona-dew-hd-commuter-cruiser-ebike",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "cash-trek",
+      "url": "https://www.cashconverters.com.au/shop/outdoor-sports/outdoor-recreation/bicycles/bike/024800114735",
+      "adapter": "html",
+      "historical_listing_state": "ACTIVE",
+      "note": "historical Cardiff retailer; outside Sydney",
+      "rendered_url": "https://www.cashconverters.com.au/shop/outdoor-sports/outdoor-recreation/bicycles/bike/024800114735",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "gumtree-marlin",
+      "url": "https://www.gumtree.com.au/web/listing/men-s-bicycles/1344670859",
+      "adapter": "html",
+      "historical_listing_state": "ACTIVE",
+      "note": "historical operator current detail; automated HTTP/Steel blocked",
+      "rendered_url": "https://www.gumtree.com.au/web/listing/men-s-bicycles/1344670859",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "gumtree-merida-unavailable",
+      "url": "https://www.gumtree.com.au/web/listing/men-s-bicycles/1344493158",
+      "adapter": "html",
+      "historical_listing_state": "UNAVAILABLE",
+      "note": "historical rendered unavailable banner; not sold confirmation",
+      "rendered_url": "https://www.gumtree.com.au/web/listing/men-s-bicycles/1344493158",
+      "rendered_adapter": "html"
+    },
+    {
+      "id": "gumtree-damaged-ebike",
+      "url": "https://www.gumtree.com.au/web/listing/men-s-bicycles/1343895666",
+      "adapter": "html",
+      "historical_listing_state": "ACTIVE",
+      "note": "historical visible frame dent; rejected, not vision-safe",
+      "rendered_url": "https://www.gumtree.com.au/web/listing/men-s-bicycles/1343895666",
+      "rendered_adapter": "html"
+    }
+  ]
+}

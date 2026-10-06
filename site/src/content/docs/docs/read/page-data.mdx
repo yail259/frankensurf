@@ -1,0 +1,84 @@
+---
+title: Page data
+description: Get the structured data a page already carries, including the JSON its own frontend fetched.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+Most pages carry their data in machine-readable form before any text
+extraction. Frankensurf hands it over as-is, so your agent can read prices,
+dates or listings without scraping the layout.
+
+- `structured.jsonld`: every JSON-LD block the page publishes.
+- `structured.embedded_json`: JSON embedded for the page's own frontend, such
+  as Next.js's `__NEXT_DATA__`.
+- `captured_json`: on rendered reads, the JSON responses the page fetched from
+  its own API.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read("https://shop.example.com/p/2231", policy_overrides={
+    "render": True,
+    "capture_json_responses": True,
+})
+offers = [item["data"] for item in page.get("captured_json", {}).get("items", [])]
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://shop.example.com/p/2231 --render --capture-json
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://shop.example.com/p/2231", "render": true,
+  "acquisition_policy": { "capture_json_responses": true } } }
+```
+
+</TabItem>
+</Tabs>
+
+```json title="Response (trimmed)"
+{
+  "structured": {
+    "jsonld": [{ "@type": "Product", "name": "…", "offers": { "price": "…" } }],
+    "embedded_json": []
+  },
+  "captured_json": {
+    "items": [{
+      "url": "https://shop.example.com/api/product/2231",
+      "http_status": 200,
+      "content_type": "application/json",
+      "format": "json",
+      "data": { "title": "Widget", "price": 42 }
+    }],
+    "skipped": 0
+  }
+}
+```
+
+## JSON responses
+
+When the URL itself returns JSON, `structured` is the parsed body.
+Newline-delimited JSON becomes `structured.records`.
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `capture_json_responses` | `false` | Capture the page's own JSON responses (rendered and signed-in reads). |
+| `capture_json_max_items` | `20` | Most responses kept. |
+| `capture_json_max_bytes` | 2 MB | Largest response kept. |
+
+<Aside type="note">
+  Frankensurf returns data, not answers. Deciding which price is current or
+  whether an item is in stock is your agent's job.
+</Aside>

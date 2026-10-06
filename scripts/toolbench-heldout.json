@@ -1,0 +1,29 @@
+{
+  "schema": "frankensurf.toolbench-heldout/v1",
+  "note": "Held-out sites: none appear in sitebench-corpus.json or bundled route seeds, and no FrankenSurf change was tuned on them. Wall labels come from public reputation, not vendor detection. A page counts only with at least 800 characters of text and the query term at least 3 times, so a shell that only echoes the search box fails. Added 2026-10-06.",
+  "cases": [
+    {"site": "ikea", "wall": "akamai", "url": "https://www.ikea.com/au/en/search/?q=billy", "expect": "billy"},
+    {"site": "bunnings", "wall": "akamai", "url": "https://www.bunnings.com.au/search/products?q=cordless%20drill", "expect": "drill"},
+    {"site": "officeworks", "wall": "js_app", "url": "https://www.officeworks.com.au/shop/officeworks/search?q=stapler", "expect": "stapler"},
+    {"site": "kogan", "wall": "cloudflare", "url": "https://www.kogan.com/au/shop/?q=headphones", "expect": "headphone"},
+    {"site": "harveynorman", "wall": "js_app", "url": "https://www.harveynorman.com.au/catalogsearch/result/?q=laptop", "expect": "laptop"},
+    {"site": "domain", "wall": "akamai", "url": "https://www.domain.com.au/sale/sydney-nsw-2000/", "expect": "sydney"},
+    {"site": "realestate", "wall": "kasada", "url": "https://www.realestate.com.au/buy/in-sydney,+nsw+2000/list-1", "expect": "sydney"},
+    {"site": "seek", "wall": "js_app", "url": "https://www.seek.com.au/python-jobs", "expect": "python"},
+    {"site": "abc-news", "wall": "static", "url": "https://www.abc.net.au/news", "expect": "news"},
+    {"site": "ato", "wall": "static", "url": "https://www.ato.gov.au/", "expect": "tax"},
+    {"site": "etsy", "wall": "datadome", "url": "https://www.etsy.com/search?q=ceramic+mug", "expect": "mug"},
+    {"site": "homedepot", "wall": "akamai", "url": "https://www.homedepot.com/s/cordless%20drill", "expect": "drill"},
+    {"site": "target", "wall": "js_app", "url": "https://www.target.com/s?searchTerm=lego", "expect": "lego"},
+    {"site": "stockx", "wall": "perimeterx", "url": "https://stockx.com/search?s=jordan%201", "expect": "jordan"},
+    {"site": "fiverr", "wall": "perimeterx", "url": "https://www.fiverr.com/search/gigs?query=logo%20design", "expect": "logo"},
+    {"site": "medium", "wall": "cloudflare", "url": "https://medium.com/search?q=python", "expect": "python"},
+    {"site": "stackoverflow", "wall": "cloudflare", "url": "https://stackoverflow.com/questions/231767/what-does-the-yield-keyword-do-in-python", "expect": "yield"},
+    {"site": "glassdoor", "wall": "cloudflare", "url": "https://www.glassdoor.com/Reviews/index.htm", "expect": "review"},
+    {"site": "reddit", "wall": "bot_check", "url": "https://www.reddit.com/r/AusFinance/", "expect": "ausfinance"},
+    {"site": "zara", "wall": "akamai", "url": "https://www.zara.com/au/en/search?searchTerm=jacket", "expect": "jacket"},
+    {"site": "hm", "wall": "akamai", "url": "https://www2.hm.com/en_au/search-results.html?q=shirt", "expect": "shirt"},
+    {"site": "booking", "wall": "js_app", "url": "https://www.booking.com/searchresults.html?ss=Sydney", "expect": "sydney"},
+    {"site": "linkedin-jobs", "wall": "login", "url": "https://www.linkedin.com/jobs/search?keywords=python&location=Sydney", "expect": "python"}
+  ]
+}

@@ -1,0 +1,86 @@
+---
+title: "Browser Use"
+description: "An AI browser agent that explores a page with your model."
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+[Browser Use](https://github.com/browser-use/browser-use) 0.13.10 drives a fresh browser with a model you supply. Give it a task and it can click, use search boxes and finish on any page inside its allowed origins.
+
+- Uses your model, through a factory function you own.
+- Runs in its own environment and a throwaway browser profile.
+- Bounded by steps, model calls, actions and time. A paid model also needs `allow_paid_fallbacks=True`.
+
+## Set up
+
+1. Install the pinned SDK in its own environment:
+
+   ```bash
+   python3 -m venv ~/.local/share/frankensurf/agent-venv
+   ~/.local/share/frankensurf/agent-venv/bin/python -m pip install -r requirements-browser-use.txt
+   ```
+
+2. Write a model factory, for example `/home/you/models/agent.py`:
+
+   ```python
+   from browser_use import ChatOpenAI
+   from frankensurf.browser_use_binding import ModelBinding
+
+   def create_model():
+       return ModelBinding(ChatOpenAI(model="gpt-4.1-mini", max_retries=0), billing="paid")
+   ```
+
+3. Point Frankensurf at it:
+
+   ```bash
+   export FRANKENSURF_BROWSER_USE_MODEL_FACTORY=/home/you/models/agent.py:create_model
+   export FRANKENSURF_BROWSER_USE_BILLING=paid
+   ```
+
+## Use it
+
+It joins the default route by itself once set up. To use it on its own:
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(
+    "https://example.com/products/2231",
+    provider="browser_use",
+)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/products/2231 --provider browser_use
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/products/2231", "provider": "browser_use" } }
+```
+
+</TabItem>
+</Tabs>
+
+Give it a task with `browser_agent_task`:
+
+```python
+page = await web.read("https://example.com", provider="browser_use",
+    policy_overrides={"browser_agent_task": "find the pricing page and open the Pro plan"})
+```
+
+## Details
+
+| Property | Value |
+| --- | --- |
+| Provider ID | `browser_use` |
+| Rung | Agent |
+| Cost | Free |
+| Tested | Live (agent harness) |
+| Docs | [docs.browser-use.com](https://docs.browser-use.com/) |

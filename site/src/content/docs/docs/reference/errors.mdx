@@ -1,0 +1,62 @@
+---
+title: Errors
+description: What each failure code means and what to try next.
+---
+
+A failed read has `receipt.status: "failed"` and `receipt.failure` with a code
+and a message. `receipt.attempts` shows what each provider hit on the way.
+
+## Walls
+
+| Code | What happened | Next |
+| --- | --- | --- |
+| `BLOCKED` | The site refused (403, or an empty block response). | Climbs automatically; starts a cool-down. Allow paid fallbacks or handoff. |
+| `CAPTCHA` | A challenge page. | Same as `BLOCKED`. `receipt.next_step` may suggest handoff. |
+| `RATE_LIMITED` | Too many requests (429). | Wait; pacing and the cool-down handle it. |
+| `AUTH_REQUIRED`, `AUTH_EXPIRED` | The page needs a sign-in. Stops the climb. | Use an [identity](/docs/read/signed-in/) or handoff. |
+
+## Page problems
+
+| Code | What happened | Next |
+| --- | --- | --- |
+| `VISUAL_REQUIRED` | Plain HTTP got an app shell or an unrendered template. | Climbs to a browser automatically. |
+| `EMPTY_PAGE` | A browser rendered almost no text. | Climbs automatically. |
+| `NOT_FOUND` | 404 or 410. Stops the climb unless an earlier attempt hit a wall. | A missing page does not prove a sale. |
+| `CONTENT_MISMATCH` | The page is not what was asked for. | Check the URL. |
+| `SCHEMA_CHANGED` | The response did not have the expected shape. | Check the adapter, or the service changed. |
+| `TIMEOUT` | Too slow. | Raise `timeout_seconds`. |
+| `LIMIT_EXCEEDED` | Too big. | Raise `max_bytes`. |
+| `INVALID_URL` | Not a valid URL. | Fix it. |
+| `INVALID_IMAGE` | One image did not decode. | Only that image fails. |
+
+## Providers, policy and cost
+
+| Code | What happened |
+| --- | --- |
+| `PROVIDER_DOWN` | The provider or site had a server error. Free providers retry once. |
+| `PROVIDER_UNAVAILABLE` | Not installed or not configured (no key, no display). |
+| `PLUGIN_DISABLED` | The provider is disabled in the catalogue. |
+| `POLICY_DENIED` | Your settings allow no provider for this. |
+| `BUDGET_EXHAUSTED` | The next call could pass `max_cost_usd`. |
+| `EXPLICIT_POLICY_CONFLICT` | A whole `WebPolicy` conflicts with the site's route seed; pass `policy_overrides` instead. |
+| `ROUTE_SCOPE_REQUIRED` | That provider only runs through a route seed for one site. |
+| `SEARCH_UNAVAILABLE` | Every search source failed. |
+| `DISCOVERY_UNAVAILABLE`, `PLUGIN_NOT_TRUSTED`, `PLUGIN_LOAD_REJECTED` | A third-party plugin could not be discovered, is not trusted in `plugins.json`, or failed to load. Shown in `inspect_plugins()`. |
+| `EXECUTION_OUTCOME_UNKNOWN` | A browser action failed part-way; its idempotency key is fenced from replay. |
+| `UNKNOWN` | Anything else. Look at the trace. |
+
+## Identities
+
+| Code | What happened |
+| --- | --- |
+| `IDENTITY_REQUIRED` | Your Chrome was asked for without naming an identity. |
+| `IDENTITY_UNKNOWN`, `IDENTITY_REVOKED` | Not registered, or removed. |
+| `IDENTITY_EXECUTOR_OFFLINE`, `IDENTITY_EXECUTOR_UNKNOWN`, `IDENTITY_EXECUTOR_DISABLED` | The registered Chrome is not available. |
+| `IDENTITY_PROFILE_MISMATCH`, `IDENTITY_CHANGED` | Chrome is not running the registered profile. |
+| `IDENTITY_IN_USE` | Another process holds the identity. |
+| `IDENTITY_REAUTH_REQUIRED` | You have been signed out; sign in again. |
+| `IDENTITY_OPERATOR_HANDOFF_REQUIRED` | A visible snapshot needs you to open exactly one matching page, or its region is missing. |
+| `IDENTITY_DOMAIN_DENIED`, `IDENTITY_PROVIDER_DENIED`, `IDENTITY_ACTION_DENIED`, `IDENTITY_POLICY_DENIED` | Not allowed for that site, provider or action. |
+| `IDENTITY_AUTHORITY_UNSUPPORTED` | Only `LOCAL_ONLY` runs today. |
+| `IDENTITY_CONFIG_INVALID`, `IDENTITY_REGISTRY_INVALID`, `IDENTITY_STORE_UNSAFE` | Bad settings or file permissions. |
+| `VAULT_REFERENCE_INVALID`, `VAULT_REFERENCE_MISSING`, `VAULT_VALUE_INVALID` | A stored secret is missing or unreadable. |

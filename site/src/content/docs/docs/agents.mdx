@@ -1,0 +1,146 @@
+---
+title: Add to your agent
+description: Connect Frankensurf to Claude Code, Claude Desktop, Cursor, Codex or any MCP client.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+`frankensurf-mcp` is a local MCP server. Your agent starts it and gets
+[its tools](/docs/reference/mcp/): `read`, `search`, `extract`, `batch` and the
+rest. [Install Frankensurf](/docs/install/) first, then point your client at it.
+
+In the examples, replace `/path/to/frankensurf` with your checkout, for example
+`/home/you/frankensurf` on Linux or `/Users/you/frankensurf` on macOS. On
+Windows the server runs inside WSL; see [Windows](#windows) below.
+
+<Tabs syncKey="client">
+<TabItem label="Claude Code">
+
+```bash
+claude mcp add frankensurf \
+  -e FRANKENSURF_STATE=/path/to/frankensurf/state \
+  -- /path/to/frankensurf/.venv/bin/frankensurf-mcp
+```
+
+Run `/mcp` inside Claude Code to check that `frankensurf` is connected.
+
+</TabItem>
+<TabItem label="Claude Desktop">
+
+Open Settings → Developer → Edit Config, add this to `claude_desktop_config.json`,
+then restart Claude Desktop.
+
+```json
+{
+  "mcpServers": {
+    "frankensurf": {
+      "command": "/path/to/frankensurf/.venv/bin/frankensurf-mcp",
+      "env": { "FRANKENSURF_STATE": "/path/to/frankensurf/state" }
+    }
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Cursor">
+
+Add this to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "frankensurf": {
+      "command": "/path/to/frankensurf/.venv/bin/frankensurf-mcp",
+      "env": { "FRANKENSURF_STATE": "/path/to/frankensurf/state" }
+    }
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Codex">
+
+Add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.frankensurf]
+command = "/path/to/frankensurf/.venv/bin/frankensurf-mcp"
+env = { FRANKENSURF_STATE = "/path/to/frankensurf/state" }
+```
+
+</TabItem>
+<TabItem label="Other clients">
+
+Any client that launches stdio MCP servers works. Use:
+
+| Field | Value |
+| --- | --- |
+| Command | `/path/to/frankensurf/.venv/bin/frankensurf-mcp` |
+| Environment | `FRANKENSURF_STATE=/path/to/frankensurf/state` |
+| Transport | stdio |
+
+</TabItem>
+</Tabs>
+
+## When a page isn't what you needed
+
+Frankensurf guarantees the page is the one a real browser sees: not a block
+page, a sign-in redirect served to bots, an empty JavaScript frame or a fake
+404. Whether it holds the data you wanted is your agent's call. When it doesn't,
+your agent can ask Frankensurf to try harder:
+
+- Every observed read's receipt carries `if_not_right`: its `trace_id`, the
+  strong tools not yet tried, and how to ask.
+- Read again with `retry_of=<trace_id>` (MCP: `try_harder_than`, CLI:
+  `--try-harder-than`). Frankensurf skips every tool that read used, including
+  earlier rounds, and starts from the strongest remaining one.
+- When nothing is left, the read fails with "every allowed tool was already
+  tried". The next steps are allowing paid tools, a
+  [profile](/docs/read/profiles/), or [handoff](/docs/blocked/handoff/).
+- The MCP `trace` tool returns the full record of any read: every tool tried,
+  failures, timings and completeness steps.
+
+## Where each config file lives
+
+| Client | macOS and Linux | Windows |
+| --- | --- | --- |
+| Claude Code | set by `claude mcp add` | set by `claude mcp add` |
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS; there is no Linux app) | `%APPDATA%\Claude\claude_desktop_config.json` |
+| Cursor | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
+| Codex | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` |
+
+## Windows
+
+Frankensurf runs inside WSL, so a Windows client starts it through `wsl`. Use
+`wsl` as the command and pass the rest as arguments, with Linux paths inside
+WSL:
+
+```json
+{
+  "mcpServers": {
+    "frankensurf": {
+      "command": "wsl",
+      "args": ["-d", "Ubuntu", "--", "env", "FRANKENSURF_STATE=/home/you/frankensurf/state",
+               "/home/you/frankensurf/.venv/bin/frankensurf-mcp"]
+    }
+  }
+}
+```
+
+For Claude Code running inside WSL itself, the Linux command above works as is.
+
+## Optional settings
+
+Add these to `env` if you run the optional services:
+
+| Variable | When |
+| --- | --- |
+| `FRANKENSURF_SEARCH_URL` | You run [SearXNG](/docs/integrations/searxng/), for example `http://127.0.0.1:8088` |
+| `FRANKENSURF_STEEL_URL` | You run [Steel](/docs/integrations/steel/), for example `http://127.0.0.1:3100` |
+
+Paid service keys are read from your environment or `~/.config/frankensurf/.env`,
+never from tool arguments. See [Paid tools and budgets](/docs/blocked/paid-tools/).
+
+<Aside type="tip" title="Try it">
+  Ask your agent: *"Read https://news.ycombinator.com and list the top five stories."*
+</Aside>

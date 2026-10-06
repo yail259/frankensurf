@@ -1,0 +1,102 @@
+---
+title: Read a page
+description: Turn any URL into clean text or markdown, with its structured data and a receipt.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+`read` gets a page through whatever is in the way and hands over everything on
+it.
+
+- Tries the cheapest tool first and [climbs](/docs/blocked/escalation/) when a
+  page pushes back: app shells, challenges and empty renders count as failures,
+  not thin successes.
+- Handles JavaScript apps, PDFs, JSON APIs and signed-in pages.
+- Returns text or markdown, JSON-LD, the page's embedded JSON, image URLs and a
+  receipt.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+from frankensurf import Runtime
+
+async with Runtime("state") as web:
+    page = await web.read("https://developer.mozilla.org/en-US/docs/Web/HTTP")
+    print(page["title"])
+    print(page["text"][:500])
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://developer.mozilla.org/en-US/docs/Web/HTTP
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP" } }
+```
+
+</TabItem>
+</Tabs>
+
+```json title="Response"
+{
+  "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP",
+  "title": "HTTP: Hypertext Transfer Protocol | MDN",
+  "text": "HTTP: Hypertext Transfer Protocol | MDN Skip to main content …",
+  "content_type": "text/html",
+  "structured": { "jsonld": [], "embedded_json": [] },
+  "image_urls": [],
+  "receipt": {
+    "trace_id": "7700792749c345eeb2060f3a4edfb6e2",
+    "status": "observed",
+    "method": "http",
+    "http_status": 200,
+    "latency_ms": 250,
+    "cost_usd": 0.0,
+    "attempts": [{ "provider": "http", "status": "observed", "latency_ms": 249 }]
+  }
+}
+```
+
+## Response
+
+| Field | Description |
+| --- | --- |
+| `url` | Final URL after redirects. |
+| `title` | Page title. |
+| `text` | Readable text, or markdown when the site sent markdown. |
+| `structured` | JSON-LD and embedded JSON for HTML; the parsed body for JSON; page count for PDFs. See [Page data](/docs/read/page-data/). |
+| `image_urls` | Images found on the page. |
+| `content` | The raw body. The CLI leaves it out unless you pass `--raw`; MCP always leaves it out. |
+| `receipt` | Which tools ran, how long each took, what it cost. See [Receipts](/docs/reference/receipts/). |
+
+## Options
+
+Pass options as `policy_overrides` in Python, flags on the CLI, or
+`acquisition_policy` over MCP.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `prefer_markdown` | `false` (`true` over MCP) | Ask the site for [markdown](/docs/read/markdown/) first. |
+| `render` | `false` | Skip plain HTTP and use a [browser](/docs/read/javascript/). |
+| `freshness` | `"now"` | `hour`, `day` or `cached` may reuse a saved copy. |
+| `include_images` | `false` | Download and check [images](/docs/read/images/). |
+| `allow_paid_fallbacks` | `false` | Let [paid tools](/docs/blocked/paid-tools/) join when free ones fail. |
+| `allow_handoff` | `false` | Let a [person](/docs/blocked/handoff/) clear the last wall. |
+| `identity` | none | Read [signed in](/docs/read/signed-in/) as you. |
+| `timeout_seconds` | `25` | Time allowed for each tool. |
+
+Every option is listed in [Settings](/docs/reference/settings/).
+
+<Aside type="note">
+  A failed read still returns a result: `receipt.status` is `"failed"` and
+  `receipt.failure` says why. See [Errors](/docs/reference/errors/).
+</Aside>

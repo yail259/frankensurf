@@ -1,0 +1,4307 @@
+from __future__ import annotations
+
+import asyncio
+import copy
+import hashlib
+import html
+import io
+import math
+import ntpath
+from contextlib import nullcontext
+from contextvars import ContextVar
+import json
+import os
+import re
+import statistics
+import tempfile
+import time
+import uuid
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
+from decimal import Decimal
+from pathlib import Path
+from typing import Literal
+from urllib.parse import unquote_plus, urljoin, urlparse
+
+import httpx
+from bs4 import BeautifulSoup
+from PIL import Image, UnidentifiedImageError
+
+from .identity import IdentityRegistry, IdentityFailure
+
+
+_PLUGIN_ID = re.compile(r"[a-z][a-z0-9_.-]{0,127}")
+_PLUGIN_VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+:-]{0,191}")
+_STAGE_IMAGE_EVIDENCE = ContextVar("frankensurf_stage_image_evidence", default=False)
+
+
+def _valid_plugin_id(value):
+    return isinstance(value, str) and _PLUGIN_ID.fullmatch(value) is not None
+
+
+@dataclass(frozen=True)
+class _IdentityProviderAuthority:
+    """The exact startup-catalog binding approved for one named identity."""
+    provider_id: str
+    version: str
+    binding_id: str
+    operation: str
+
+
+@dataclass(frozen=True)
+class _IdentityCaptureStrategy:
+    """Exact Core strategy implementation pinned for one Runtime."""
+    id: str
+    version: str
+    binding_id: str
+    health: object
+    acquire: object
+    current_binding_id: object
+
+
+@dataclass
+class _AuthenticatedProviderCapability:
+    """Core-owned one-shot state; this object is never exposed to plugins."""
+    authority: _IdentityProviderAuthority
+    identity_scope: str
+    url: str
+    policy: object
+    capture_strategy: _IdentityCaptureStrategy | None = None
+    state: str = "unused"
+    response_fingerprint: str | None = None
+    capture_metadata: dict | None = None
+    private_image_sources: dict | None = None
+
+
+@dataclass
+class _AuthenticatedActionCapability:
+    """Core-owned one-shot authority for an exact catalogued action run."""
+    authority: _IdentityProviderAuthority
+    identity_scope: str
+    required_action_classes: tuple[str, ...]
+    request: object
+    state: str = "unused"
+    response_fingerprint: str | None = None
+
+
+def utcnow() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+@dataclass(frozen=True)
+class WebPolicy:
+    # Operation authority is explicit. Read grants never imply any write,
+    # purchase, or account-security authority.
+    action_classes: tuple[str, ...] = ("READ_PUBLIC", "READ_AUTHENTICATED")
+    freshness: Literal["now", "hour", "day", "cached"] = "now"
+    provider: str | None = None
+    provider_candidates: tuple[str, ...] | None = None
+    compound_source_candidates: tuple[str, ...] = ("http", "camoufox", "scrapling")
+    render: bool = False
+    # An unrendered HTML page with scripts and less text than this is an app
+    # shell; a rendered page with less than rendered_min_text_chars is empty
+    # (a failed render or a silent challenge). Both move on to the next provider.
+    html_shell_min_text_chars: int = 200
+    rendered_min_text_chars: int = 50
+    # A large unrendered page with little text is a script-built shell too:
+    # an Airbnb room page is 650 KB of HTML carrying 423 characters of text.
+    html_shell_large_bytes: int = 250_000
+    html_shell_large_min_text_chars: int = 1000
+    # An automatic plain-HTTP page with scripts and less text than this also
+    # gets a rendered read; the page with clearly more content is returned
+    # (see Runtime._second_opinion). 0 disables.
+    second_opinion_text_chars: int = 5000
+    # After an automatic read, check the page's structure (see completeness.py).
+    # A search page without item links or prices, or a page with almost no
+    # text, is re-read with the next providers on this ladder (paid ones only
+    # with allow_paid_fallbacks), keeping the most complete page.
+    completeness_escalation: bool = True
+    completeness_ladder: tuple[str, ...] = (
+        "jina_reader", "scrapling", "camoufox", "firecrawl", "zyte", "zenrows",
+        "scrapfly", "patchright", "brightdata_unlocker")
+    completeness_max_extra_reads: int = 5
+    # A search page that passes with fewer item links than this (and few
+    # prices) also gets one read from the first allowed ladder tool.
+    completeness_borderline_items: int = 20
+    # Escalation reads exist because a page looked unfinished, so they give
+    # script-rendered content at least this long to appear.
+    completeness_settle_ms: int = 5000
+    # The calling agent's "try harder" lever (see Runtime.read retry_of): skip
+    # these providers, and order the rest strongest-first.
+    exclude_providers: tuple[str, ...] = ()
+    try_harder: bool = False
+    retry_of_trace: str | None = None
+    completeness_deadline_seconds: float = 150.0
+    # Hosted unblockers render through residential proxies and need longer than
+    # an ordinary provider attempt.
+    unblocker_timeout_seconds: float = 90.0
+    # Hosted agent providers (Skyvern) run a whole browser task.
+    agent_provider_timeout_seconds: float = 300.0
+    include_images: bool = False
+    retain_public_failure_evidence: bool = True
+    max_images: int = 50
+    timeout_seconds: float = 25
+    provider_deadline_grace_seconds: float = 10
+    provider_cleanup_grace_seconds: float = 5
+    provider_composition_max_depth: int = 8
+    provider_composition_max_attempts: int = 64
+    provider_max_attempts_per_candidate: int = 2
+    provider_retry_delay_seconds: float = 1.0
+    provider_retry_failures: tuple[str, ...] = ("PROVIDER_DOWN",)
+    max_bytes: int = 40 * 1024 * 1024
+    max_image_bytes: int = 20 * 1024 * 1024
+    workload_assertion_max_count: int = 32
+    workload_assertion_max_bytes: int = 64 * 1024
+    repair_overlay_registry_max_bytes: int = 4 * 1024 * 1024
+    image_max_attempts: int = 2
+    image_retry_delay_seconds: float = 0.25
+    image_retry_failures: tuple[str, ...] = ("PROVIDER_DOWN", "TIMEOUT")
+    allow_local_browser: bool = True
+    allow_paid_fallbacks: bool = False
+    max_cost_usd: float | None = None
+    search_source_candidates: tuple[str, ...] | None = None
+    search_source_allow: tuple[str, ...] | None = None
+    search_source_prefer: tuple[str, ...] = ()
+    search_max_attempts: int | None = None
+    search_source_timeout_seconds: float | None = 8
+    search_terminal_failures: tuple[str, ...] = ("POLICY_DENIED", "BUDGET_EXHAUSTED")
+    browser_agent_max_steps: int = 40
+    browser_agent_max_model_calls: int = 40
+    browser_agent_max_actions: int = 80
+    browser_agent_max_actions_per_step: int = 3
+    browser_agent_max_failures: int = 3
+    browser_agent_allowed_actions: tuple[str, ...] = ("navigate_public", "inspect_page", "follow_link", "click_element", "search_site", "wait_readiness", "scroll_page", "done")
+    browser_agent_allowed_origins: tuple[str, ...] | None = None
+    browser_agent_entry_url: str | None = None
+    # A caller task ("search for X and open the first result"). When set,
+    # the agent may finish on any page inside its allowed origins.
+    browser_agent_task: str | None = None
+    browser_agent_llm_timeout_seconds: float = 20
+    browser_agent_step_timeout_seconds: float = 30
+    browser_agent_action_timeout_seconds: float = 10
+    browser_agent_readiness_poll_ms: int = 100
+    browser_agent_packet_max_bytes: int = 48 * 1024 * 1024
+    browser_agent_use_vision: bool = False
+    # Authenticated ``web.do`` uses a separate tool surface. Public read actions
+    # remain read-only even when an operation policy grants a write class.
+    browser_do_allowed_tools: tuple[str, ...] = (
+        "fill", "click", "wait_for", "assert_text", "assert_value")
+    browser_do_allowed_contracts: tuple[str, ...] = (
+        "local_fixture.reversible_draft.v1",)
+    browser_do_allowed_origins: tuple[str, ...] | None = None
+    browser_do_max_actions: int = 20
+    browser_do_action_timeout_seconds: float = 10
+    browser_do_settle_ms: int = 200
+    browser_do_packet_max_bytes: int = 48 * 1024 * 1024
+    browser_do_journal_max_bytes: int = 16 * 1024 * 1024
+    browser_do_selector_max_bytes: int = 4096
+    browser_do_value_max_bytes: int = 1024 * 1024
+    browser_do_description_max_bytes: int = 8192
+    browser_do_idempotency_key_max_bytes: int = 256
+    browser_do_require_auth_check: bool = True
+    identity: str | None = None
+    # A FrankenSurf profile (profiles.py): a stored login any capable provider
+    # can carry. Exclusive with identity, which reads through the owner's Chrome.
+    profile: str | None = None
+    wait_selector: str | None = None
+    wait_state: str = "attached"
+    # A required wait fails acquisition. A content-readiness wait is a bounded
+    # semantic preference: timeout still captures the page so an adapter can
+    # preserve unknown rather than turning missing readiness into truth.
+    content_ready_selector: str | None = None
+    content_ready_timeout_seconds: float = 10
+    settle_ms: int = 400
+    navigation_page: int = 1
+    scrapling_navigation_wait_until: str | None = None
+    scrapling_solve_cloudflare: bool = False
+    scrapling_load_dom: bool = True
+    scrapling_google_search: bool = False
+    public_entry_url: str | None = None
+    public_entry_continue_failures: tuple[str, ...] = ("BLOCKED",)
+    public_browser_headless: bool = True
+    max_pages: int = 2
+    use_route_memory: bool = True
+    route_memory_ttl_seconds: float = 3600
+    route_memory_min_samples: int = 3
+    terminal_failures: tuple[str, ...] = ("AUTH_REQUIRED", "AUTH_EXPIRED", "NOT_FOUND")
+    # Polite pacing is the default. Reads to one origin (per identity) are spaced
+    # by at least this many seconds, and a block, challenge or rate limit pauses
+    # that origin for the cool-down, across processes sharing a state directory.
+    # Blocks are waited out, never evaded: FrankenSurf does not rotate IPs,
+    # proxies or VPN egress to get around them.
+    # Opt-in raw materials for the calling agent: JSON the page's own frontend
+    # fetched while a browser rendered it (XHR/fetch). FrankenSurf returns it
+    # as data and makes no semantic claims about it.
+    capture_json_responses: bool = False
+    # T0 content negotiation: ask for text/markdown (Cloudflare "Markdown for
+    # Agents" and others). Off by default because markdown drops JSON-LD and
+    # embedded JSON that structured callers read; the MCP read tool turns it on.
+    prefer_markdown: bool = False
+    # T3 signed identity: sign HTTP reads with Web Bot Auth when a key exists
+    # (see bot_auth.py). Without a key nothing is signed.
+    sign_requests: bool = True
+    # T5 human handoff (see handoff.py): after every automatic provider has
+    # failed, open the page for a person to clear, then resume. Off by default
+    # because it waits for someone, up to handoff_timeout_seconds.
+    allow_handoff: bool = False
+    handoff_timeout_seconds: float = 300.0
+    # PDFs are read with pypdf; text from at most this many pages is returned.
+    pdf_max_pages: int = 50
+    capture_json_max_items: int = 20
+    capture_json_max_bytes: int = 2 * 1024 * 1024
+    origin_min_interval_seconds: float = 2.0
+    origin_cooldown_seconds: float = 900.0
+    origin_cooldown_failures: tuple[str, ...] = ("BLOCKED", "CAPTCHA", "RATE_LIMITED")
+    # After this many wall failures in one read, paid providers (when allowed
+    # and configured) move ahead of the remaining free ones. 0 disables.
+    escalate_after_walls: int = 4
+    escalation_failures: tuple[str, ...] = ("BLOCKED", "CAPTCHA")
+    # Remember which provider got through a site after earlier ones failed and
+    # try it first next time. An ordering hint, not a reliability claim. 0 disables.
+    origin_route_hint_ttl_seconds: float = 86400.0
+    context_stop_failures: tuple[str, ...] = ("AUTH_REQUIRED", "AUTH_EXPIRED")
+    # A public read stops at a sign-in wall only after this many providers in a
+    # row hit one; fewer may be a sign-in redirect served to bots.
+    auth_wall_confirmations: int = 5
+    # After a suspected fake wall on a public read, these move to the front of
+    # the remaining providers (those allowed and available), in this order.
+    fake_wall_confirmers: tuple[str, ...] = ("jina_reader", "camoufox", "firecrawl", "zyte",
+                                             "scrapling", "zenrows")
+
+    def __post_init__(self):
+        from .actions import validate_action_classes
+        validate_action_classes(self.action_classes)
+        self._validate_capture_and_pacing()
+        self._validate_search()
+        self._validate_browser_agent()
+        self._validate_browser_do()
+        self._validate_entry_and_providers()
+        self._validate_route_memory_and_failures()
+        self._validate_routing()
+        self._validate_profile()
+        self._validate_readiness()
+        self._validate_budgets()
+
+    def _validate_capture_and_pacing(self):
+        _require(type(self.capture_json_responses) is bool,
+                 "capture_json_responses must be a boolean")
+        _require(type(self.prefer_markdown) is bool, "prefer_markdown must be a boolean")
+        _require(type(self.sign_requests) is bool, "sign_requests must be a boolean")
+        _require(type(self.allow_handoff) is bool, "allow_handoff must be a boolean")
+        _require(type(self.completeness_escalation) is bool, "completeness_escalation must be a boolean")
+        _require(_is_provider_ids(self.completeness_ladder) or self.completeness_ladder == (),
+                 "completeness_ladder must be distinct provider IDs")
+        _require(_is_int(self.auth_wall_confirmations, 1),
+                 "auth_wall_confirmations must be a positive integer")
+        _require(_is_provider_ids(self.fake_wall_confirmers) or self.fake_wall_confirmers == (),
+                 "fake_wall_confirmers must be distinct provider IDs")
+        _require(self.exclude_providers == () or _is_provider_ids(self.exclude_providers),
+                 "exclude_providers must be distinct provider IDs")
+        _require(type(self.try_harder) is bool, "try_harder must be a boolean")
+        _require(self.retry_of_trace is None or (isinstance(self.retry_of_trace, str)
+                 and re.fullmatch(r"[0-9a-f]{32}", self.retry_of_trace) is not None),
+                 "retry_of_trace must be a trace ID")
+        _require(_is_int(self.completeness_settle_ms, 0),
+                 "completeness_settle_ms must be a nonnegative integer")
+        _require(_is_int(self.completeness_borderline_items, 0),
+                 "completeness_borderline_items must be a nonnegative integer")
+        _require(_is_int(self.completeness_max_extra_reads, 0),
+                 "completeness_max_extra_reads must be a nonnegative integer")
+        _require(_is_number(self.completeness_deadline_seconds, positive=True),
+                 "completeness_deadline_seconds must be positive and finite")
+        _require(_is_number(self.handoff_timeout_seconds, positive=True),
+                 "handoff_timeout_seconds must be positive and finite")
+        _require(_is_int(self.pdf_max_pages, 1), "pdf_max_pages must be a positive integer")
+        for field in ("capture_json_max_items", "capture_json_max_bytes"):
+            _require(_is_int(getattr(self, field), 1), field + " must be a positive integer")
+        for field in ("origin_min_interval_seconds", "origin_cooldown_seconds"):
+            _require(_is_number(getattr(self, field)), field + " must be finite and nonnegative")
+        _require(_is_codes(self.origin_cooldown_failures),
+                 "origin_cooldown_failures must be a tuple of nonempty codes")
+        _require(_is_int(self.escalate_after_walls, 0),
+                 "escalate_after_walls must be a nonnegative integer")
+        _require(_is_codes(self.escalation_failures),
+                 "escalation_failures must be a tuple of nonempty codes")
+        _require(_is_number(self.origin_route_hint_ttl_seconds),
+                 "origin_route_hint_ttl_seconds must be finite and nonnegative")
+        _require(self.max_cost_usd is None or _is_number(self.max_cost_usd),
+                 "max_cost_usd must be finite and nonnegative or None")
+
+    def _validate_search(self):
+        for field, value, allow_none in (
+                ("search_source_candidates", self.search_source_candidates, True),
+                ("search_source_allow", self.search_source_allow, True),
+                ("search_source_prefer", self.search_source_prefer, False)):
+            if value is None and allow_none:
+                continue
+            _require(type(value) is tuple
+                     and (bool(value) or field != "search_source_candidates")
+                     and all(_valid_plugin_id(item) for item in value)
+                     and len(set(value)) == len(value),
+                     field + " must contain distinct nonempty search source IDs")
+        _require(self.search_max_attempts is None or _is_int(self.search_max_attempts, 1),
+                 "search_max_attempts must be a positive integer or None")
+        _require(self.search_source_timeout_seconds is None
+                 or _is_number(self.search_source_timeout_seconds, positive=True),
+                 "search_source_timeout_seconds must be positive and finite or None")
+        _require(_is_codes(self.search_terminal_failures),
+                 "search_terminal_failures must be a tuple of nonempty codes")
+
+    def _validate_browser_agent(self):
+        from .browser_use_config import READ_ACTIONS, origin
+        _require(all(_is_int(value, 1) for value in (
+                     self.browser_agent_max_steps, self.browser_agent_max_model_calls,
+                     self.browser_agent_max_actions, self.browser_agent_max_actions_per_step,
+                     self.browser_agent_max_failures, self.browser_agent_packet_max_bytes)),
+                 "browser agent counts and packet budget must be positive integers")
+        _require(_is_int(self.browser_agent_readiness_poll_ms, 1),
+                 "browser agent readiness polling must be positive milliseconds")
+        _require(all(_is_number(value, positive=True) for value in (
+                     self.browser_agent_llm_timeout_seconds,
+                     self.browser_agent_step_timeout_seconds,
+                     self.browser_agent_action_timeout_seconds)),
+                 "browser agent timeouts must be positive and finite")
+        actions = self.browser_agent_allowed_actions
+        _require(type(actions) is tuple and bool(actions)
+                 and all(isinstance(value, str) and value in READ_ACTIONS for value in actions)
+                 and len(set(actions)) == len(actions),
+                 "browser agent actions must be distinct public read actions")
+        _require(type(self.browser_agent_use_vision) is bool,
+                 "browser agent vision flag must be boolean")
+        if self.browser_agent_allowed_origins is not None:
+            _require(type(self.browser_agent_allowed_origins) is tuple
+                     and bool(self.browser_agent_allowed_origins),
+                     "browser agent origins must be a nonempty tuple or None")
+            _require(_are_origins(self.browser_agent_allowed_origins, origin),
+                     "browser agent origins must be HTTP(S) origins without credentials, paths or fragments")
+        _require(self.browser_agent_task is None
+                 or (isinstance(self.browser_agent_task, str)
+                     and bool(self.browser_agent_task.strip())
+                     and len(self.browser_agent_task) <= 2000),
+                 "browser agent task must be a 1-2000 character string or None")
+        if self.browser_agent_entry_url is not None:
+            try:
+                origin(self.browser_agent_entry_url)
+            except (ValueError, TypeError):
+                raise ValueError("browser agent entry must be a public HTTP(S) URL") from None
+
+    def _validate_browser_do(self):
+        from .browser_use_config import origin
+        from .web_do import ACTION_CONTRACTS, ACTION_TOOLS
+        _require(_is_distinct_subset(self.browser_do_allowed_tools, ACTION_TOOLS),
+                 "browser do tools must be distinct supported action tools")
+        _require(_is_distinct_subset(self.browser_do_allowed_contracts, ACTION_CONTRACTS),
+                 "browser do contracts must be distinct Core action contracts")
+        if self.browser_do_allowed_origins is not None:
+            _require(type(self.browser_do_allowed_origins) is tuple
+                     and bool(self.browser_do_allowed_origins),
+                     "browser do origins must be a nonempty tuple or None")
+            _require(_are_origins(self.browser_do_allowed_origins, origin),
+                     "browser do origins must be HTTP(S) origins without credentials, paths or fragments")
+        _require(all(_is_int(value, 1) for value in (
+                     self.browser_do_max_actions, self.browser_do_packet_max_bytes,
+                     self.browser_do_journal_max_bytes, self.browser_do_selector_max_bytes,
+                     self.browser_do_value_max_bytes, self.browser_do_description_max_bytes,
+                     self.browser_do_idempotency_key_max_bytes)),
+                 "browser do counts and byte budgets must be positive integers")
+        _require(_is_number(self.browser_do_action_timeout_seconds, positive=True),
+                 "browser do action timeout must be positive and finite")
+        _require(_is_int(self.browser_do_settle_ms, 0),
+                 "browser do settle milliseconds must be nonnegative")
+        _require(type(self.browser_do_require_auth_check) is bool,
+                 "browser do authentication check flag must be boolean")
+
+    def _validate_entry_and_providers(self):
+        from .public_entry import valid_entry
+        _require(self.public_entry_url is None or valid_entry(self.public_entry_url),
+                 "public_entry_url must be HTTPS without credentials or fragment")
+        _require(isinstance(self.public_entry_continue_failures, tuple)
+                 and all(isinstance(x, str) for x in self.public_entry_continue_failures),
+                 "public_entry_continue_failures must be a tuple of failure codes")
+        _require(_is_number(self.provider_cleanup_grace_seconds),
+                 "provider cleanup grace must be finite and nonnegative")
+        _require(type(self.retain_public_failure_evidence) is bool,
+                 "retain_public_failure_evidence must be boolean")
+        _require(_is_int(self.provider_composition_max_depth, 1)
+                 and _is_int(self.provider_composition_max_attempts, 1),
+                 "provider composition limits must be positive integers")
+        _require(_is_int(self.provider_max_attempts_per_candidate, 1),
+                 "provider_max_attempts_per_candidate must be a positive integer")
+        _require(_is_number(self.provider_retry_delay_seconds),
+                 "provider retry delay must be finite and nonnegative")
+        _require(_is_number(self.provider_deadline_grace_seconds),
+                 "provider deadline grace must be finite and nonnegative")
+        _require(_is_int(self.image_max_attempts, 1), "image_max_attempts must be a positive integer")
+        _require(_is_number(self.image_retry_delay_seconds),
+                 "image retry delay must be finite and nonnegative")
+
+    def _validate_route_memory_and_failures(self):
+        _require(type(self.use_route_memory) is bool, "use_route_memory must be boolean")
+        _require(_is_int(self.route_memory_min_samples, 1),
+                 "route memory sample requirement must be positive")
+        _require(_is_number(self.route_memory_ttl_seconds),
+                 "route memory expiry must be finite and nonnegative")
+        _require(_is_int(self.max_pages, 1), "max_pages must be a positive integer")
+        _require(_is_int(self.workload_assertion_max_count, 1)
+                 and _is_int(self.workload_assertion_max_bytes, 1)
+                 and _is_int(self.repair_overlay_registry_max_bytes, 1),
+                 "workload assertion and repair registry limits must be positive integers")
+        _require(all(_is_codes(codes) for codes in (
+                     self.terminal_failures, self.context_stop_failures,
+                     self.image_retry_failures, self.provider_retry_failures)),
+                 "failure policies must be tuples of nonempty codes")
+
+    def _validate_profile(self):
+        from .profiles import NAME
+        _require(self.profile is None or (isinstance(self.profile, str) and NAME.match(self.profile)),
+                 "profile must be a profile name or None")
+        _require(self.profile is None or self.identity is None,
+                 "Use either profile or identity, not both")
+
+    def _validate_routing(self):
+        _require(_is_int(self.navigation_page, 1), "navigation_page must be a positive integer")
+        _require(self.freshness in {"now", "hour", "day", "cached"}, "invalid freshness")
+        _require(self.provider is None or _valid_plugin_id(self.provider),
+                 "provider must be a safe provider ID or None")
+        _require(_is_provider_ids(self.compound_source_candidates),
+                 "compound_source_candidates requires distinct nonempty provider IDs")
+        _require(self.provider_candidates is None or _is_provider_ids(self.provider_candidates),
+                 "provider_candidates must be a nonempty tuple of distinct provider IDs")
+
+    def _validate_readiness(self):
+        _require(self.wait_state in {"attached", "visible"}, "invalid wait state")
+        for name, selector in (("wait_selector", self.wait_selector),
+                               ("content_ready_selector", self.content_ready_selector)):
+            _require(selector is None or _is_selector(selector),
+                     name + " must be a bounded printable CSS selector or None")
+        _require(_is_number(self.content_ready_timeout_seconds, positive=True),
+                 "content readiness timeout must be positive and finite")
+        _require(self.content_ready_selector is None
+                 or not _is_number(self.timeout_seconds, positive=True)
+                 or self.content_ready_timeout_seconds <= self.timeout_seconds,
+                 "content readiness timeout cannot exceed the operation timeout")
+        for field in ("public_browser_headless", "scrapling_google_search",
+                      "scrapling_solve_cloudflare", "scrapling_load_dom"):
+            _require(type(getattr(self, field)) is bool, field + " must be boolean")
+        _require(self.scrapling_navigation_wait_until
+                 in (None, "load", "domcontentloaded", "networkidle", "commit"),
+                 "unsupported Scrapling navigation readiness")
+
+    def _validate_budgets(self):
+        _require(_is_number(self.unblocker_timeout_seconds, positive=True),
+                 "unblocker_timeout_seconds must be positive and finite")
+        _require(_is_number(self.agent_provider_timeout_seconds, positive=True),
+                 "agent_provider_timeout_seconds must be positive and finite")
+        _require(all(_is_int(value, 0) for value in (
+                     self.max_images, self.settle_ms, self.html_shell_min_text_chars,
+                     self.rendered_min_text_chars, self.html_shell_large_bytes,
+                     self.html_shell_large_min_text_chars, self.second_opinion_text_chars)),
+                 "resource counts must be nonnegative integers")
+        _require(_is_int(self.max_bytes, 1) and _is_int(self.max_image_bytes, 1),
+                 "byte budgets must be positive integers")
+        _require(_is_number(self.timeout_seconds, positive=True),
+                 "timeout must be positive and finite")
+
+
+def _require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def _is_int(value, minimum):
+    return type(value) is int and value >= minimum
+
+
+def _is_number(value, *, positive=False):
+    """A finite int or float, at least zero (or above zero when positive)."""
+    if type(value) not in (int, float) or not math.isfinite(value):
+        return False
+    return value > 0 if positive else value >= 0
+
+
+def _is_codes(value):
+    return type(value) is tuple and all(isinstance(code, str) and code for code in value)
+
+
+def _is_distinct_subset(value, allowed):
+    return (type(value) is tuple and bool(value)
+            and all(item in allowed for item in value) and len(set(value)) == len(value))
+
+
+def _is_provider_ids(value):
+    return (type(value) is tuple and bool(value)
+            and all(_valid_plugin_id(item) for item in value) and len(set(value)) == len(value))
+
+
+def _are_origins(values, origin):
+    try:
+        return all(isinstance(value, str) and origin(value) == value for value in values)
+    except (ValueError, TypeError):
+        return False
+
+
+def _is_selector(selector):
+    return (isinstance(selector, str) and bool(selector.strip())
+            and len(selector.encode()) <= 4096
+            and not any(ord(character) < 32 or ord(character) == 127 for character in selector))
+
+
+_NO_REPORTED_COST = object()
+
+
+def _validated_content_readiness(value, policy):
+    """Validate provider readiness metadata against the exact Core policy."""
+    if policy.content_ready_selector is None:
+        if value is not None:
+            raise WebFailure("PROVIDER_DOWN",
+                "Provider returned unsolicited content readiness metadata")
+        return None
+    if (type(value) is not dict
+            or set(value) != {"status", "timeout_seconds"}
+            or value.get("status") not in {"satisfied", "timed_out"}
+            or type(value.get("timeout_seconds")) not in (int, float)
+            or value["timeout_seconds"] != policy.content_ready_timeout_seconds):
+        raise WebFailure("PROVIDER_DOWN",
+            "Provider omitted or returned invalid content readiness metadata")
+    return {"status": value["status"],
+            "timeout_seconds": value["timeout_seconds"]}
+
+
+def _measured_cost(value):
+    if type(value) not in (int, float):
+        return None
+    try:
+        return value if math.isfinite(value) and value >= 0 else None
+    except OverflowError:
+        return None
+
+
+def _total_cost(values):
+    if any(value is None for value in values):
+        return None
+    return _measured_cost(float(sum((Decimal(str(value)) for value in values), Decimal(0))))
+
+
+def _remaining_cost_policy(policy, costs, *, paid):
+    """Pass the operation's remaining cap to each acquisition, never a fresh cap."""
+    if policy.max_cost_usd is None:
+        return policy
+    spent = _total_cost(costs)
+    if spent is None:
+        if paid:
+            raise WebFailure("BUDGET_EXHAUSTED", "Prior acquisition cost is unknown; no verified paid budget remains")
+        return replace(policy, max_cost_usd=0)
+    remaining = float(Decimal(str(policy.max_cost_usd)) - Decimal(str(spent)))
+    if paid and (remaining < 0 or (remaining == 0 and spent > 0)):
+        raise WebFailure("BUDGET_EXHAUSTED", "Aggregate acquisition cost cap is exhausted")
+    return replace(policy, max_cost_usd=max(0, remaining))
+
+
+class WebFailure(Exception):
+    def __init__(self, code: str, message: str, http_status: int | None = None, *,
+                 response_url: str | None = None, failure_stage: str | None = None,
+                 cost_usd=_NO_REPORTED_COST):
+        if response_url is not None: _validate_url(response_url)
+        super().__init__(message)
+        self.code, self.message, self.http_status = code, message, http_status
+        if cost_usd is not _NO_REPORTED_COST:
+            if cost_usd is not None and _measured_cost(cost_usd) is None:
+                raise ValueError("Reported cost must be finite and nonnegative, or unknown")
+            self.cost_usd = cost_usd
+        self.response_url = response_url
+        from .provider_worker import FAILURE_STAGES
+        self.failure_stage = failure_stage if isinstance(failure_stage, str) and failure_stage in FAILURE_STAGES else None
+        self._public_failure_evidence = []
+
+    def __deepcopy__(self, memo):
+        """Copy a recorded failure without retaining exception runtime state."""
+        kwargs = {
+            "response_url": self.response_url,
+            "failure_stage": self.failure_stage,
+        }
+        if hasattr(self, "cost_usd"):
+            kwargs["cost_usd"] = copy.deepcopy(self.cost_usd, memo)
+        duplicate = type(self)(
+            self.code, self.message, self.http_status, **kwargs)
+        memo[id(self)] = duplicate
+        duplicate._public_failure_evidence = copy.deepcopy(
+            self._public_failure_evidence, memo)
+        return duplicate
+
+
+_SAFE_HEADERS = {"content-type", "x-wp-total", "x-wp-totalpages", "last-modified", "etag"}
+
+
+def _status_failure(status: int) -> str | None:
+    known = {401: "AUTH_REQUIRED", 403: "BLOCKED", 429: "RATE_LIMITED", 404: "NOT_FOUND", 410: "NOT_FOUND"}
+    if status in known: return known[status]
+    # A client error cannot be successful acquisition evidence. The status alone
+    # does not establish an access challenge, so keep unclassified errors UNKNOWN.
+    if 400 <= status < 500: return "UNKNOWN"
+    return "PROVIDER_DOWN" if status >= 500 else None
+
+
+def _validate_url(url: str) -> None:
+    try:
+        if (not isinstance(url, str)
+                or any(ord(char) < 32 or ord(char) == 127
+                       for char in url)):
+            raise ValueError()
+        parsed = urlparse(url)
+        parsed.port  # Reject malformed ports as well as malformed bracketed hosts.
+        valid = parsed.scheme in {"http", "https"} and bool(parsed.hostname) and parsed.username is None and parsed.password is None
+    except ValueError:
+        valid = False
+    if not valid:
+        raise WebFailure("INVALID_URL", "Only HTTP(S) URLs without embedded credentials are supported")
+
+
+def _core_identity_capture(response, max_bytes, *, capture_strategy=None):
+    """Detach and validate Core-only capture provenance and fetch URLs."""
+    if type(response) is not dict:
+        raise WebFailure("PROVIDER_DOWN",
+            "Identity executor returned an invalid acquisition envelope")
+    acquired = dict(response)
+    absent = object()
+    metadata = acquired.pop("visible_snapshot", absent)
+    private_sources = acquired.pop(
+        "identity_private_image_sources", absent)
+    safe_metadata = None
+    safe_sources = {}
+    try:
+        if metadata is not absent:
+            expected = {
+                "strategy", "strategy_version", "strategy_binding_id",
+                "scope", "navigation_performed",
+                "source_refresh_performed", "source_freshness",
+                "gallery_coverage",
+            }
+            if (capture_strategy is None or type(metadata) is not dict
+                    or set(metadata) != expected
+                    or metadata.get("strategy") != capture_strategy.id
+                    or metadata.get("strategy_version")
+                        != capture_strategy.version
+                    or metadata.get("strategy_binding_id")
+                        != capture_strategy.binding_id
+                    or metadata.get("scope")
+                        != "owner_opened_visible_region"
+                    or metadata.get("navigation_performed") is not False
+                    or metadata.get("source_refresh_performed") is not False
+                    or metadata.get("source_freshness") != "unknown"
+                    or metadata.get("gallery_coverage")
+                        != "partial_unverified_candidates"):
+                raise ValueError()
+            safe_metadata = json.loads(json.dumps(metadata, sort_keys=True,
+                separators=(",", ":"), allow_nan=False))
+        elif capture_strategy is not None:
+            raise ValueError()
+        if private_sources is not absent:
+            if type(private_sources) is not dict:
+                raise ValueError()
+            for public_url, private_url in private_sources.items():
+                if (not isinstance(public_url, str)
+                        or not isinstance(private_url, str)):
+                    raise ValueError()
+                _validate_url(public_url)
+                _validate_url(private_url)
+                if (public_url != _output_url(
+                        public_url, named_identity=True)
+                        or public_url != _output_url(
+                            private_url, named_identity=True)):
+                    raise ValueError()
+                safe_sources[public_url] = private_url
+                # The executor must export the redacted URL in its projection;
+                # the signed fetch URL remains only in this detached map.
+                content = acquired.get("content")
+                raw = acquired.get("raw")
+                if (isinstance(content, str)
+                        and (private_url in content
+                            or html.escape(private_url, quote=True)
+                                in content)):
+                    raise ValueError()
+                if (isinstance(raw, bytes)
+                        and (private_url.encode() in raw
+                            or html.escape(private_url, quote=True).encode()
+                                in raw)):
+                    raise ValueError()
+        encoded = json.dumps({
+            "visible_snapshot": safe_metadata,
+            "identity_private_image_sources": safe_sources,
+        }, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        if len(encoded) > max_bytes:
+            raise ValueError()
+    except WebFailure:
+        raise WebFailure("PROVIDER_DOWN",
+            "Identity executor returned invalid private capture data") from None
+    except (TypeError, ValueError, OverflowError, UnicodeError):
+        raise WebFailure("PROVIDER_DOWN",
+            "Identity executor returned invalid private capture data") from None
+    return acquired, safe_metadata, safe_sources
+
+
+def _identity_acquisition_fingerprint(response, max_bytes, *,
+                                      capture_metadata=None):
+    """Bind provider output to the exact Core acquisition without exporting it."""
+    try:
+        if (type(response) is not dict
+                or not all(isinstance(response.get(key), str)
+                           for key in ("url", "content", "content_type"))):
+            raise ValueError()
+        _validate_url(response["url"])
+        content = response["content"].encode()
+        raw = response.get("raw", content)
+        status = response.get("http_status")
+        headers = response.get("headers", {})
+        if (not isinstance(raw, bytes)
+                or len(content) > max_bytes or len(raw) > max_bytes
+                or status is not None and (type(status) is not int
+                    or not 100 <= status <= 599)
+                or type(headers) is not dict
+                or any(not isinstance(key, str)
+                       or not isinstance(value, str)
+                       for key, value in headers.items())):
+            raise ValueError()
+        payload = {
+            "url": response["url"],
+            "content_sha256": hashlib.sha256(content).hexdigest(),
+            "raw_sha256": hashlib.sha256(raw).hexdigest(),
+            "content_type": response["content_type"],
+            "http_status": status,
+            "headers": {key: value for key, value in headers.items()
+                        if key in _SAFE_HEADERS},
+            "screenshot": response.get("screenshot"),
+            "navigation": response.get("navigation"),
+            "navigation_data": response.get("navigation_data"),
+            "content_readiness": response.get("content_readiness"),
+            "capture_metadata": capture_metadata,
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                             allow_nan=False).encode()
+        if len(encoded) > max_bytes:
+            raise ValueError()
+    except WebFailure:
+        raise WebFailure("PROVIDER_DOWN",
+            "Identity executor returned an invalid acquisition envelope") from None
+    except (TypeError, ValueError, OverflowError, UnicodeError):
+        raise WebFailure("PROVIDER_DOWN",
+            "Identity executor returned an invalid acquisition envelope") from None
+    return hashlib.sha256(encoded).hexdigest()
+
+
+# Query parameters that carry account credentials rather than page state.
+# Signed CDN parameters (for example Facebook's oh/oe) are kept: they are what
+# makes the link load, and they expire.
+_CREDENTIAL_QUERY_KEYS = frozenset({
+    "access_token", "accesstoken", "auth", "auth_token", "authorization",
+    "code", "csrf", "csrf_token", "fb_dtsg", "id_token", "jazoest", "key",
+    "password", "passwd", "pwd", "refresh_token", "session", "session_id",
+    "sessionid", "sid", "token", "xsrf", "xsrf_token"})
+
+
+def _strip_credential_query(url):
+    parsed = urlparse(url)
+    if not parsed.query:
+        return parsed._replace(fragment="").geturl()
+    # Remove whole parameters without re-encoding the rest: signed links are
+    # verified against their exact bytes.
+    kept = [part for part in parsed.query.split("&")
+            if unquote_plus(part.partition("=")[0]).lower() not in _CREDENTIAL_QUERY_KEYS]
+    return parsed._replace(query="&".join(kept), fragment="").geturl()
+
+
+def _output_url(url, *, named_identity=False):
+    # Identity URLs keep their page and CDN parameters; only parameters that
+    # carry account credentials are removed before output.
+    try: _validate_url(url)
+    except WebFailure: return None
+    return _strip_credential_query(url) if named_identity else url
+
+
+def _redact_result_urls(result):
+    receipt = result.get("receipt", {})
+    named = bool(receipt.get("identity"))
+    if "url" in result: result["url"] = _output_url(result["url"], named_identity=named)
+    if named and isinstance(result.get("image_urls"), list):
+        result["image_urls"] = [
+            _output_url(url, named_identity=True)
+            for url in result["image_urls"]]
+    if named and isinstance(result.get("images"), list):
+        for image in result["images"]:
+            if isinstance(image, dict) and "url" in image:
+                image["url"] = _output_url(
+                    image["url"], named_identity=True)
+    for key in ("requested_url", "final_url"):
+        if key in receipt: receipt[key] = _output_url(receipt[key], named_identity=named)
+    for attempt in receipt.get("attempts", []):
+        for key in ("url", "requested_url", "final_url"):
+            if key in attempt: attempt[key] = _output_url(attempt[key], named_identity=named)
+    return result
+
+
+# Interstitials from common bot walls (Cloudflare, PerimeterX/HUMAN, Akamai,
+# DataDome, Imperva). Checked only on short pages so articles that quote these
+# phrases are not mistaken for walls.
+_CHALLENGE_TITLES = frozenset({
+    "just a moment...", "attention required! | cloudflare", "access denied",
+    "verify you are human", "robot or human?", "pardon our interruption",
+    "security check", "access to this page has been denied"})
+_CHALLENGE_PHRASES = (
+    "verify you are human", "checking your browser before accessing",
+    "enable javascript and cookies to continue", "please complete the following challenge",
+    "we must verify your session", "activate and hold the button", "press & hold",
+    "press and hold", "pardon our interruption", "are you a robot", "robot or human",
+    "checking if the site connection is secure", "verifying you are human",
+    "access to this page has been denied", "request unsuccessful. incapsula",
+    'thinks you are a "bot"', "thinks you are a bot", "unusual traffic from your computer",
+    "please verify you are a human", "confirm you are not a robot")
+
+# Short pages that only ask the reader to sign in, in the languages the
+# benchmarks meet. Checked only on pages under _SIGN_IN_TEXT_MAX characters.
+_SIGN_IN_PHRASES = (
+    "sign in to continue", "log in to continue", "login to continue", "please sign in",
+    "please log in", "sign in to view", "log in to view",
+    "ingresa a tu cuenta", "inicia sesión para continuar", "faça login para continuar",
+    "entre na sua conta", "connectez-vous pour continuer", "identifiez-vous",
+    "bitte melden sie sich an", "melden sie sich an, um", "accedi per continuare",
+    "log in om verder te gaan")
+_SIGN_IN_TEXT_MAX = 2500
+# Final URLs that are a site's own bot or block page.
+_BOT_PAGE_PATH = re.compile(r"/(captcha|bots?|blocked|block|challenge|access[-_]?denied|"
+                            r"are-?you-?(human|a-?robot)|robot-?check)(\.html?|/|$)", re.I)
+
+
+def _challenge_text(title: str | None, text: str) -> bool:
+    title = (title or "").strip().lower().lstrip("# ").strip()
+    if title in _CHALLENGE_TITLES:
+        return True
+    text = text.lower()
+    return len(text) < 3000 and any(phrase in text for phrase in _CHALLENGE_PHRASES)
+
+
+def _challenge(html: str) -> bool:
+    soup = BeautifulSoup(html[:100000], "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    return _challenge_text(title, soup.get_text(" ", strip=True))
+
+
+_SIGN_IN_PATH = re.compile(r"(^|[/._-])(sign-?in|log-?in|auth|ws/ebayisapi\.dll)([/._?-]|$)", re.I)
+
+
+def _wall_after_parse(title, text, requested_url, final_url):
+    """A provider may hand back a wall as if it were the page. Name it."""
+    if _challenge_text(title, text or ""):
+        return "CAPTCHA"
+    try:
+        requested, final = urlparse(requested_url), urlparse(final_url or requested_url)
+    except ValueError:
+        return None
+    moved = final.hostname and (final.hostname + final.path) != (requested.hostname or "") + requested.path
+    if moved and _BOT_PAGE_PATH.search(final.path) and not _BOT_PAGE_PATH.search(requested.path):
+        return "CAPTCHA"
+    if (moved and _SIGN_IN_PATH.search(final.hostname.split(".")[0] + "/" + final.path)
+            and not _SIGN_IN_PATH.search(requested.path)):
+        return "AUTH_REQUIRED"
+    body = (text or "").strip()
+    if len(body) < _SIGN_IN_TEXT_MAX and any(p in body.lower() for p in _SIGN_IN_PHRASES):
+        return "AUTH_REQUIRED"
+    return None
+
+
+def _image_urls(structured: object, soup: BeautifulSoup | None, url: str) -> list[str]:
+    found: list[str] = []
+    def visit(obj):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if key in {"image", "images", "featured_image"}:
+                    if isinstance(value, str): found.append(value)
+                    elif isinstance(value, dict): found.append(value.get("src") or value.get("url") or "")
+                    elif isinstance(value, list):
+                        for image in value:
+                            if isinstance(image, str): found.append(image)
+                            elif isinstance(image, dict): found.append(image.get("src") or image.get("url") or "")
+                visit(value)
+        elif isinstance(obj, list):
+            for value in obj: visit(value)
+    visit(structured)
+    if soup:
+        for element in soup.select('meta[property="og:image"], meta[name="twitter:image"]'):
+            found.append(element.get("content", ""))
+        for element in soup.select("img"):
+            found.append(element.get("src") or element.get("data-src") or "")
+    normalized = []
+    for image in found:
+        absolute = urljoin(url, image)
+        if image and urlparse(absolute).scheme in {"http", "https"} and absolute not in normalized:
+            normalized.append(absolute)
+    return normalized
+
+
+def parse_content(content: str, content_type: str, url: str, adapter: str | None,
+                  navigation_data=None, navigation=None, policy=None,
+                  requested_url=None, acquisition_attestation=None, *,
+                  adapter_registry=None) -> dict:
+    if adapter is None:
+        return _parse_builtin_content(content,content_type,url,None,navigation_data,navigation)
+    from .adapters import AdapterRequest
+    if adapter_registry is None:
+        # Compatibility for standalone parsing helpers. Runtime always passes
+        # its frozen startup registry explicitly.
+        from .adapters import DEFAULT_ADAPTERS
+        adapter_registry = DEFAULT_ADAPTERS
+    return adapter_registry.project(adapter,AdapterRequest(
+        content, content_type, url, navigation_data, navigation, policy,
+        requested_url, acquisition_attestation))
+
+
+class _JsonCapture:
+    """Collects JSON bodies a rendered page fetched for itself (XHR/fetch only)."""
+
+    def __init__(self, max_items, max_bytes):
+        self.max_items, self.max_bytes = max_items, max_bytes
+        self.items, self.skipped, self._tasks = [], 0, []
+
+    @staticmethod
+    def wants(resource_type, content_type):
+        # Many sites serve JSON as text/html or JavaScript (Facebook GraphQL is
+        # text/html with a "for (;;);" prefix). Parse decides, not the label.
+        kind = (content_type or "").lower()
+        return (resource_type in {"xhr", "fetch"}
+                and not any(skip in kind for skip in ("image/", "font/", "video/", "audio/", "text/css")))
+
+    def add(self, url, status, content_type, body):
+        if len(self.items) >= self.max_items or body is None or len(body) > self.max_bytes:
+            self.skipped += 1
+            return
+        try:
+            text = body.decode("utf-8")
+        except UnicodeDecodeError:
+            self.skipped += 1
+            return
+        text = _strip_json_prefix(text)
+        try:
+            data, shape = json.loads(text), "json"
+        except json.JSONDecodeError:
+            records = _ndjson_records(text)
+            if records is None:
+                self.skipped += 1
+                return
+            data, shape = records, "ndjson"
+        try:
+            _validate_url(url)
+        except WebFailure:
+            self.skipped += 1
+            return
+        self.items.append({"url": url, "http_status": status, "content_type": content_type,
+                           "format": shape, "data": data})
+
+    def listener(self):
+        def on_response(response):
+            try:
+                if not self.wants(response.request.resource_type, response.headers.get("content-type")):
+                    return
+            except Exception:
+                return
+
+            async def read():
+                try:
+                    body = await response.body()
+                except Exception:
+                    body = None
+                self.add(response.url, response.status, response.headers.get("content-type"), body)
+            self._tasks.append(asyncio.ensure_future(read()))
+        return on_response
+
+    async def settle(self, timeout):
+        if self._tasks:
+            await asyncio.wait(self._tasks, timeout=max(timeout, 0.1))
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
+                self.skipped += 1
+        return {"items": self.items, "skipped": self.skipped}
+
+
+def _embedded_json(soup):
+    """JSON a page embeds for its own frontend (for example __NEXT_DATA__)."""
+    found = []
+    for script in soup.select('script[type="application/json"]'):
+        try:
+            data = json.loads(script.get_text())
+        except (json.JSONDecodeError, TypeError):
+            continue
+        found.append({"id": script.get("id"), "data": data})
+    return found
+
+
+_JSON_PREFIXES = ("for (;;);", "for(;;);", ")]}'", "while(1);", "while (1);", "&&&START&&&")
+
+
+def _strip_json_prefix(text: str) -> str:
+    """Remove the anti-hijacking prefixes sites put in front of JSON bodies."""
+    stripped = text.lstrip("\ufeff \t\r\n")
+    for prefix in _JSON_PREFIXES:
+        if stripped.startswith(prefix):
+            return stripped[len(prefix):].lstrip(",\r\n ")
+    return text
+
+
+def _pdf_text(raw: bytes, max_pages: int) -> str:
+    """Text of a PDF via pypdf, pages separated by form feeds. Title comes first."""
+    from pypdf import PdfReader
+    try:
+        reader = PdfReader(io.BytesIO(raw))
+        pages = []
+        for page in reader.pages[:max_pages]:
+            try:
+                pages.append(page.extract_text() or "")
+            except Exception:  # one unreadable page does not lose the rest
+                pages.append("")
+        title = ((reader.metadata or {}).get("/Title") or "").strip() if reader.metadata else ""
+    except Exception as exc:
+        raise WebFailure("SCHEMA_CHANGED", "PDF could not be read") from exc
+    text = "\f".join(pages).strip()
+    return ("Title: " + title + "\n\n" if title else "") + text
+
+
+def _ndjson_records(content: str):
+    lines = [line for line in content.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return None
+    records = []
+    for line in lines:
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            return None
+    return records
+
+
+def _parse_builtin_content(content: str, content_type: str, url: str, adapter: str | None, navigation_data=None, navigation=None, policy=None) -> dict:
+    structured: object = None
+    soup = None
+    if adapter == "rss" or "xml" in content_type:
+        import xml.etree.ElementTree as ET
+        try: root = ET.fromstring(content)
+        except ET.ParseError as exc: raise WebFailure("SCHEMA_CHANGED", "Expected XML response") from exc
+        title = root.findtext("./channel/title")
+        text = " ".join(root.itertext())
+        structured = {"format": "xml", "root": root.tag}
+    elif "pdf" in content_type and adapter not in ("json", "html"):
+        title = None
+        if content.startswith("Title: "):
+            title = content.split("\n", 1)[0][7:].strip() or None
+        if title is None:
+            title = next((line.strip() for line in content.splitlines() if line.strip()), None)
+            title = title[:200] if title else None
+        return {"title": title, "text": content.strip(), "image_urls": [],
+                "structured": {"format": "pdf", "pages": content.count("\f") + 1 if content.strip() else 0}}
+    elif "markdown" in content_type and adapter not in ("json", "html"):
+        title = None
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                title = stripped[2:].strip() or None
+                break
+            if stripped.lower().startswith("title:"):
+                title = stripped[6:].strip() or None
+                break
+        text = content.strip()
+        images = [urljoin(url, found) for found in re.findall(r"!\[[^\]]*\]\((\S+?)(?:\s+\"[^\"]*\")?\)", content)]
+        structured = {"format": "markdown"}
+        return {"title": title, "text": text, "structured": structured,
+                "image_urls": list(dict.fromkeys(images))}
+    elif "json" in content_type or adapter == "json":
+        try:
+            structured = json.loads(content)
+        except json.JSONDecodeError as exc:
+            # Some APIs stream newline-delimited JSON (one module per line) under a
+            # JSON content type. Accept it only when every nonempty line parses.
+            records = _ndjson_records(content)
+            if records is None:
+                raise WebFailure("SCHEMA_CHANGED", "Expected valid JSON response") from exc
+            structured = {"format": "ndjson", "records": records}
+        obj = structured.get("product", structured) if isinstance(structured, dict) else {}
+        title = obj.get("title") if isinstance(obj, dict) else None
+        text = BeautifulSoup(obj.get("description") or obj.get("body_html") or "", "html.parser").get_text(" ", strip=True) if isinstance(obj, dict) else ""
+    else:
+        soup = BeautifulSoup(content, "html.parser")
+        title = soup.title.get_text(" ", strip=True) if soup.title else None
+        jsonld = []
+        for script in soup.select('script[type="application/ld+json"]'):
+            try: jsonld.append(json.loads(script.get_text()))
+            except (json.JSONDecodeError, TypeError): pass
+        structured = {"jsonld": jsonld, "embedded_json": _embedded_json(soup)}
+        for remove in soup.select("script,style,noscript"):
+            remove.decompose()
+        text = soup.get_text(" ", strip=True)
+    parsed = {"title": title, "text": text, "structured": structured, "image_urls": _image_urls(structured, soup, url)}
+    return parsed
+
+
+def _reject_unusable_page(candidate, candidate_record, policy, resolved, adapter,
+                          response, parsed, url):
+    """Raise when a provider returned an app shell, an empty render, a challenge
+    or a sign-in page instead of the page, so the next provider is tried."""
+    if candidate == "http" and policy.provider is None and "html" in response["content_type"]:
+        unresolved = re.search(r"\{\{[^{}]+\}\}",parsed["text"])
+        # Exact adapters validate their own projections. Short product
+        # titles are not evidence of an unrendered page shell.
+        text_chars = len(parsed["text"].strip())
+        shell = adapter in (None, "html") and "<script" in response["content"] and (
+            text_chars < policy.html_shell_min_text_chars
+            or (len(response["content"]) >= policy.html_shell_large_bytes
+                and text_chars < policy.html_shell_large_min_text_chars))
+        if unresolved or shell: raise WebFailure("VISUAL_REQUIRED", "Rendered page required for unresolved template or empty shell")
+    elif (not resolved and adapter in (None, "html") and "html" in response["content_type"]
+            and policy.provider is None and (candidate_record or {}).get("rendering")
+            and len(parsed["text"].strip()) < policy.rendered_min_text_chars):
+        raise WebFailure("EMPTY_PAGE", "Rendered page has almost no text")
+    if (not resolved and any(kind in response["content_type"]
+                             for kind in ("html", "markdown"))):
+        wall = _wall_after_parse(parsed.get("title"), parsed.get("text"),
+                                 url, response.get("url"))
+        if wall:
+            raise WebFailure(wall, "Provider returned a challenge or sign-in page",
+                             response.get("http_status"),
+                             response_url=response.get("url"))
+
+
+def _wants_second_opinion(result, policy, provider):
+    """An automatic plain-HTTP success that may be a page whose content renders later."""
+    receipt = result.get("receipt") or {}
+    if (policy.second_opinion_text_chars == 0 or provider or policy.provider
+            or policy.provider_candidates is not None or policy.identity or policy.render
+            or receipt.get("status") != "observed" or receipt.get("method") != "http"
+            or receipt.get("cache_hit") or "html" not in (result.get("content_type") or "")):
+        return False
+    return ("<script" in (result.get("content") or "")
+            and len((result.get("text") or "").strip()) < policy.second_opinion_text_chars)
+
+
+def _automatic_observed(result, policy, provider):
+    """An automatic (router-chosen) read that came back observed."""
+    receipt = result.get("receipt") or {}
+    return not (provider or policy.provider or policy.provider_candidates is not None
+                or policy.identity or receipt.get("status") != "observed"
+                or receipt.get("cache_hit"))
+
+
+class _closing:
+    """Close a per-read client on exit; leave the shared one open."""
+
+    def __init__(self, client, owned):
+        self.client, self.owned = client, owned
+
+    async def __aenter__(self):
+        return self.client
+
+    async def __aexit__(self, *args):
+        if self.owned:
+            await self.client.aclose()
+
+
+def _merge_response_cookies(profile, response):
+    """Fold Set-Cookie answers from a profile read back into the profile."""
+    cookies = []
+    for cookie in response.cookies.jar:
+        cookies.append({"name": cookie.name, "value": cookie.value,
+                        "domain": cookie.domain or (response.url.host or ""),
+                        "path": cookie.path or "/", "secure": bool(cookie.secure),
+                        "httpOnly": False, "sameSite": "Lax",
+                        "expires": float(cookie.expires) if cookie.expires else -1})
+    if cookies and profile.merge({"cookies": cookies, "origins": []}):
+        profile.changed = True
+
+
+def _allowed(registry, identifier, policy):
+    try:
+        registry.require_enabled(identifier, policy)
+        return True
+    except WebFailure:
+        return False
+
+
+_HANDOFF_WALLS = frozenset({"CAPTCHA", "BLOCKED", "AUTH_REQUIRED", "AUTH_EXPIRED"})
+
+
+def _suggest_handoff(receipt):
+    """A read stopped by a wall a person could clear names the T5 next step."""
+    failure = receipt.get("failure") or {}
+    tried = {attempt.get("provider") for attempt in receipt.get("attempts") or ()}
+    if failure.get("code") in _HANDOFF_WALLS and "handoff" not in tried:
+        receipt["next_step"] = {"provider": "handoff", "reason": failure["code"],
+            "how": "retry with provider='handoff' (or allow_handoff=True) to open the page "
+                   "for a person to clear; the read resumes once the wall is gone"}
+
+
+def _navigation_failure(message):
+    """Chromium navigation errors that are the target's answer, not an outage.
+
+    A site that blocks with an empty error response makes page.goto raise
+    ERR_HTTP_RESPONSE_CODE_FAILURE instead of returning the response.
+    """
+    if "ERR_HTTP_RESPONSE_CODE_FAILURE" in message or "ERR_BLOCKED_BY_RESPONSE" in message:
+        return "BLOCKED"
+    if "ERR_NAME_NOT_RESOLVED" in message:
+        return "NOT_FOUND"
+    return None
+
+
+class Runtime:
+    """Local-first async web runtime. Observation receipts do not certify listing availability.
+
+    ``steel_api_url`` is a self-hosted Steel API (hosted Steel Cloud is the
+    ``steel_cloud`` provider). local_cdp opens a new tab in an explicitly
+    configured browser, never exports cookies.
+    """
+    def __init__(self, state_dir: str | Path = "state", steel_api_url: str | None = None,
+                 local_cdp_url: str | None = None, concurrency: int = 4,
+                 per_domain: int = 1, domain_delay: float = 0.25,
+                 transport=None, identity_registry: str | Path | None = None,
+                 plugin_catalog=None, plugin_config_path: str | Path | None = None):
+        self.state_dir = Path(state_dir).expanduser()
+        from .plugin_catalog import PluginCatalog, build_plugin_catalog
+        if plugin_catalog is not None and plugin_config_path is not None:
+            raise ValueError("Use either plugin_catalog or plugin_config_path")
+        if plugin_catalog is not None:
+            if not isinstance(plugin_catalog, PluginCatalog):
+                raise ValueError("plugin_catalog must be a PluginCatalog snapshot")
+            catalog = plugin_catalog
+        else:
+            # Resolve compatibility globals once. Later mutation cannot change
+            # the registries or plugin set owned by this Runtime.
+            from . import providers as provider_module
+            from . import search_plugins as search_module
+            from . import adapters as adapter_module
+            catalog = build_plugin_catalog(config_path=plugin_config_path,
+                base_providers=provider_module.DEFAULT_PROVIDERS,
+                base_searches=search_module.DEFAULT_SEARCHES,
+                base_adapters=adapter_module.DEFAULT_ADAPTERS)
+        self.steel_api_url = steel_api_url or os.getenv("FRANKENSURF_STEEL_URL")
+        self.local_cdp_url = local_cdp_url or os.getenv("FRANKENSURF_LOCAL_CDP")
+        if self.steel_api_url:
+            p = urlparse(self.steel_api_url)
+            if p.scheme not in {"http", "https"} or not p.hostname:
+                raise ValueError("steel_api_url must be an HTTP(S) Steel API URL")
+        if concurrency < 1 or per_domain < 1 or domain_delay < 0:
+            raise ValueError("invalid concurrency")
+        self.identities = IdentityRegistry(identity_registry)
+        from .identity_snapshots import (
+            bind_owner_visible_capture_strategy,
+            owner_visible_capture_binding_id,
+        )
+        strategy = bind_owner_visible_capture_strategy()
+        strategy_binding_id = owner_visible_capture_binding_id(strategy)
+        if (not _valid_plugin_id(strategy.id)
+                or not isinstance(strategy.version, str)
+                or _PLUGIN_VERSION.fullmatch(strategy.version) is None
+                or re.fullmatch(r"[0-9a-f]{64}", strategy_binding_id)
+                    is None
+                or strategy_binding_id
+                    != owner_visible_capture_binding_id()):
+            raise ValueError("Invalid Core capture strategy")
+
+        def current_capture_binding(
+                execution=strategy,
+                binding=owner_visible_capture_binding_id):
+            return binding(execution)
+
+        self._owner_visible_capture_strategy = _IdentityCaptureStrategy(
+            strategy.id, strategy.version, strategy_binding_id,
+            strategy.health, strategy.acquire,
+            current_capture_binding)
+        from .routes import RouteRecipeRegistry
+        self.routes = RouteRecipeRegistry(self.state_dir / "routes" / "recipes.json")
+        self._identity_browsers = {}
+        self._global = asyncio.Semaphore(concurrency)
+        self._per_domain_count = per_domain
+        self._domain_sems, self._domain_next = {}, {}
+        self._domain_delay = domain_delay
+        self._blocked_domains = {}
+        self._transport = transport
+        self._http = None
+        self._pw = self._local_browser = self._steel_browser = self._cdp_browser = None
+        self._steel_session = None
+        self._steel_page = None
+        self._browser_lock = asyncio.Lock()
+        self._steel_lock = asyncio.Lock()  # upstream OSS Steel is single-session
+        # Session construction is deliberately last: invalid Runtime arguments
+        # and core registry failures cannot strand factory-created executions.
+        self.plugin_catalog = catalog
+        self._plugin_session = catalog.open_session()
+        self.providers = self._plugin_session.providers
+        self.searches = self._plugin_session.searches
+        self.adapters = self._plugin_session.adapters
+
+    def inspect_plugins(self):
+        """Return the immutable, secret-free startup catalog description."""
+        return self.plugin_catalog.inspect()
+
+
+    async def __aenter__(self):
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        (self.state_dir / "evidence").mkdir(exist_ok=True)
+        (self.state_dir / "traces").mkdir(exist_ok=True)
+        (self.state_dir / "cache").mkdir(exist_ok=True)
+        from .bot_auth import sign_hop
+        self._http = httpx.AsyncClient(follow_redirects=True, transport=self._transport,
+                                       headers={"User-Agent": "FrankenSurf/0.1 evidence-first sourcing"},
+                                       event_hooks={"request": [sign_hop]})
+        try:
+            await self._plugin_session.start()
+        except BaseException:
+            await self._http.aclose()
+            self._http = None
+            raise
+        return self
+
+    async def __aexit__(self, *args):
+        plugin_error = None
+        try:
+            await self._plugin_session.close()
+        except BaseException as error:
+            plugin_error = error
+        try:
+            if self._local_browser:
+                try: await self._local_browser.close()
+                except Exception: pass
+            # Never close the user's CDP browser. Stopping Playwright only disconnects it.
+            if self._pw:
+                try: await self._pw.stop()
+                except Exception: pass
+            if self._steel_session and self._http:
+                try:
+                    await self._http.post(self.steel_api_url.rstrip("/") + "/v1/sessions/" + self._steel_session + "/release", timeout=10)
+                except httpx.HTTPError: pass
+            if self._http:
+                await self._http.aclose()
+        finally:
+            self._http = None
+        if plugin_error is not None and (not args or args[0] is None):
+            raise plugin_error
+
+    def _save_bytes(self, data: bytes, extension: str) -> dict:
+        digest = hashlib.sha256(data).hexdigest()
+        from .repair import _write_private_bytes
+        return _write_private_bytes(
+            self.state_dir, ("evidence", digest + extension), data)
+
+    def _prepare_bytes(self, data: bytes, extension: str):
+        """Describe content-addressed evidence without writing it yet."""
+        digest = hashlib.sha256(data).hexdigest()
+        from .repair import _artifact_path
+        descriptor = {
+            "path": str(_artifact_path(
+                self.state_dir, ("evidence", digest + extension))),
+            "sha256": digest,
+            "bytes": len(data),
+        }
+        expected = dict(descriptor)
+
+        def commit():
+            retained = self._save_bytes(data, extension)
+            if retained != expected:
+                raise OSError("Evidence descriptor changed")
+
+        return descriptor, commit
+
+    def _image_evidence(self, data: bytes) -> dict:
+        """Retain an image now, or describe a semantic-attempt artifact."""
+        if not _STAGE_IMAGE_EVIDENCE.get():
+            return self._save_bytes(data, ".image")
+        descriptor, commit = self._prepare_bytes(data, ".image")
+        return {**descriptor, "_evidence_commit": commit}
+
+    def _prepare_provider_failure_evidence(
+            self, raw: bytes, content_type: str):
+        """Describe evidence before returning its one-shot atomic writer."""
+        media_type = content_type.partition(";")[0].strip().lower()
+        extension = {
+            "application/json": ".json",
+            "text/html": ".html",
+            "text/plain": ".txt",
+        }.get(media_type, ".bin")
+        digest = hashlib.sha256(raw).hexdigest()
+        from .repair import _artifact_path
+        descriptor = {
+            "path": str(_artifact_path(
+                self.state_dir, ("evidence", digest + extension))),
+            "sha256": digest,
+            "bytes": len(raw),
+        }
+
+        def commit():
+            retained = self._save_bytes(raw, extension)
+            if retained != descriptor:
+                raise OSError("Provider evidence descriptor changed")
+
+        return descriptor, commit
+
+    def _cache_key(self, url, adapter, policy, resolved=None, *, route_scope=None,
+                   route_seed_scope=None):
+        adapter_version = None
+        if adapter:
+            adapter_version = {
+                "version": self.adapters.require_enabled(adapter).version,
+                "binding_id": self.adapters.binding_id(adapter)}
+        provider_version = None
+        if resolved is not None:
+            provider_id = policy.provider or resolved.provider
+            provider_version = {
+                "id": provider_id,
+                "version": self.providers.require_enabled(
+                    provider_id, policy,
+                    operation="extract" if adapter else "read").version,
+                "binding_id": self.providers.binding_id(provider_id)}
+        elif policy.provider:
+            provider_version = {
+                "version": self.providers.require_enabled(
+                    policy.provider, policy,
+                    operation="extract" if adapter else "read").version,
+                "binding_id": self.providers.binding_id(policy.provider)}
+        elif policy.provider_candidates is not None and resolved is None:
+            manifests = {item["id"]: item for item in self.providers.inspect()}
+            provider_version = [manifests.get(identifier) for identifier in policy.provider_candidates]
+        elif resolved is None:
+            manifests = {item["id"]: item for item in self.providers.inspect()}
+            candidates = self.providers.candidates(policy,
+                configured=("steel",) if self.steel_api_url else (),
+                operation="extract" if adapter else "read")
+            provider_version = [manifests.get(identifier) for identifier in candidates]
+        key = [url, adapter, adapter_version, provider_version, asdict(policy)]
+        if resolved is not None: key.append(resolved.cache_scope)
+        if route_scope is not None: key.append({"operator_route_recipe": route_scope})
+        if route_seed_scope is not None:
+            key.append({"catalog_route_seeds": route_seed_scope})
+        return hashlib.sha256(json.dumps(key, sort_keys=True).encode()).hexdigest()
+
+    def _cache_lookup(self, key, policy):
+        if policy.freshness == "now": return None
+        file = self.state_dir / "cache" / (key + ".json")
+        if not file.exists(): return None
+        result = json.loads(file.read_text())
+        status = result["receipt"].get("http_status")
+        # Older releases could cache an unclassified 4xx as observed. Reacquire
+        # instead of perpetuating that invalid success receipt.
+        if isinstance(status, int) and _status_failure(status): return None
+        observed = datetime.fromisoformat(result["receipt"]["observed_at"])
+        age = (datetime.now(timezone.utc) - observed).total_seconds()
+        ttl = {"hour": 3600, "day": 86400, "cached": float("inf")}[policy.freshness]
+        if age > ttl: return None
+        result["receipt"]["cache_hit"] = True
+        result["receipt"]["freshness_seconds"] = age
+        result["receipt"]["source_trace_id"] = result["receipt"]["trace_id"]
+        result["receipt"]["trace_id"] = uuid.uuid4().hex
+        return result
+
+    async def _get_http(self, url, policy):
+        assert self._http
+        signing = None
+        try:
+            headers = ({"Accept": "text/markdown, text/html;q=0.9, */*;q=0.8"}
+                       if policy.prefer_markdown else None)
+            from .bot_auth import SIGNER, current_signer
+            from .profiles import ACTIVE
+            signing = SIGNER.set(current_signer() if policy.sign_requests else None)
+            profile = ACTIVE.get() if policy.profile else None
+            client = self._http
+            if profile is not None:
+                from .bot_auth import sign_hop
+                headers = dict(headers or {})
+                cookie = profile.cookie_header(url)
+                if cookie:
+                    headers["Cookie"] = cookie
+                if profile.fingerprint.get("user_agent"):
+                    headers["User-Agent"] = profile.fingerprint["user_agent"]
+                client = httpx.AsyncClient(follow_redirects=True, transport=self._transport,
+                                           event_hooks={"request": [sign_hop]})
+            async with _closing(client, client is not self._http), client.stream(
+                    "GET", url, timeout=policy.timeout_seconds, headers=headers) as response:
+                final_url = str(response.url)
+                _validate_url(final_url)
+                failure = _status_failure(response.status_code)
+                if failure: raise WebFailure(failure, "HTTP response requires stop", response.status_code, response_url=final_url)
+                raw = bytearray()
+                async for chunk in response.aiter_bytes():
+                    raw.extend(chunk)
+                    if len(raw) > policy.max_bytes: raise WebFailure("LIMIT_EXCEEDED", "Response byte limit exceeded", response_url=final_url)
+                data = bytes(raw)
+                if profile is not None:
+                    _merge_response_cookies(profile, response)
+                content = data.decode(response.encoding or "utf-8", errors="replace")
+                if "html" in response.headers.get("content-type", "") and _challenge(content):
+                    raise WebFailure("CAPTCHA", "Challenge page observed", response.status_code, response_url=final_url)
+                return {"url": str(response.url), "content": content, "raw": data,
+                        "content_type": response.headers.get("content-type", ""), "http_status": response.status_code,
+                        "headers": {k: v for k, v in response.headers.items() if k in _SAFE_HEADERS}}
+        except httpx.TimeoutException as exc:
+            raise WebFailure("TIMEOUT", "HTTP request timed out") from exc
+        except httpx.HTTPError as exc:
+            raise WebFailure("PROVIDER_DOWN", "HTTP request failed") from exc
+        finally:
+            if signing is not None:
+                SIGNER.reset(signing)
+
+    async def _browser(self, provider, policy):
+        async with self._browser_lock:
+            if not self._pw:
+                from playwright.async_api import async_playwright
+                self._pw = await async_playwright().start()
+            if provider == "local":
+                if not policy.allow_local_browser: raise WebFailure("POLICY_DENIED", "Local browser disabled")
+                if not self._local_browser:
+                    self._local_browser = await self._pw.chromium.launch(headless=True)
+                return self._local_browser
+            if provider == "local_cdp":
+                raise WebFailure("IDENTITY_REQUIRED", "Local CDP requires an enrolled named identity")
+            if not self.steel_api_url:
+                raise WebFailure("PROVIDER_DOWN", "Self-hosted Steel endpoint is not configured")
+            if not self._steel_browser:
+                response = await self._http.post(self.steel_api_url.rstrip("/") + "/v1/sessions", json={"blockAds": True}, timeout=30)
+                if response.status_code >= 400: raise WebFailure("PROVIDER_DOWN", "Steel session creation failed", response.status_code)
+                session = response.json()
+                self._steel_session = session["id"]
+                endpoint = session.get("websocketUrl") or session.get("websocket_url")
+                if not endpoint:
+                    endpoint = self.steel_api_url.replace("http://", "ws://").replace("https://", "wss://").rstrip("/") + "/?sessionId=" + self._steel_session
+                self._steel_browser = await self._pw.chromium.connect_over_cdp(endpoint)
+            return self._steel_browser
+
+    async def _browser_representation(self, page, response, policy):
+        content_type = response.headers.get("content-type", "") if response else ""
+        json_response = "json" in content_type.lower()
+        raw = None
+        # Shopify .js endpoints commonly send JSON with a JavaScript MIME type.
+        # Validate bytes as JSON; never execute downloaded JavaScript.
+        if response and (json_response or any(kind in content_type.lower() for kind in ("javascript","text/plain"))):
+            raw = await response.body()
+            if len(raw) > policy.max_bytes:
+                raise WebFailure("LIMIT_EXCEEDED", "Browser response byte limit exceeded")
+            candidate = raw.decode("utf-8-sig",errors="replace")
+            if not json_response:
+                try: json.loads(candidate)
+                except (ValueError,TypeError): pass
+                else:
+                    json_response = True
+                    content_type += "; representation=json"
+        if json_response:
+            if raw is None: raw = await response.body()
+            content = raw.decode("utf-8-sig",errors="replace")
+        else:
+            content = await page.content()
+            raw = content.encode()
+            content_type = "text/html; rendered=1"
+        if len(raw) > policy.max_bytes:
+            raise WebFailure("LIMIT_EXCEEDED", "Browser response byte limit exceeded")
+        return content,raw,content_type
+
+    async def _wait_content_readiness(
+            self, page, policy, deadline, timeout_error):
+        if policy.content_ready_selector is None:
+            return None
+        available = max(0.0, deadline - time.monotonic())
+        capture_reserve = min(available / 2, 5.0)
+        wait_timeout = min(policy.content_ready_timeout_seconds,
+            max(0.0, available - capture_reserve))
+        if wait_timeout <= 0:
+            status = "timed_out"
+        else:
+            try:
+                await page.locator(
+                    policy.content_ready_selector).first.wait_for(
+                        state=policy.wait_state, timeout=wait_timeout * 1000)
+                status = "satisfied"
+            except timeout_error:
+                status = "timed_out"
+        return {"status": status,
+                "timeout_seconds": policy.content_ready_timeout_seconds}
+
+    async def _get_browser(self, url, policy, provider):
+        from playwright.async_api import TimeoutError as PWTimeout, Error as PWError
+        page = context = None
+        capture = capture_listener = None
+        deadline = time.monotonic() + policy.timeout_seconds
+        try:
+            browser = await self._browser(provider, policy)
+            from .profiles import ACTIVE
+            profile = ACTIVE.get() if policy.profile else None
+            if profile is not None:
+                context = await browser.new_context(**profile.context_options())
+                page = await context.new_page()
+            elif provider == "steel":
+                # Reuse one owned page. Upstream OSS instrumentation races on very fast
+                # create/close targets (e.g. a 403) and can terminate its Node process.
+                context = browser.contexts[0] if browser.contexts else await browser.new_context()
+                if self._steel_page is None or self._steel_page.is_closed():
+                    self._steel_page = await context.new_page()
+                    await self._steel_page.wait_for_timeout(300)
+                page = self._steel_page
+            else:
+                context = await browser.new_context()
+                page = await context.new_page()
+            if policy.capture_json_responses:
+                capture = _JsonCapture(policy.capture_json_max_items, policy.capture_json_max_bytes)
+                capture_listener = capture.listener()
+                page.on("response", capture_listener)
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds * 1000)
+            final_url = page.url
+            _validate_url(final_url)
+            status = response.status if response else None
+            failure = _status_failure(status) if status else None
+            if failure: raise WebFailure(failure, "Browser response requires stop", status, response_url=final_url)
+            if policy.wait_selector:
+                await page.locator(policy.wait_selector).first.wait_for(state=policy.wait_state, timeout=policy.timeout_seconds * 1000)
+            if policy.settle_ms: await page.wait_for_timeout(policy.settle_ms)
+            content_readiness = await self._wait_content_readiness(
+                page, policy, deadline, PWTimeout)
+            content,raw,content_type = await self._browser_representation(page,response,policy)
+            if _challenge(content): raise WebFailure("CAPTCHA", "Browser challenge page observed", status, response_url=page.url)
+            if profile is not None and profile.merge(await context.storage_state()):
+                profile.changed = True
+            screenshot = self._save_bytes(await page.screenshot(full_page=False), ".png")
+            captured = None
+            if capture is not None:
+                captured = await capture.settle(min(5.0, deadline - time.monotonic()))
+            return {"url": page.url, "content": content, "raw": raw,
+                    "content_type": content_type, "http_status": status,
+                    "headers": {}, "screenshot": screenshot,
+                    **({"captured_json": captured} if captured is not None else {}),
+                    **({"content_readiness": content_readiness}
+                       if content_readiness is not None else {})}
+        except WebFailure: raise
+        except PWTimeout as exc: raise WebFailure("TIMEOUT", "Browser navigation or readiness timed out") from exc
+        except PWError as exc:
+            code = _navigation_failure(str(exc))
+            if code:
+                raise WebFailure(code, "Target refused the page", response_url=url) from exc
+            raise WebFailure("PROVIDER_DOWN", "Browser connection or execution failed") from exc
+        except (httpx.HTTPError, KeyError, ValueError) as exc:
+            raise WebFailure("PROVIDER_DOWN", "Browser connection or execution failed") from exc
+        finally:
+            if page and capture_listener is not None:
+                try: page.remove_listener("response", capture_listener)
+                except Exception: pass
+            if page and (provider != "steel" or profile is not None):
+                try: await page.close()
+                except PWError: pass
+            if context and (provider not in {"local_cdp", "steel"} or profile is not None):
+                try: await context.close()
+                except PWError: pass
+
+    def identity_status(self, identity_id: str | None = None) -> dict:
+        return self.identities.status(identity_id)
+
+    @staticmethod
+    def _identity_path(value):
+        if re.match(r"^[A-Za-z]:[\\/]", value):
+            return ntpath.normcase(ntpath.normpath(value))
+        return os.path.normcase(os.path.realpath(os.path.expanduser(value)))
+
+    async def _identity_cleanup(self, operation):
+        try:
+            await asyncio.wait_for(operation,timeout=0.5)
+        except Exception:
+            pass
+
+    async def _identity_step(self, operation, policy, *, probe=False):
+        try:
+            return await asyncio.wait_for(operation,timeout=policy.timeout_seconds)
+        except TimeoutError as exc:
+            raise WebFailure("IDENTITY_EXECUTOR_OFFLINE" if probe else "TIMEOUT",
+                             "Identity execution did not respond within its time limit") from exc
+
+    async def _identity_context(self, resolved, policy):
+        from playwright.async_api import Error as PWError
+        self.identities.recheck(resolved)
+        async with self._browser_lock:
+            if not self._pw:
+                from playwright.async_api import async_playwright
+                self._pw = await async_playwright().start()
+            browser = self._identity_browsers.get(resolved.cache_scope)
+            if browser is None or not browser.is_connected():
+                try:
+                    browser = await self._pw.chromium.connect_over_cdp(
+                        resolved.endpoint, timeout=policy.timeout_seconds * 1000)
+                except PWError as exc:
+                    raise WebFailure("IDENTITY_EXECUTOR_OFFLINE", "Enrolled local browser is unreachable") from exc
+                self._identity_browsers[resolved.cache_scope] = browser
+            session = None
+            try:
+                session = await browser.new_browser_cdp_session()
+                arguments = (await session.send("Browser.getBrowserCommandLine")).get("arguments", [])
+                flags = {}
+                for i, argument in enumerate(arguments):
+                    if argument.startswith("--"):
+                        key, sep, value = argument.partition("=")
+                        if not sep and i + 1 < len(arguments) and not arguments[i+1].startswith("--"):
+                            value = arguments[i+1]
+                        flags[key] = value
+                actual_dir = flags.get("--user-data-dir")
+                actual_profile = flags.get("--profile-directory") or "Default"
+                if not actual_dir or self._identity_path(actual_dir) != self._identity_path(resolved.user_data_dir) or actual_profile != resolved.profile_directory:
+                    raise WebFailure("IDENTITY_PROFILE_MISMATCH", "Browser does not match the enrolled canonical profile")
+                browser_contexts = (await session.send("Target.getBrowserContexts")).get("browserContextIds", [])
+                if browser_contexts or len(browser.contexts) != 1:
+                    raise WebFailure("IDENTITY_PROFILE_MISMATCH", "Canonical default browser context is ambiguous")
+                context = browser.contexts[0]  # only after explicit profile + default-context attestation
+                self.identities.recheck(resolved)
+                return context
+            except WebFailure:
+                raise
+            except PWError as exc:
+                raise WebFailure("IDENTITY_PROFILE_MISMATCH", "Browser profile binding could not be verified") from exc
+            finally:
+                if session is not None:
+                    await self._identity_cleanup(session.detach())
+
+    def _identity_allows(self, resolved, url, *, image=False):
+        try:
+            return self.identities.permits_url(resolved,url,image=image)
+        except IdentityFailure as exc:
+            if exc.code == "IDENTITY_DOMAIN_DENIED": return False
+            raise
+
+    async def _identity_page(self, context, resolved, capture=None):
+        # Logged-in reads behave like a normal browser tab: page scripts run and
+        # the page loads whatever it needs. Core keeps two rules: the top-level
+        # page stays inside the identity's domains, and Core itself never clicks
+        # or types. CDP Fetch pauses top-level document requests, including
+        # redirect hops that Playwright route() misses.
+        from playwright.async_api import Error as PWError
+        page = await context.new_page()
+        denied = []
+        try:
+            session = await context.new_cdp_session(page)
+            tree = await session.send("Page.getFrameTree")
+            main_frame = tree["frameTree"]["frame"]["id"]
+            async def scope_guard(event):
+                request_id = event["requestId"]
+                url = event.get("request", {}).get("url", "")
+                top_level = (event.get("resourceType") == "Document"
+                             and event.get("frameId", main_frame) == main_frame)
+                try:
+                    allowed = not top_level or self._identity_allows(resolved, url)
+                except IdentityFailure as exc:
+                    denied.append(exc.code)
+                    allowed = False
+                if not allowed and not denied:
+                    denied.append("IDENTITY_DOMAIN_DENIED")
+                try:
+                    await session.send("Fetch.continueRequest" if allowed else "Fetch.failRequest",
+                        {"requestId":request_id} if allowed else {"requestId":request_id,"errorReason":"BlockedByClient"})
+                except PWError:
+                    pass  # Owned tab may have closed while a request was paused.
+            session.on("Fetch.requestPaused",scope_guard)
+            # Popups opened by page scripts are closed so the owner profile is
+            # left as it was found.
+            page.on("popup", lambda popup: asyncio.ensure_future(
+                self._identity_cleanup(popup.close())))
+            if capture is not None:
+                page.on("response", capture.listener())
+            await session.send("Fetch.enable",{"patterns":[{"urlPattern":"*","resourceType":"Document","requestStage":"Request"}]})
+            return page, denied
+        except PWError as exc:
+            await self._identity_cleanup(page.close())
+            raise WebFailure("IDENTITY_PROFILE_MISMATCH", "Scoped browser execution could not be established") from exc
+
+    def _identity_capture_strategy(self, resolved):
+        return (self._owner_visible_capture_strategy
+                if getattr(resolved, "snapshot_policy", None) else None)
+
+    @staticmethod
+    def _require_current_capture_strategy(strategy):
+        try:
+            current = strategy.current_binding_id()
+        except (OSError, UnicodeError):
+            current = None
+        if current != strategy.binding_id:
+            raise WebFailure("IDENTITY_CHANGED",
+                "Core capture strategy changed during execution")
+
+    async def _identity_health(self, context, resolved, policy, *,
+                               capture_strategy=None,
+                               allow_capture_strategy=True):
+        if (capture_strategy is None
+                and allow_capture_strategy
+                and getattr(resolved, "snapshot_policy", None)):
+            capture_strategy = self._identity_capture_strategy(resolved)
+        if capture_strategy is not None:
+            self._require_current_capture_strategy(capture_strategy)
+            result = await capture_strategy.health(
+                context, resolved, policy, self.identities)
+            self._require_current_capture_strategy(capture_strategy)
+            return result
+        check = resolved.auth_check
+        if not check: return "not_configured"
+        from playwright.async_api import Error as PWError, TimeoutError as PWTimeout
+        page = None
+        try:
+            self.identities.recheck(resolved)
+            check_url = check["url"] if "url" in check else check["check_url"]
+            if not self._identity_allows(resolved, check_url):
+                raise WebFailure("IDENTITY_POLICY_DENIED", "Authentication probe is outside identity scope")
+            page, denied = await self._identity_page(context, resolved)
+            response = await page.goto(check_url, wait_until="domcontentloaded", timeout=policy.timeout_seconds*1000)
+            if denied or not self._identity_allows(resolved, page.url):
+                raise WebFailure(denied[-1] if denied else "IDENTITY_DOMAIN_DENIED", "Authentication probe redirected outside identity scope")
+            status = response.status if response else None
+            if status == 401:
+                raise WebFailure("IDENTITY_REAUTH_REQUIRED", "Browser identity requires operator authentication")
+            code = _status_failure(status) if status else None
+            if code: raise WebFailure(code, "Authentication probe failed", status)
+            if _challenge(await page.content()):
+                raise WebFailure("CAPTCHA", "Authentication probe encountered a challenge")
+            if check.get("login_selector") and await page.locator(check["login_selector"]).first.is_visible():
+                raise WebFailure("IDENTITY_REAUTH_REQUIRED", "Browser identity requires operator authentication")
+            selector = check.get("authenticated_selector")
+            if selector:
+                try: await page.locator(selector).first.wait_for(state="visible", timeout=policy.timeout_seconds*1000)
+                except PWTimeout as exc:
+                    raise WebFailure("IDENTITY_REAUTH_REQUIRED", "Expected authenticated state was not observed") from exc
+            return "verified" if selector else "probe_observed"
+        except WebFailure: raise
+        except PWError as exc:
+            if 'denied' in locals() and denied:
+                raise WebFailure(denied[-1], "Identity authentication probe was denied by local policy") from exc
+            raise WebFailure("IDENTITY_EXECUTOR_OFFLINE", "Authentication probe could not execute") from exc
+        finally:
+            if page:
+                await self._identity_cleanup(page.close())
+
+    async def _get_identity_browser(self, url, policy, resolved, context, *,
+                                    capture_strategy=None):
+        if (capture_strategy is None
+                and getattr(resolved, "snapshot_policy", None)):
+            capture_strategy = self._identity_capture_strategy(resolved)
+        if capture_strategy is not None:
+            self._require_current_capture_strategy(capture_strategy)
+            response = await capture_strategy.acquire(
+                url, policy, resolved, context, self.identities)
+            self._require_current_capture_strategy(capture_strategy)
+            claims = response.get("visible_snapshot")
+            expected = {
+                "scope": "owner_opened_visible_region",
+                "navigation_performed": False,
+                "source_refresh_performed": False,
+                "source_freshness": "unknown",
+                "gallery_coverage": "partial_unverified_candidates",
+            }
+            if type(claims) is not dict or claims != expected:
+                raise WebFailure("IDENTITY_CHANGED",
+                    "Core capture strategy returned invalid provenance")
+            response["visible_snapshot"] = {
+                "strategy": capture_strategy.id,
+                "strategy_version": capture_strategy.version,
+                "strategy_binding_id": capture_strategy.binding_id,
+                **expected,
+            }
+            response["screenshot"] = self._save_bytes(response.pop("snapshot_screenshot_bytes"), ".png")
+            return response
+        from playwright.async_api import TimeoutError as PWTimeout, Error as PWError
+        page = None
+        denied = []
+        deadline = time.monotonic() + policy.timeout_seconds
+        try:
+            self.identities.recheck(resolved)
+            if not self._identity_allows(resolved, url):
+                raise WebFailure("IDENTITY_POLICY_DENIED", "Page is outside identity domain scope")
+            capture = (_JsonCapture(policy.capture_json_max_items, policy.capture_json_max_bytes)
+                       if policy.capture_json_responses else None)
+            page, denied = await self._identity_page(context, resolved, capture)
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds*1000)
+            if denied or not self._identity_allows(resolved, page.url):
+                raise WebFailure(denied[-1] if denied else "IDENTITY_DOMAIN_DENIED", "Page redirected outside identity domain scope")
+            status = response.status if response else None
+            failure = _status_failure(status) if status else None
+            if failure: raise WebFailure("IDENTITY_REAUTH_REQUIRED" if failure == "AUTH_REQUIRED" else failure, "Identity page could not be retrieved", status, response_url=page.url)
+            if policy.wait_selector:
+                await page.locator(policy.wait_selector).first.wait_for(state=policy.wait_state, timeout=policy.timeout_seconds*1000)
+            if policy.settle_ms: await page.wait_for_timeout(policy.settle_ms)
+            content_readiness = await self._wait_content_readiness(
+                page, policy, deadline, PWTimeout)
+            content,raw,content_type = await self._browser_representation(page,response,policy)
+            if _challenge(content): raise WebFailure("CAPTCHA", "Identity browser challenge observed", status)
+            self.identities.recheck(resolved)
+            screenshot = self._save_bytes(await page.screenshot(full_page=False), ".png")
+            captured = None
+            if capture is not None:
+                captured = await capture.settle(min(5.0, deadline - time.monotonic()))
+            return {"url": page.url, "content": content, "raw": raw,
+                    "content_type": content_type, "http_status": status,
+                    "headers": {}, "screenshot": screenshot,
+                    **({"captured_json": captured} if captured is not None else {}),
+                    **({"content_readiness": content_readiness}
+                       if content_readiness is not None else {})}
+        except WebFailure: raise
+        except PWTimeout as exc: raise WebFailure("TIMEOUT", "Identity browser navigation or readiness timed out") from exc
+        except PWError as exc:
+            if denied: raise WebFailure(denied[-1], "Identity page request was denied by local policy") from exc
+            raise WebFailure("IDENTITY_EXECUTOR_OFFLINE", "Identity browser execution failed") from exc
+        finally:
+            if page:
+                await self._identity_cleanup(page.close())
+
+    async def _get_identity_image(self, url, policy, resolved, context, *,
+                                  public_url=None):
+        from playwright.async_api import Error as PWError, TimeoutError as PWTimeout
+        response = None
+        requested = url
+        public_url = _output_url(
+            public_url if public_url is not None else url,
+            named_identity=True)
+        try:
+            _validate_url(url)
+            for _ in range(6):
+                self.identities.recheck(resolved)
+                if not self._identity_allows(resolved, requested, image=True):
+                    raise WebFailure("IDENTITY_DOMAIN_DENIED", "Image URL is outside identity image scope")
+                response = await context.request.get(requested, timeout=policy.timeout_seconds*1000,
+                                                     max_redirects=0, fail_on_status_code=False)
+                status = response.status
+                if status in {301,302,303,307,308}:
+                    location = response.headers.get("location")
+                    if not location: raise WebFailure("INVALID_IMAGE", "Image redirect lacks a destination")
+                    destination = urljoin(requested, location)
+                    _validate_url(destination)
+                    if not self._identity_allows(resolved, destination, image=True):
+                        raise WebFailure("IDENTITY_DOMAIN_DENIED", "Image redirect is outside identity scope")
+                    await self._identity_cleanup(response.dispose()); response = None
+                    requested = destination
+                    continue
+                failure = _status_failure(status)
+                if failure: raise WebFailure("IDENTITY_REAUTH_REQUIRED" if failure == "AUTH_REQUIRED" else failure, "Identity image request failed", status)
+                size = response.headers.get("content-length")
+                if size and size.isdigit() and int(size) > policy.max_image_bytes:
+                    raise WebFailure("LIMIT_EXCEEDED", "Image byte limit exceeded")
+                raw = await response.body()
+                if len(raw) > policy.max_image_bytes: raise WebFailure("LIMIT_EXCEEDED", "Image byte limit exceeded")
+                with Image.open(io.BytesIO(raw)) as image:
+                    image.load(); width,height,fmt = image.width,image.height,image.format
+                self.identities.recheck(resolved)
+                return {"url":public_url,"status":"decoded","content_type":response.headers.get("content-type", ""),
+                        "width":width,"height":height,"format":fmt,**self._image_evidence(raw),
+                        "observed_at":utcnow(),"failure":None,"identity":resolved.id,
+                        "executor":resolved.executor_id,"authority_mode":resolved.authority_mode,"method":"local_cdp"}
+            raise WebFailure("LIMIT_EXCEEDED", "Image redirect limit exceeded")
+        except (WebFailure, IdentityFailure) as exc:
+            return {"url":public_url,"status":"failed","failure":exc.code,"identity":resolved.id}
+        except PWTimeout:
+            return {"url":public_url,"status":"failed","failure":"TIMEOUT","identity":resolved.id}
+        except PWError:
+            return {"url":public_url,"status":"failed","failure":"IDENTITY_EXECUTOR_OFFLINE","identity":resolved.id}
+        except (UnidentifiedImageError,OSError,Image.DecompressionBombError):
+            return {"url":public_url,"status":"failed","failure":"INVALID_IMAGE","identity":resolved.id}
+        finally:
+            if response is not None:
+                await self._identity_cleanup(response.dispose())
+
+    async def _download_identity_images(self, urls, policy, resolved, context,
+                                        *, private_sources=None):
+        private_sources = private_sources or {}
+        images = []
+        for url in urls[:policy.max_images]:
+            public_url = _output_url(url, named_identity=True)
+            fetch_url = private_sources.get(public_url, url)
+            async with self._global:
+                try:
+                    image = await self._identity_step(
+                        self._get_identity_image(fetch_url, policy, resolved,
+                            context, public_url=public_url), policy)
+                    # Defense in depth: an executor result can never surface a
+                    # signed/private fetch URL even if it reports one itself.
+                    image["url"] = public_url
+                    images.append(image)
+                except WebFailure as exc:
+                    images.append({"url":public_url,"status":"failed",
+                        "failure":exc.code,"identity":resolved.id})
+        return images
+
+    async def _image(self, url, policy):
+        attempts = []
+        for index in range(policy.image_max_attempts):
+            started = time.monotonic()
+            result = await self._image_once(url, policy)
+            attempts.append({"status": result["status"], "failure": result.get("failure"),
+                             "http_status": result.get("http_status"),
+                             "latency_ms": round((time.monotonic()-started)*1000)})
+            if result["status"] == "decoded" or result.get("failure") not in policy.image_retry_failures or index+1 == policy.image_max_attempts:
+                return {**result, "attempts": attempts}
+            if policy.image_retry_delay_seconds:
+                await asyncio.sleep(policy.image_retry_delay_seconds)
+
+    async def _image_once(self, url, policy):
+        try:
+            _validate_url(url)
+            response = await self._get_http(url, replace(policy, max_bytes=policy.max_image_bytes))
+            with Image.open(io.BytesIO(response["raw"])) as image:
+                image.load()
+                width, height, fmt = image.width, image.height, image.format
+            return {"url": url, "status": "decoded", "http_status": response["http_status"], "content_type": response["content_type"],
+                    "width": width, "height": height, "format": fmt,
+                    **self._image_evidence(response["raw"]), "observed_at": utcnow(), "failure": None}
+        except WebFailure as exc:
+            return {"url": url, "status": "failed", "failure": exc.code, "http_status": exc.http_status}
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+            return {"url": url, "status": "failed", "failure": "INVALID_IMAGE"}
+
+    def _identity_provider_authority(self, resolved, policy, *,
+                                     operation="read", expected=None):
+        provider_id = resolved.provider
+        if expected is not None:
+            operation = expected.operation
+        if policy.provider is not None and policy.provider != provider_id:
+            raise WebFailure("IDENTITY_PROVIDER_DENIED",
+                "Named identity is bound to a different provider")
+        manifest = self.providers.require_enabled(
+            provider_id, policy, operation=operation)
+        binding_id = self.providers.binding_id(provider_id)
+        if (not manifest.authentication or not manifest.rendering
+                or not manifest.requires_local_browser
+                or binding_id is None):
+            raise WebFailure("IDENTITY_PROVIDER_DENIED",
+                "Named identity requires its exact local authenticated provider binding")
+        authority = _IdentityProviderAuthority(
+            provider_id, manifest.version, binding_id, operation)
+        if expected is not None and authority != expected:
+            raise WebFailure("IDENTITY_PROVIDER_DENIED",
+                "Named identity provider binding changed during execution")
+        return authority
+
+    def _action_provider_authority(self, provider_id, policy, action_class,
+                                   contract, *, intent, expected=None):
+        manifest = self.providers.require_action_enabled(
+            provider_id, policy, action_class, contract, intent=intent)
+        binding_id = self.providers.binding_id(provider_id)
+        if (not manifest.authentication or not manifest.requires_local_browser
+                or binding_id is None):
+            raise WebFailure("IDENTITY_PROVIDER_DENIED",
+                "Named identity action requires an exact local provider binding")
+        authority = _IdentityProviderAuthority(
+            provider_id, manifest.version, binding_id, "do")
+        if expected is not None and authority != expected:
+            raise WebFailure("IDENTITY_PROVIDER_DENIED",
+                "Action provider binding changed during execution")
+        return authority
+
+    def _recheck_action_identity(self, resolved, url, required_action_classes,
+                                 policy):
+        """Recheck every independent identity grant in an action contract."""
+        current = self.identities.recheck(resolved, url)
+        for action_class in required_action_classes:
+            granted = self.identities.resolve(
+                resolved.id, url, provider=resolved.provider,
+                action=action_class,
+                allow_local_browser=policy.allow_local_browser)
+            if granted.cache_scope != resolved.cache_scope:
+                raise IdentityFailure(
+                    "IDENTITY_CHANGED",
+                    "Identity configuration changed during execution")
+        return current
+
+    def _action_provider_services(self, resolved, request, capability):
+        from .providers import ProviderServices
+
+        async def denied(*args, **kwargs):
+            raise WebFailure("IDENTITY_POLICY_DENIED",
+                "Authenticated actions cannot use public transports")
+
+        async def authenticated_action(action_request, runner):
+            from .browser_use_action_provider import LocalActionExecution
+            if capability.state != "unused":
+                capability.state = "violated"
+                raise WebFailure("IDENTITY_POLICY_DENIED",
+                    "Authenticated action capability is one-shot")
+            capability.state = "active"
+            if (action_request is not request or request.intent is not action_request.intent
+                    or request.policy is not action_request.policy
+                    or resolved.cache_scope != capability.identity_scope
+                    or not callable(runner)):
+                capability.state = "violated"
+                raise WebFailure("IDENTITY_POLICY_DENIED",
+                    "Authenticated action request exceeds its operation scope")
+            try:
+                self._recheck_action_identity(
+                    resolved, request.intent.url,
+                    capability.required_action_classes, request.policy)
+                self._action_provider_authority(
+                    capability.authority.provider_id, request.policy,
+                    request.intent.action_class, request.intent.contract,
+                    intent=request.intent,
+                    expected=capability.authority)
+                grant = LocalActionExecution(
+                    resolved.endpoint, resolved.cache_scope,
+                    resolved.profile_version, resolved.executor_id)
+                packet = await runner(action_request, grant)
+                encoded = json.dumps(packet, sort_keys=True,
+                    separators=(",", ":"), ensure_ascii=False,
+                    allow_nan=False).encode()
+                if len(encoded) > request.policy.browser_do_packet_max_bytes:
+                    raise WebFailure("LIMIT_EXCEEDED",
+                        "Action provider packet exceeds WebPolicy")
+                self._recheck_action_identity(
+                    resolved, request.intent.url,
+                    capability.required_action_classes, request.policy)
+                self._action_provider_authority(
+                    capability.authority.provider_id, request.policy,
+                    request.intent.action_class, request.intent.contract,
+                    intent=request.intent,
+                    expected=capability.authority)
+                if capability.state != "active":
+                    raise WebFailure("IDENTITY_POLICY_DENIED",
+                        "Authenticated action capability was re-entered")
+                capability.response_fingerprint = hashlib.sha256(encoded).hexdigest()
+                capability.state = "consumed"
+                return packet
+            except IdentityFailure as error:
+                if capability.state == "active":
+                    capability.state = "failed"
+                raise WebFailure(error.code, error.message) from None
+            except BaseException:
+                if capability.state == "active":
+                    capability.state = "failed"
+                raise
+
+        return ProviderServices(denied, denied, denied,
+            authenticated_action=authenticated_action)
+
+    def _retain_action_evidence(self, packet):
+        import base64
+        retained = []
+        for phase in ("before", "after"):
+            snapshot = packet.get(phase)
+            if type(snapshot) is not dict:
+                continue
+            html_bytes = snapshot["html"].encode()
+            try:
+                screenshot = base64.b64decode(
+                    snapshot["screenshot"], validate=True)
+            except (TypeError, ValueError):
+                raise WebFailure("PROVIDER_DOWN",
+                    "Action evidence screenshot is invalid") from None
+            retained.extend((
+                {"phase": phase, "kind": "html",
+                 **self._save_bytes(html_bytes, ".html")},
+                {"phase": phase, "kind": "screenshot",
+                 **self._save_bytes(screenshot, ".png")},
+            ))
+        return retained
+
+    def _retain_action_evidence_checked(self, packet):
+        """Map private persistence failures into the typed action boundary."""
+        try:
+            return self._retain_action_evidence(packet)
+        except WebFailure:
+            raise
+        except Exception:
+            raise WebFailure("PROVIDER_DOWN",
+                "Action evidence could not be retained") from None
+
+    async def do(self, intent, policy: WebPolicy | None = None,
+                 provider: str | None = None) -> dict:
+        """Execute one typed action intent through Local Core authority."""
+        from .actions import require_action
+        from .providers import ProviderActionRequest
+        from .web_do import (ActionJournal, JournalFailure, WebIntent,
+                             require_action_contract)
+
+        if type(intent) is dict:
+            intent = WebIntent.from_dict(intent)
+        if not isinstance(intent, WebIntent):
+            raise ValueError("intent must be a WebIntent or exact intent object")
+        policy = policy or WebPolicy()
+        if provider is not None:
+            policy = replace(policy, provider=provider)
+        contract = require_action_contract(intent.contract)
+        trace = uuid.uuid4().hex
+        started = time.monotonic()
+        result = {"url": _output_url(intent.url, named_identity=True),
+            "outcome": {"state": "failed", "certainty": "certain",
+                        "reconciliation_required": False},
+            "receipt": {"trace_id": trace, "status": "failed",
+                "operation": "do", "action_class": intent.action_class,
+                "action_contract": intent.contract,
+                "required_action_classes": list(
+                    contract.required_action_classes),
+                "semantic_result": contract.semantic_result,
+                "identity": policy.identity, "authority_mode": None,
+                "executor": None, "profile_version": None,
+                "provider": None, "provider_version": None,
+                "provider_binding_id": None, "rung": "R9",
+                "requested_url": _output_url(intent.url, named_identity=True),
+                "final_url": None, "observed_at": None,
+                "latency_ms": None, "cost_usd": 0,
+                "cost_basis": "self-hosted software; excludes electricity/hardware",
+                "evidence": [], "attempts": [], "failure": None,
+                "idempotency_key": intent.idempotency_key,
+                "idempotent_reuse": False,
+                "plan": intent.public_plan()}}
+        receipt = result["receipt"]
+        journal = None
+        journal_active = False
+        request_fingerprint = None
+        effect_started = None
+        packet = None
+        try:
+            for required_action_class in contract.required_action_classes:
+                require_action(policy, required_action_class)
+            if intent.contract not in policy.browser_do_allowed_contracts:
+                raise WebFailure("POLICY_DENIED",
+                    "Action operation contract is outside WebPolicy")
+            try:
+                contract.validate(intent)
+            except PermissionError as error:
+                raise WebFailure("POLICY_DENIED", str(error)) from None
+            if contract.explicit_provider_required and policy.provider is None:
+                raise WebFailure("POLICY_DENIED",
+                    "Action operation contract requires an explicit provider")
+            if (contract.requires_explicit_origins
+                    and policy.browser_do_allowed_origins is None):
+                raise WebFailure("POLICY_DENIED",
+                    "Action operation contract requires explicit origins")
+            if not policy.identity:
+                raise WebFailure("IDENTITY_REQUIRED",
+                    "web.do requires an explicit named identity")
+            try:
+                intent.validate_policy(policy)
+            except PermissionError:
+                raise WebFailure("POLICY_DENIED",
+                    "Intent tool is outside WebPolicy") from None
+            except ValueError:
+                raise WebFailure("POLICY_DENIED",
+                    "Intent exceeds WebPolicy") from None
+            if contract.validation == "raw_control":
+                used_tools = tuple(dict.fromkeys(
+                    action.tool for action in intent.actions))
+                if (len(policy.browser_do_allowed_tools) != len(used_tools)
+                        or set(policy.browser_do_allowed_tools)
+                            != set(used_tools)):
+                    raise WebFailure("POLICY_DENIED",
+                        "Raw browser control requires the exact action tools")
+            _validate_url(intent.url)
+            from .browser_use_config import origin as browser_origin
+            origins = policy.browser_do_allowed_origins or (
+                browser_origin(intent.url),)
+            if (contract.requires_explicit_origins
+                    and browser_origin(intent.url) not in origins):
+                raise WebFailure("POLICY_DENIED",
+                    "Action target is outside the explicit origin scope")
+            for allowed_origin in origins:
+                try:
+                    contract.validate_origin(allowed_origin)
+                except PermissionError as error:
+                    raise WebFailure("POLICY_DENIED", str(error)) from None
+            resolved = self.identities.resolve(
+                policy.identity, intent.url, action=intent.action_class,
+                allow_local_browser=policy.allow_local_browser)
+            self._recheck_action_identity(
+                resolved, intent.url, contract.required_action_classes,
+                policy)
+            receipt.update(authority_mode=resolved.authority_mode,
+                executor=resolved.executor_id,
+                profile_version=resolved.profile_version)
+            for allowed_origin in origins:
+                self._recheck_action_identity(
+                    resolved, allowed_origin + "/",
+                    contract.required_action_classes, policy)
+
+            candidates = ([policy.provider] if policy.provider else
+                list(policy.provider_candidates)
+                    if policy.provider_candidates is not None else
+                self.providers.action_candidates(
+                    policy, intent.action_class, intent.contract))
+            authority = None
+            planning_failures = []
+            for candidate in candidates:
+                try:
+                    authority = self._action_provider_authority(
+                        candidate, policy, intent.action_class,
+                        intent.contract, intent=intent)
+                    break
+                except WebFailure as error:
+                    planning_failures.append({"provider": candidate,
+                        "status": "failed", "failure": error.code,
+                        "latency_ms": 0})
+            receipt["attempts"].extend(planning_failures)
+            if authority is None:
+                raise WebFailure("PROVIDER_UNAVAILABLE",
+                    "No installed action provider satisfies this intent")
+            receipt.update(provider=authority.provider_id,
+                provider_version=authority.version,
+                provider_binding_id=authority.binding_id)
+            request = ProviderActionRequest(intent, policy)
+            capability = _AuthenticatedActionCapability(
+                authority=authority, identity_scope=resolved.cache_scope,
+                required_action_classes=contract.required_action_classes,
+                request=request)
+            policy_fingerprint = {
+                "identity_scope": resolved.cache_scope,
+                "action_class": intent.action_class,
+                "required_action_classes": contract.required_action_classes,
+                "action_contract": intent.contract,
+                "provider_id": authority.provider_id,
+                "provider_version": authority.version,
+                "provider_binding_id": authority.binding_id,
+                "origins": origins,
+                "tools": policy.browser_do_allowed_tools,
+            }
+            request_fingerprint = intent.fingerprint(policy_fingerprint)
+            journal = ActionJournal(
+                self.state_dir, policy.browser_do_journal_max_bytes)
+
+            with self.identities.lease(resolved):
+                self._recheck_action_identity(
+                    resolved, intent.url, contract.required_action_classes,
+                    policy)
+                context = await self._identity_step(
+                    self._identity_context(resolved, policy), policy,
+                    probe=True)
+                health = await self._identity_step(self._identity_health(
+                    context, resolved, policy,
+                    allow_capture_strategy=False), policy, probe=True)
+                receipt["identity_health"] = health
+                if (policy.browser_do_require_auth_check
+                        and health != "verified"):
+                    raise WebFailure("IDENTITY_REAUTH_REQUIRED",
+                        "Authenticated action requires a positive identity health check")
+                decision = journal.begin(intent.idempotency_key,
+                    request_fingerprint, trace)
+                if not decision["execute"]:
+                    replayed = copy.deepcopy(decision["result"])
+                    if type(replayed) is not dict or "receipt" not in replayed:
+                        raise WebFailure("EXECUTION_OUTCOME_UNKNOWN",
+                            "Retained action outcome cannot be reconciled")
+                    replayed["receipt"]["idempotent_reuse"] = True
+                    return replayed
+                journal_active = True
+                attempt_started = time.monotonic()
+                services = self._action_provider_services(
+                    resolved, request, capability)
+                packet = await self.providers.perform(
+                    authority.provider_id, request, services)
+                encoded = json.dumps(packet, sort_keys=True,
+                    separators=(",", ":"), ensure_ascii=False,
+                    allow_nan=False).encode()
+                if (capability.state != "consumed"
+                        or capability.response_fingerprint
+                            != hashlib.sha256(encoded).hexdigest()):
+                    raise WebFailure("IDENTITY_PROVIDER_DENIED",
+                        "Action provider did not consume the exact Core capability")
+                effect_started = packet["effect_started"]
+                receipt["attempts"].append({
+                    "provider": authority.provider_id,
+                    "provider_version": authority.version,
+                    "provider_binding_id": authority.binding_id,
+                    "status": ("completed" if packet["status"] == "completed"
+                               else "failed"),
+                    "failure": packet.get("failure"),
+                    "latency_ms": round(
+                        (time.monotonic() - attempt_started) * 1000)})
+                if packet["status"] != "completed":
+                    # A failed action packet can still contain the exact
+                    # completed-step prefix and snapshots needed to reconcile
+                    # an external effect. Retain that bounded, provider-
+                    # validated evidence before mapping a post-effect failure
+                    # to EXECUTION_OUTCOME_UNKNOWN.
+                    receipt["verification"] = {
+                        "status": "partial_steps_observed",
+                        "completed_steps": len(packet["steps"]),
+                        "steps": copy.deepcopy(packet["steps"]),
+                    }
+                    receipt["evidence"] = (
+                        self._retain_action_evidence_checked(packet))
+                    raise WebFailure(packet["failure"],
+                        "Authenticated browser action did not complete")
+                self._recheck_action_identity(
+                    resolved, intent.url, contract.required_action_classes,
+                    policy)
+
+            receipt["evidence"] = self._retain_action_evidence_checked(packet)
+            final_url = _output_url(packet["url"], named_identity=True)
+            result["url"] = final_url
+            if contract.semantic_result == "unknown":
+                verification = {
+                    "status": "steps_observed",
+                    "completed_steps": len(packet["steps"]),
+                    "steps": copy.deepcopy(packet["steps"]),
+                }
+                certainty = "steps_observed"
+                reversible = None
+            else:
+                last_mutation = max(index for index, action in
+                    enumerate(intent.actions) if action.mutating)
+                dom_assertions_passed = any(
+                    index > last_mutation
+                    and action.tool in {"assert_text", "assert_value"}
+                    for index, action in enumerate(intent.actions))
+                verification_status = (
+                    "dom_assertions_passed" if dom_assertions_passed
+                    else "execution_observed")
+                verification = {
+                    "status": verification_status,
+                    "completed_steps": len(packet["steps"]),
+                }
+                certainty = verification_status
+                reversible = intent.action_class == "WRITE_REVERSIBLE"
+            receipt.update(status="completed", final_url=final_url,
+                observed_at=utcnow(),
+                latency_ms=round((time.monotonic() - started) * 1000),
+                failure=None,
+                verification=verification)
+            result["outcome"] = {"state": "completed",
+                "certainty": certainty,
+                "reversible": reversible,
+                "reconciliation_required": False}
+            journal.finish(intent.idempotency_key, request_fingerprint,
+                trace, "completed", result=result)
+            journal_active = False
+        except (WebFailure, IdentityFailure, JournalFailure) as error:
+            code = error.code
+            if journal_active:
+                state = ("failed_before_effect" if effect_started is False
+                         else "uncertain")
+                try:
+                    journal.finish(intent.idempotency_key,
+                        request_fingerprint, trace, state)
+                    journal_active = False
+                except JournalFailure:
+                    state = "uncertain"
+                if state == "uncertain":
+                    receipt["underlying_failure"] = code
+                    code = "EXECUTION_OUTCOME_UNKNOWN"
+                    result["outcome"] = {"state": "unknown",
+                        "certainty": "unknown",
+                        "reconciliation_required": True}
+            receipt.update(status="failed",
+                observed_at=utcnow(),
+                latency_ms=round((time.monotonic() - started) * 1000),
+                failure={"code": code, "message": (
+                    "Action outcome requires reconciliation before replay"
+                    if code == "EXECUTION_OUTCOME_UNKNOWN" else error.message)})
+        self._save_trace(result, record_observations=False)
+        return result
+
+    def _provider_services(self, *, identity_binding=None):
+        from .providers import ProviderServices
+        services = None
+        if identity_binding is not None:
+            resolved, identity_context, capability = identity_binding
+
+            async def public_denied(*args, **kwargs):
+                raise WebFailure("IDENTITY_POLICY_DENIED",
+                    "Named identity providers cannot use public transport services")
+
+            async def authenticated(url, policy):
+                # The callback is an opaque, one-shot operation capability.
+                # Plugins never receive the browser context, profile material,
+                # identity registry, or Core-owned capture attestation.
+                if capability.state != "unused":
+                    capability.state = "violated"
+                    raise WebFailure("IDENTITY_POLICY_DENIED",
+                        "Authenticated provider capability is one-shot")
+                capability.state = "active"
+                if (url != capability.url or policy is not capability.policy
+                        or resolved.cache_scope
+                            != capability.identity_scope):
+                    capability.state = "violated"
+                    raise WebFailure("IDENTITY_POLICY_DENIED",
+                        "Authenticated provider request exceeds its operation scope")
+                try:
+                    self._identity_provider_authority(
+                        resolved, policy, expected=capability.authority)
+                    self.identities.recheck(resolved, url)
+                    acquired = await self._identity_step(
+                        self._get_identity_browser(
+                            url, policy, resolved, identity_context,
+                            **({"capture_strategy": capability.capture_strategy}
+                               if capability.capture_strategy is not None
+                               else {})), policy)
+                    acquired, capture, private_sources = (
+                        _core_identity_capture(
+                        acquired, policy.max_bytes,
+                        capture_strategy=capability.capture_strategy)
+                    )
+                    for private_url in private_sources.values():
+                        if not self._identity_allows(
+                                resolved, private_url, image=True):
+                            raise WebFailure("IDENTITY_DOMAIN_DENIED",
+                                "Identity image source is outside its enrolled scope")
+                    fingerprint = _identity_acquisition_fingerprint(
+                        acquired, policy.max_bytes,
+                        capture_metadata=capture)
+                    self.identities.recheck(resolved, url)
+                    self._identity_provider_authority(
+                        resolved, policy, expected=capability.authority)
+                    if capability.state != "active":
+                        raise WebFailure("IDENTITY_POLICY_DENIED",
+                            "Authenticated provider capability was re-entered")
+                    capability.response_fingerprint = fingerprint
+                    capability.capture_metadata = capture
+                    capability.private_image_sources = private_sources
+                    capability.state = "consumed"
+                    return acquired
+                except IdentityFailure as exc:
+                    if capability.state == "active":
+                        capability.state = "failed"
+                    raise WebFailure(exc.code, exc.message) from None
+                except BaseException:
+                    if capability.state == "active":
+                        capability.state = "failed"
+                    raise
+
+            http_service = browser_service = isolated_service = public_denied
+        else:
+            authenticated = None
+            http_service = self._get_http
+
+            async def browser_service(url,policy,provider):
+                if provider == "steel":
+                    async with self._steel_lock:return await self._get_browser(url,policy,provider)
+                return await self._get_browser(url,policy,provider)
+
+            async def isolated_service(url,policy,provider):
+                from .experimental import read_public
+                return await read_public(self,url,policy,provider)
+        async def acquire_provider(identifier, request):
+            return await self.providers.acquire(
+                identifier, request, services,
+                _evidence_preparer=self._prepare_provider_failure_evidence)
+        def provider_manifest(identifier, policy):
+            return self.providers.require_enabled(identifier, policy)
+        services = ProviderServices(http_service,browser_service,
+                                    isolated_service,acquire_provider,
+                                    provider_manifest,authenticated)
+        return services
+
+    # Polite pacing applies to every Runtime. The test suite turns it off in
+    # tests/conftest.py and enables it explicitly where pacing is under test.
+    pacing_enabled = True
+    # Structural completeness escalation (WebPolicy.completeness_*). Unit tests
+    # with fake pages turn it off; tests/test_completeness.py turns it on.
+    completeness_enabled = True
+
+    def _pacing_path(self):
+        return self.state_dir / "origin-pacing.json"
+
+    def _pacing_load(self):
+        try:
+            data = json.loads(self._pacing_path().read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _pacing_save(self, data):
+        now = time.time()
+        data = {key: entry for key, entry in data.items()
+                if isinstance(entry, dict) and max(entry.get("next_at", 0), entry.get("cooldown_until", 0)) > now}
+        try:
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".origin-pacing-", dir=self.state_dir)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(data, stream, sort_keys=True)
+            os.replace(temporary, self._pacing_path())
+        except OSError:
+            pass
+
+    def _hints_path(self):
+        return self.state_dir / "origin-routes.json"
+
+    def _hints_load(self):
+        try:
+            data = json.loads(self._hints_path().read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _hints_save(self, data):
+        try:
+            self.state_dir.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".origin-routes-", dir=self.state_dir)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(data, stream, sort_keys=True)
+            os.replace(temporary, self._hints_path())
+        except OSError:
+            pass
+
+    def _origin_hint(self, url, policy):
+        """The provider that last got through this public origin, if still fresh."""
+        if policy.identity or not policy.origin_route_hint_ttl_seconds:
+            return None
+        try:
+            key = self._pacing_key(url, policy)
+        except (ValueError, TypeError):
+            return None
+        entry = self._hints_load().get(key)
+        if (isinstance(entry, dict) and isinstance(entry.get("provider"), str)
+                and time.time() - entry.get("at", 0) <= policy.origin_route_hint_ttl_seconds):
+            return entry["provider"]
+        return None
+
+    def _record_origin_hint(self, url, policy, receipt):
+        if (policy.identity or not policy.origin_route_hint_ttl_seconds
+                or policy.provider or policy.provider_candidates is not None):
+            return
+        attempts = [item for item in receipt.get("attempts") or [] if isinstance(item, dict)]
+        if not attempts:
+            return
+        try:
+            key = self._pacing_key(url, policy)
+        except (ValueError, TypeError):
+            return
+        data = self._hints_load()
+        last = attempts[-1]
+        if receipt.get("status") == "observed" and last.get("status") == "observed":
+            if any(item.get("status") == "failed" for item in attempts[:-1]):
+                data[key] = {"provider": last.get("provider"), "at": time.time()}
+            elif data.get(key, {}).get("provider") != last.get("provider"):
+                return
+        elif data.get(key, {}).get("provider") in {item.get("provider") for item in attempts}:
+            data.pop(key, None)
+        else:
+            return
+        self._hints_save(data)
+
+    @staticmethod
+    def _pacing_key(url, policy):
+        parsed = urlparse(url)
+        return parsed.scheme + "://" + (parsed.hostname or "") + "|" + (policy.identity or "public")
+
+    async def read(self, url: str, policy: WebPolicy | None = None, provider: str | None = None,
+                   adapter: str | None = None, *, policy_overrides: dict | None = None,
+                   workload_assertions: dict | None = None, retry_of: str | None = None) -> dict:
+        """Read a page. ``retry_of`` is the agent's "try harder": pass the trace_id
+        of a read whose page was not what you needed, and this read skips every
+        tool that one tried and starts from the strongest remaining tool."""
+        from .routes import request_policy
+        if retry_of is not None:
+            policy, policy_overrides = self._retry_policy(retry_of, policy, policy_overrides)
+        effective, _ = request_policy(policy, policy_overrides)
+        if effective.exclude_providers and not (provider or effective.provider or effective.identity):
+            remaining = [i for i in self.providers.candidates(
+                             effective, configured=("steel",) if self.steel_api_url else (),
+                             operation="extract" if adapter else "read")
+                         if i not in effective.exclude_providers]
+            remaining += [i for i in effective.completeness_ladder
+                          if i not in effective.exclude_providers and self.providers.is_available(i)
+                          and _allowed(self.providers, i, effective)]
+            if not remaining:
+                return await self._read(url, effective, adapter=adapter, _planning_failure=WebFailure(
+                    "PROVIDER_UNAVAILABLE", "Every allowed tool was already tried; allow paid tools,"
+                    " use a profile, or ask for handoff (allow_handoff=True)"))
+        if effective.profile:
+            return await self._read_with_profile(url, policy, provider, adapter, policy_overrides,
+                                                 workload_assertions, effective)
+        return await self._read_paced(url, policy, provider, adapter, policy_overrides,
+                                      workload_assertions, effective)
+
+    def _offer_try_harder(self, result, policy):
+        """Tell the agent how to ask for more when an observed page isn't right."""
+        receipt = result.get("receipt") or {}
+        if receipt.get("status") != "observed" or policy.identity or not receipt.get("trace_id"):
+            return
+        tried = {attempt.get("provider") for attempt in receipt.get("attempts") or ()}
+        tried |= {step.get("provider") for step in (receipt.get("completeness") or {}).get("escalations") or ()}
+        tried |= set(policy.exclude_providers)
+        untried = [i for i in policy.completeness_ladder
+                   if i not in tried and self.providers.is_available(i) and _allowed(self.providers, i, policy)]
+        receipt["if_not_right"] = {
+            "retry_of": receipt["trace_id"], "untried": untried,
+            "how": ("If this page isn't what you needed, read it again with retry_of=<this trace_id>"
+                    " (MCP: try_harder_than): FrankenSurf skips every tool tried here and starts"
+                    " from the strongest remaining one." if untried else
+                    "Every strong tool allowed here was tried. Allow paid tools, use a profile,"
+                    " or ask for handoff (allow_handoff=True).")}
+
+    def _tried_providers(self, trace_id: str) -> list[str]:
+        """Every provider a recorded read used: attempts, escalations, second opinion."""
+        try:
+            receipt = self.trace(trace_id)["receipt"]
+        except (OSError, ValueError, KeyError):
+            raise ValueError("Unknown trace_id for retry_of") from None
+        tried = [attempt.get("provider") for attempt in receipt.get("attempts") or ()]
+        tried += [step.get("provider") for step in (receipt.get("completeness") or {}).get("escalations") or ()]
+        tried.append((receipt.get("second_opinion") or {}).get("other"))
+        # A retry of a retry also skips what the earlier rounds skipped.
+        tried += (receipt.get("try_harder") or {}).get("excluded") or []
+        return list(dict.fromkeys(item for item in tried if isinstance(item, str)))
+
+    def _retry_policy(self, trace_id, policy, policy_overrides):
+        """A policy that skips what the earlier read tried and climbs strongest-first."""
+        tried = self._tried_providers(trace_id)
+        if policy is not None:
+            excluded = tuple(dict.fromkeys((*policy.exclude_providers, *tried)))
+            return replace(policy, exclude_providers=excluded, try_harder=True, freshness="now"), None
+        overrides = dict(policy_overrides or {})
+        excluded = list(dict.fromkeys([*(overrides.get("exclude_providers") or []), *tried]))
+        overrides.update(exclude_providers=excluded, try_harder=True, freshness="now",
+                         retry_of_trace=trace_id)
+        return None, overrides
+
+    async def _read_with_profile(self, url, policy, provider, adapter, policy_overrides,
+                                 workload_assertions, effective):
+        """Run one read carrying a stored profile, then save its refreshed session."""
+        from .profiles import ACTIVE, ProfileError, ProfileStore
+        store = ProfileStore()
+        try:
+            profile = store.load(effective.profile)
+        except ProfileError as error:
+            return await self._read(url, effective, adapter=adapter,
+                                    _planning_failure=WebFailure("POLICY_DENIED", str(error)))
+        if not isinstance(url, str) or not profile.covers(url):
+            return await self._read(url, effective, adapter=adapter,
+                _planning_failure=WebFailure("POLICY_DENIED", "Profile does not cover this site"))
+        explicit = provider or effective.provider
+        if explicit and explicit not in profile.carriers():
+            return await self._read(url, effective, adapter=adapter,
+                _planning_failure=WebFailure("POLICY_DENIED",
+                    "Provider cannot carry this profile at its sharing level"))
+        profile.changed = False
+        token = ACTIVE.set(profile)
+        try:
+            result = await self._read_paced(url, policy, provider, adapter, policy_overrides,
+                                            workload_assertions, effective)
+        finally:
+            ACTIVE.reset(token)
+        receipt = result.get("receipt") or {}
+        receipt["profile"] = {"name": profile.name, "version": profile.version,
+                              "sharing": profile.sharing, "carried_by": receipt.get("method")}
+        if receipt.get("status") == "observed" and getattr(profile, "changed", False):
+            profile.version += 1
+            store.save(profile)
+            receipt["profile"]["version"] = profile.version
+        if (receipt.get("failure") or {}).get("code") in ("AUTH_REQUIRED", "AUTH_EXPIRED"):
+            receipt["next_step"] = {"profile_login": profile.name, "reason": receipt["failure"]["code"],
+                "how": f"sign in again with: frankensurf profile-login {profile.name} --site "
+                       + profile.sites[0]}
+        return result
+
+    async def _read_paced(self, url, policy, provider, adapter, policy_overrides,
+                          workload_assertions, effective):
+        key = self._pacing_key(url, effective) if self.pacing_enabled and isinstance(url, str) else None
+        if key is not None and (effective.origin_min_interval_seconds or effective.origin_cooldown_seconds):
+            entry = self._pacing_load().get(key) or {}
+            now = time.time()
+            from .hosted_providers import UNBLOCKERS
+            hinted = self._origin_hint(url, effective)
+            # Unblockers reach the site through their own network, and a
+            # handoff is a person clearing the wall, so a cool-down holds neither.
+            unblocker = ((provider or effective.provider) in UNBLOCKERS | {"handoff"}
+                         or (hinted in UNBLOCKERS and effective.allow_paid_fallbacks
+                             and not effective.provider
+                             and self.providers.is_available(hinted)))
+            if entry.get("cooldown_until", 0) > now and not unblocker:
+                code = entry.get("code") if entry.get("code") in effective.origin_cooldown_failures else "RATE_LIMITED"
+                failure = WebFailure(code, "Origin is cooling down after %s; retry after %d seconds"
+                                     % (code, int(entry["cooldown_until"] - now) + 1))
+                return await self._read(url, replace(effective, provider=provider) if provider else effective,
+                                        adapter=adapter, _planning_failure=failure)
+            delay = entry.get("next_at", 0) - now
+            if delay > 0:
+                await asyncio.sleep(min(delay, effective.origin_min_interval_seconds))
+        result = await self._read_unpaced(url, policy, provider, adapter, policy_overrides=policy_overrides,
+                                          workload_assertions=workload_assertions)
+        if _wants_second_opinion(result, effective, provider):
+            result = await self._second_opinion(url, result, policy, adapter, policy_overrides,
+                                                workload_assertions, effective)
+        if (self.completeness_enabled and effective.completeness_escalation
+                and _automatic_observed(result, effective, provider)):
+            result = await self._ensure_complete(url, result, policy, adapter, policy_overrides,
+                                                 workload_assertions, effective)
+        self._offer_try_harder(result, effective)
+        if isinstance(url, str) and not effective.profile:
+            self._record_origin_hint(url, effective, result.get("receipt") or {})
+            _suggest_handoff(result.get("receipt") or {})
+        if key is not None and (effective.origin_min_interval_seconds or effective.origin_cooldown_seconds):
+            data = self._pacing_load()
+            entry = dict(data.get(key) or {})
+            entry["next_at"] = time.time() + effective.origin_min_interval_seconds
+            code = ((result.get("receipt") or {}).get("failure") or {}).get("code")
+            if code in effective.origin_cooldown_failures and effective.origin_cooldown_seconds:
+                entry["cooldown_until"] = time.time() + effective.origin_cooldown_seconds
+                entry["code"] = code
+            data[key] = entry
+            self._pacing_save(data)
+        return result
+
+    async def _second_opinion(self, url, first, policy, adapter, policy_overrides,
+                              workload_assertions, effective):
+        """Ask a rendering provider too, and keep the page with clearly more content.
+
+        A plain HTTP page that loads its results with JavaScript still carries
+        the site's header and footer text, so no fixed threshold separates it
+        from a small real page. The rendered read decides; when it fails or
+        adds little, the HTTP page stands.
+        """
+        await asyncio.sleep(min(effective.origin_min_interval_seconds, 2.0))
+        if policy is not None:
+            second = await self._read_unpaced(url, replace(policy, render=True), None, adapter,
+                                              workload_assertions=workload_assertions)
+        else:
+            second = await self._read_unpaced(url, None, None, adapter,
+                                              policy_overrides={**(policy_overrides or {}), "render": True},
+                                              workload_assertions=workload_assertions)
+        second_receipt = second.get("receipt") or {}
+        first_chars = len((first.get("text") or "").strip())
+        second_chars = len((second.get("text") or "").strip())
+        rendered_wins = (second_receipt.get("status") == "observed"
+                         and second_chars >= max(first_chars * 1.5, first_chars + 1000))
+        chosen, other = (second, first) if rendered_wins else (first, second)
+        other_receipt = other.get("receipt") or {}
+        receipt = chosen["receipt"]
+        receipt["second_opinion"] = {
+            "kept": receipt.get("method"), "other": other_receipt.get("method"),
+            "other_status": other_receipt.get("status"),
+            "other_trace_id": other_receipt.get("trace_id"),
+            "text_chars": {"http": first_chars, "rendered": second_chars}}
+        costs = [receipt.get("cost_usd"), other_receipt.get("cost_usd")]
+        receipt["cost_usd"] = None if None in costs else _total_cost(costs)
+        return chosen
+
+    async def _ensure_complete(self, url, first, policy, adapter, policy_overrides,
+                               workload_assertions, effective):
+        """Escalate along completeness_ladder until the page looks complete.
+
+        Each step is an ordinary read pinned to one provider, so Core's content
+        checks, receipts and evidence apply. The most complete page wins; when
+        no step helps, the first page stands.
+        """
+        from .completeness import assess
+        verdict = assess(url, first)
+        record = {key: verdict.get(key) for key in ("kind", "complete", "item_links", "prices",
+                                                    "text_chars", "reason")}
+        first["receipt"]["completeness"] = record
+        borderline = (verdict["complete"] and verdict.get("kind") == "search"
+                      and verdict.get("item_links", 0) < effective.completeness_borderline_items
+                      and verdict.get("prices", 0) < 2 * 4)
+        if verdict["complete"] and not borderline:
+            return first
+        receipt = first["receipt"]
+        tried = {attempt.get("provider") for attempt in receipt.get("attempts") or ()}
+        tried.add((receipt.get("second_opinion") or {}).get("other"))
+        ladder = []
+        from .profiles import ACTIVE
+        carriers = ACTIVE.get().carriers() if effective.profile and ACTIVE.get() else None
+        for identifier in effective.completeness_ladder:
+            if (identifier in tried or identifier in effective.exclude_providers
+                    or not self.providers.is_available(identifier)):
+                continue
+            if carriers is not None and identifier not in carriers:
+                continue
+            try:
+                self.providers.require_enabled(identifier, effective,
+                                               operation="extract" if adapter else "read")
+            except WebFailure:
+                continue
+            ladder.append(identifier)
+        best, best_score, steps = first, verdict["score"], []
+        if borderline:
+            # A narrow pass gets one opinion from the strongest allowed tool:
+            # a paid one when the call allows them.
+            paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
+            ladder = ([item for item in ladder if item in paid] or ladder)[:1]
+            record["borderline"] = True
+        costs = [receipt.get("cost_usd")]
+        deadline = time.monotonic() + effective.completeness_deadline_seconds
+        for identifier in ladder[:effective.completeness_max_extra_reads]:
+            if time.monotonic() > deadline:
+                break
+            await asyncio.sleep(min(effective.origin_min_interval_seconds, 1.0))
+            settle = max(effective.settle_ms, effective.completeness_settle_ms)
+            if policy is not None:
+                step = await self._read_unpaced(url, replace(policy, provider_candidates=(identifier,),
+                                                             settle_ms=settle),
+                                                None, adapter, workload_assertions=workload_assertions)
+            else:
+                step = await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                    **(policy_overrides or {}), "provider_candidates": [identifier],
+                    "settle_ms": settle},
+                    workload_assertions=workload_assertions)
+            step_receipt = step.get("receipt") or {}
+            costs.append(step_receipt.get("cost_usd"))
+            observed = step_receipt.get("status") == "observed"
+            step_verdict = assess(url, step) if observed else None
+            steps.append({"provider": identifier, "status": step_receipt.get("status"),
+                          "failure": (step_receipt.get("failure") or {}).get("code"),
+                          "complete": step_verdict["complete"] if step_verdict else False,
+                          "trace_id": step_receipt.get("trace_id")})
+            if step_verdict and step_verdict["score"] > best_score:
+                best, best_score = step, step_verdict["score"]
+                record = {**record, "complete": step_verdict["complete"],
+                          "item_links": step_verdict.get("item_links"),
+                          "prices": step_verdict.get("prices"),
+                          "text_chars": step_verdict.get("text_chars"),
+                          "reason": step_verdict.get("reason")}
+            if step_verdict and step_verdict["complete"]:
+                break
+        record["escalations"] = steps
+        record["kept"] = best["receipt"].get("method")
+        best["receipt"]["completeness"] = record
+        best["receipt"]["cost_usd"] = None if None in costs else _total_cost(costs)
+        return best
+
+    async def watch(self, url: str, *, link_pattern: str | None = None, policy: WebPolicy | None = None,
+                    policy_overrides: dict | None = None, state_key: str | None = None,
+                    max_seen: int = 5000) -> dict:
+        """One poll of a listing page: return links not seen on earlier polls.
+
+        Generic and site-agnostic. The caller schedules polls and decides what a
+        link means; FrankenSurf reads the page (paced, with the usual receipts),
+        collects same-site links, optionally filtered by ``link_pattern`` (a
+        regular expression matched against the absolute URL), and diffs them
+        against the persisted set for this watch. The first poll reports every
+        current link as new with ``first_poll`` set, so the caller can choose to
+        treat it as a baseline.
+        """
+        if link_pattern is not None:
+            pattern = re.compile(link_pattern)
+        else:
+            pattern = None
+        if type(max_seen) is not int or max_seen < 1:
+            raise ValueError("max_seen must be a positive integer")
+        key = state_key or url
+        path = self.state_dir / "watches" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+            seen = list(state.get("seen") or [])
+        except (OSError, ValueError):
+            state, seen = None, []
+        result = await self.read(url, policy, policy_overrides=policy_overrides)
+        receipt = result.get("receipt") or {}
+        if receipt.get("status") != "observed":
+            return {"url": url, "status": "failed", "failure": receipt.get("failure"),
+                    "new": [], "first_poll": state is None, "receipt": receipt}
+        base = result.get("url") or url
+        host = (urlparse(base).hostname or "").removeprefix("www.")
+        links, order = {}, []
+        content = result.get("content") or ""
+        if "html" in (result.get("content_type") or "html"):
+            soup = BeautifulSoup(content, "html.parser")
+            for anchor in soup.select("a[href]"):
+                href = urljoin(base, anchor["href"]).split("#", 1)[0]
+                parsed = urlparse(href)
+                if parsed.scheme not in {"http", "https"} or (parsed.hostname or "").removeprefix("www.") != host:
+                    continue
+                if pattern is not None and not pattern.search(href):
+                    continue
+                text = anchor.get_text(" ", strip=True)[:300]
+                if href not in links:
+                    links[href] = text
+                    order.append(href)
+                elif text and not links[href]:
+                    links[href] = text
+        seen_set = set(seen)
+        new = [{"url": href, "text": links[href]} for href in order if href not in seen_set]
+        merged = seen + [item["url"] for item in new]
+        merged = merged[-max_seen:]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".watch-", dir=path.parent)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump({"url": url, "link_pattern": link_pattern, "seen": merged,
+                       "last_polled_at": receipt.get("observed_at")}, stream)
+        os.replace(temporary, path)
+        return {"url": url, "status": "observed", "new": new, "first_poll": state is None,
+                "links_on_page": len(order), "seen_count": len(merged), "receipt": receipt}
+
+    async def _read_unpaced(self, url: str, policy: WebPolicy | None = None, provider: str | None = None,
+                   adapter: str | None = None, *, policy_overrides: dict | None = None,
+                   workload_assertions: dict | None = None) -> dict:
+        from .routes import request_policy, RouteRecipeError
+        effective, protected = request_policy(policy, policy_overrides)
+        from .repair import normalize_workload_assertions
+        assertions = normalize_workload_assertions(
+            workload_assertions,
+            max_count=effective.workload_assertion_max_count,
+            max_bytes=effective.workload_assertion_max_bytes)
+        if assertions is not None and adapter is None:
+            raise ValueError("workload assertions require extraction adapter")
+        if provider is not None:
+            effective = replace(effective, provider=provider)
+        # Identity and explicit route decisions have authority over operator recipes.
+        if effective.identity or effective.provider is not None or effective.provider_candidates is not None:
+            return await self._read(url, effective, adapter=adapter,
+                _workload_assertions=assertions)
+        started = time.monotonic()
+        try:
+            _validate_url(url)
+            version = None
+            if adapter:
+                version = self.adapters.require_enabled(adapter).version
+            planning = self.routes.plan(url, "extract" if adapter else "read", adapter,
+                version, effective, protected, providers=self.providers,
+                configured=("steel",) if self.steel_api_url else ())
+        except (WebFailure, RouteRecipeError) as exc:
+            error = exc if isinstance(exc, WebFailure) else WebFailure(exc.code, str(exc))
+            return await self._read(url, effective, adapter=adapter,
+                                    _planning_failure=error,
+                                    _workload_assertions=assertions)
+        seed_policy = None
+        seed_providers = ()
+        seed_metadata = ()
+        if planning.seeds:
+            seed_policy = planning.seeds[0].policy
+            if any(plan.policy != seed_policy for plan in planning.seeds[1:]):
+                error = WebFailure("ROUTE_CONFIG_INVALID",
+                    "Matching compatibility route seeds disagree on policy defaults")
+                return await self._read(url, effective, adapter=adapter,
+                                        _planning_failure=error,
+                                        _workload_assertions=assertions)
+            seed_providers = tuple(dict.fromkeys(
+                plan.provider for plan in planning.seeds))
+            seed_metadata = tuple(
+                plan.recipe.metadata() for plan in planning.seeds)
+        history = []
+        budget_cap = effective.max_cost_usd
+        for plan in planning.plans:
+            if budget_cap is None:
+                budget_cap = plan.policy.max_cost_usd
+            caps = [cap for cap in (budget_cap, plan.policy.max_cost_usd) if cap is not None]
+            plan_policy = replace(plan.policy, max_cost_usd=min(caps) if caps else None)
+            result = await self._read(url, plan_policy, provider=plan.provider, adapter=plan.adapter,
+                                      _route_scope=plan.recipe.fingerprint,
+                                      _recipe=plan.recipe.metadata(),
+                                      _prior_costs=[item["receipt"].get("cost_usd") for item in history],
+                                      _workload_assertions=assertions)
+            history.append(result)
+            failure = (result["receipt"].get("failure") or {}).get("code")
+            if result["receipt"]["status"] == "observed" or failure in effective.terminal_failures or failure in effective.context_stop_failures:
+                break
+        else:
+            fallback = seed_policy or effective
+            caps = [cap for cap in (budget_cap, fallback.max_cost_usd)
+                    if cap is not None]
+            fallback = replace(fallback,
+                               max_cost_usd=min(caps) if caps else None)
+            result = await self._read(url, fallback, adapter=adapter,
+                _route_seeds=seed_metadata, _seed_providers=seed_providers,
+                _prior_costs=[item["receipt"].get("cost_usd") for item in history],
+                _workload_assertions=assertions)
+        if not history and not planning.skipped:
+            return result
+        prior = history[:-1] if history and result is history[-1] else history
+        receipt = result["receipt"]
+        receipt["attempts"] = [attempt for item in prior for attempt in item["receipt"]["attempts"]] + receipt["attempts"]
+        receipt["routing"] = {**receipt.get("routing", {}),
+            "operator_recipes": {"skipped": list(planning.skipped),
+                "prior_trace_ids": [item["receipt"]["trace_id"] for item in prior],
+                "automatic_promotion": False}}
+        receipt["latency_ms"] = round((time.monotonic() - started) * 1000)
+        costs = [item["receipt"].get("cost_usd") for item in prior] + [receipt.get("cost_usd")]
+        receipt["cost_usd"] = _total_cost([_measured_cost(cost) for cost in costs])
+        if budget_cap is not None:
+            receipt.update(max_cost_usd=budget_cap,
+                cost_budget_satisfied=receipt["cost_usd"] is not None and receipt["cost_usd"] <= budget_cap)
+        # Individual acquisitions already recorded their own routing observations.
+        self._save_trace(result, record_observations=False)
+        return result
+
+    def _plan_route(self, url, policy, adapter, _route_scope, _route_seeds, _seed_providers):
+        """Acquisition context and the public provider order (route memory, hints, seeds).
+
+        Returns (policy, route_context, public_route); public_route is None for a
+        caller-chosen route.
+        """
+        from .route_memory import acquisition_context
+        caller_route = bool(policy.identity or policy.provider or policy.provider_candidates is not None)
+        public_route = None
+        route_context = acquisition_context(policy)
+        if _route_scope is not None:
+            if route_context is not None:
+                # Recipe observations cannot train another recipe or ordinary
+                # route when the resulting policy values happen to be equal.
+                route_context = hashlib.sha256(json.dumps([route_context,
+                    {"operator_route_recipe": _route_scope}],
+                    sort_keys=True).encode()).hexdigest()
+        elif _route_seeds:
+            if route_context is not None:
+                route_context = hashlib.sha256(json.dumps([route_context,
+                    {"catalog_route_seeds": [seed["sha256"]
+                        for seed in _route_seeds]}],
+                    sort_keys=True).encode()).hexdigest()
+        if not caller_route and _route_scope is None and policy.navigation_page == 1:
+            candidates = (list(policy.provider_candidates) if policy.provider_candidates else
+                          self.providers.candidates(policy,
+                              configured=("steel",) if self.steel_api_url else (),
+                              operation="extract" if adapter else "read"))
+            # A validated exact compatibility seed can admit an installed
+            # route-scoped provider without hiding ordinary candidates.
+            seeded = list(dict.fromkeys(_seed_providers))
+            candidates = seeded + [
+                identifier for identifier in candidates
+                if identifier not in seeded]
+            if (policy.allow_handoff and "handoff" not in candidates
+                    and self.providers.is_available("handoff")):
+                candidates.append("handoff")
+            if policy.profile:
+                from .profiles import ACTIVE
+                carriers = ACTIVE.get().carriers() if ACTIVE.get() else ()
+                candidates = [identifier for identifier in candidates if identifier in carriers]
+            if policy.exclude_providers:
+                candidates = [i for i in candidates if i not in policy.exclude_providers]
+            if policy.try_harder:
+                # The agent judged a cheaper read wrong: strongest tools first,
+                # including paid ones the call allows that plain routing keeps
+                # until after the free ones.
+                strong = [i for i in policy.completeness_ladder
+                          if i not in policy.exclude_providers and self.providers.is_available(i)
+                          and _allowed(self.providers, i, policy)]
+                candidates = strong + [i for i in candidates if i not in strong]
+            manifests = [item for item in self.providers.inspect()
+                         if item["id"] in candidates]
+            version = None
+            if adapter:
+                version = next((item["version"] for item in self.adapters.inspect()
+                                if item["id"] == adapter and item["enabled"]), None)
+            operation = "extract" if adapter else "read"
+            if policy.use_route_memory:
+                from .route_memory import provider_plan
+                learned = provider_plan(self.state_dir, url, operation, adapter, version,
+                    manifests, candidates, policy.route_memory_ttl_seconds,
+                    policy.route_memory_min_samples, route_context,
+                    adapter_binding_id=self.adapters.binding_id(adapter)
+                    if adapter else None,
+                    # An observed attempt already passed Core's content checks
+                    # (app shell, empty render, challenge and sign-in pages), so
+                    # recent observations on this exact path are the evidence.
+                    require_independent_verification=False)
+            else:
+                learned = {"ordered": candidates, "preferred": None,
+                    "execution": "sequential", "basis": "route memory disabled by policy",
+                    "evidence": []}
+            hinted = self._origin_hint(url, policy)
+            if (learned["preferred"] is None and hinted is not None
+                    and hinted in learned["ordered"] and learned["ordered"][0] != hinted):
+                learned = {**learned, "ordered": [hinted] + [item for item in learned["ordered"]
+                                                            if item != hinted],
+                           "origin_hint": hinted}
+            planned = {**learned, "reliability": None, "scope": {"operation": operation,
+                "adapter": adapter, "adapter_version": version,
+                "adapter_binding_id": self.adapters.binding_id(adapter)
+                    if adapter else None,
+                "identity_class": "public", "acquisition_context": route_context}}
+            if candidates:
+                policy = replace(policy, provider=None,
+                                 provider_candidates=tuple(learned["ordered"]))
+            public_route = {"provider_plan": planned}
+            if _route_seeds:
+                public_route["catalog_seeds"] = list(_route_seeds)
+                public_route["provider_plan"]["baseline"] = (
+                    "typed provisional compatibility seed order")
+            if learned["preferred"] is not None:
+                # Compatibility aliases retain their meaning while the complete
+                # evidence-bearing plan remains the authoritative receipt field.
+                public_route.update(memory_provider=learned["preferred"],
+                                    memory_basis=learned["basis"])
+        return policy, route_context, public_route
+
+    def _parse_acquired(self, response, adapter, url, policy, receipt, resolved,
+                        identity_capture, _workload_assertions):
+        """PDF text, adapter projection, workload assertions and repair overlay."""
+        repair_overlay = None
+        if ("pdf" in (response.get("content_type") or "").lower()
+                and isinstance(response.get("raw"), (bytes, bytearray))
+                and response["raw"][:5] == b"%PDF-"):
+            # Raw PDF bytes are not text; stitch in pypdf for that.
+            response["content"] = _pdf_text(bytes(response["raw"]), policy.pdf_max_pages)
+        try:
+            parsed = parse_content(
+                response["content"],
+                response["content_type"],
+                response["url"], adapter, policy=policy,
+                requested_url=url,
+                acquisition_attestation=copy.deepcopy(
+                    identity_capture),
+                adapter_registry=self.adapters,
+                **({"navigation_data":
+                    response["navigation_data"]}
+                   if response.get("navigation_data")
+                   is not None else {}),
+                **({"navigation": response["navigation"]}
+                   if response.get("navigation")
+                   is not None else {}))
+            if _workload_assertions is not None:
+                from .repair import enforce_workload_assertions
+                assertion_validation = (
+                    enforce_workload_assertions(
+                        parsed.get("structured"),
+                        _workload_assertions))
+        except WebFailure as extraction_failure:
+            if (extraction_failure.code != "SCHEMA_CHANGED"
+                    or adapter is None):
+                raise
+            from .repair import active_overlay_projection
+            overlay_result = active_overlay_projection(
+                self.state_dir, adapter,
+                receipt.get("adapter_version"),
+                receipt.get("adapter_binding_id"),
+                url, response["content"],
+                _workload_assertions,
+                identity_class=("named" if resolved
+                                else "public"),
+                max_registry_bytes=(
+                    policy.repair_overlay_registry_max_bytes))
+            if overlay_result is None:
+                if hasattr(extraction_failure,
+                           "workload_assertions"):
+                    receipt["workload_assertions"] = (
+                        extraction_failure.workload_assertions)
+                raise
+            parsed, repair_overlay, assertion_validation = (
+                overlay_result)
+        if _workload_assertions is not None:
+            receipt["workload_assertions"] = (
+                assertion_validation)
+        if repair_overlay is not None:
+            receipt["repair_overlay"] = repair_overlay
+        return parsed
+
+    def _record_observation(self, result, receipt, response, parsed, policy, identity_capture):
+        """Copy an accepted response into the result; return the evidence to commit."""
+        result.update({k:v for k,v in response.items()
+            if k not in {"raw", "screenshot", "http_status",
+                         "url", "navigation_data",
+                         "identity_private_image_sources",
+                         "visible_snapshot"}})
+        result["url"] = _output_url(response["url"], named_identity=bool(policy.identity))
+        result.update(parsed)
+        evidence = self._save_bytes(response["raw"], ".json" if
+            "json" in response["content_type"] else ".html")
+        pending_receipt_evidence = [*receipt["evidence"], evidence]
+        if identity_capture is not None:
+            receipt["visible_snapshot"] = identity_capture
+            receipt.update(freshness_seconds=None,capture_freshness_seconds=0,
+                source_freshness="unknown",source_refresh_performed=False,
+                requested_freshness_satisfied=False,semantic_freshness="partial_owner_visible_evidence")
+        if response.get("content_readiness"):
+            receipt["content_readiness"] = response["content_readiness"]
+        if response.get("navigation"):
+            receipt["navigation"] = response["navigation"]
+        if response.get("navigation_data"):
+            data = response["navigation_data"]
+            receipt["navigation_data_source"] = {"url":data["url"],"http_status":data["http_status"]}
+            if data.get("method"): receipt["navigation_data_source"]["method"] = data["method"]
+            pending_receipt_evidence.append(
+                self._save_bytes(
+                    data["content"].encode(), ".json"))
+        if response.get("screenshot"):
+            pending_receipt_evidence.append(
+                response["screenshot"])
+        pending_receipt_evidence.extend(
+            response.get("acquisition_evidence", []))
+        result["field_status"]["content"] = "observed"
+        return pending_receipt_evidence
+
+    def _record_failed_attempt(self, exc, response, attempt_final_url, adapter, policy,
+                               candidate, candidate_version, candidate_binding_id,
+                               attempt_started, attempt_cost, cost_reported, receipt,
+                               attempts, attempt_costs, _recipe, resolved):
+        """Append the failed attempt with its cost, children and retained evidence."""
+        provider_acquisition = isinstance(response, dict)
+        if isinstance(exc, WebFailure):
+            if provider_acquisition:
+                exc.response_url = attempt_final_url
+                exc.http_status = response.get("http_status")
+                if adapter is not None:
+                    exc.failure_stage = None
+                    exc._public_failure_evidence = []
+            elif (exc.response_url is None and attempt_final_url
+                  and not exc.code.startswith("IDENTITY_")):
+                exc.response_url = attempt_final_url
+        from .providers import _validated_provider_attempt_tree
+        safe_children = None
+        malformed_children = False
+        if provider_acquisition:
+            raw_children = response.get("provider_attempts")
+        else:
+            raw_children = (exc.__dict__.get(
+                "provider_attempts")
+                if isinstance(exc, WebFailure) else None)
+        if raw_children is not None:
+            try:
+                safe_children = _validated_provider_attempt_tree(
+                    raw_children,
+                    max_depth=policy.provider_composition_max_depth,
+                    max_nodes=policy.provider_composition_max_attempts,
+                    max_bytes=policy.max_bytes)
+            except (ValueError, TypeError, OverflowError,
+                    RecursionError):
+                malformed_children = True
+        if malformed_children and isinstance(exc, WebFailure):
+            exc.code = "PROVIDER_DOWN"
+            exc.message = (
+                "Invalid composite provider attempt envelope")
+        attempt = {"provider":candidate,
+            "provider_version":candidate_version,
+            **({"provider_binding_id": candidate_binding_id}
+               if candidate_binding_id is not None else {}),
+            "status":"failed","failure":exc.code,
+            "latency_ms":round((time.monotonic()-attempt_started)*1000)}
+        if (not provider_acquisition
+                and hasattr(exc, "cost_usd")):
+            attempt_cost, cost_reported = _measured_cost(
+                exc.cost_usd), True
+            receipt["cost_basis"] = (
+                "provider reported; excludes hardware")
+        if cost_reported:
+            attempt["cost_usd"] = attempt_cost
+        attempt_costs.append(attempt_cost)
+        receipt["cost_usd"] = _total_cost(attempt_costs)
+        if _recipe: attempt["route_recipe"] = _recipe
+        if getattr(exc, "failure_stage", None):
+            attempt["failure_stage"] = exc.failure_stage
+        if safe_children is not None:
+            attempt["children"] = safe_children
+        if getattr(exc, "response_url", None) and not exc.code.startswith("IDENTITY_"):
+            attempt["final_url"] = _output_url(exc.response_url, named_identity=bool(policy.identity))
+        if (policy.retain_public_failure_evidence and not resolved
+                and not exc.code.startswith("IDENTITY_") and response is not None
+                and attempt_final_url is not None):
+            # Acquisition is evidence, even when semantic extraction fails.
+            # Keep it local and attached to this failed attempt, never cached.
+            artifact = self._save_bytes(
+                response["raw"], ".json" if "json" in
+                response["content_type"] else ".html")
+            attempt["evidence"] = [artifact]
+        if (policy.retain_public_failure_evidence
+                and not provider_acquisition and not resolved
+                and not exc.code.startswith("IDENTITY_")):
+            retained = getattr(exc, "_public_failure_evidence", [])
+            if retained:
+                attempt.setdefault("evidence", []).extend(retained)
+        attempts.append(attempt)
+
+    def _after_failed_attempt(self, exc, policy, candidate, candidate_record, retry_index,
+                              plan_state, order, resolved, receipt):
+        """Decide what follows a failed attempt: "retry", "next" or "stop".
+
+        Paid providers and cost-capped reads are never retried, since a retry is
+        a second charge. After enough walls, allowed paid providers move ahead
+        of the remaining free ones.
+        """
+        if (exc.code in policy.provider_retry_failures
+                and exc.code not in policy.terminal_failures
+                and not (candidate_record or {}).get("paid")
+                and policy.max_cost_usd is None
+                and retry_index + 1 < policy.provider_max_attempts_per_candidate):
+            return "retry"
+        # Anonymous reads meet fake walls: sites answer bots with a sign-in
+        # redirect or a 404 that a real browser never sees. So a public read
+        # confirms them: a 404 from a plain fetch, or after another wall, gets
+        # one more provider, and sign-in walls stop the climb only after
+        # policy.auth_wall_confirmations of them in a row.
+        anonymous = not resolved and not policy.profile
+        terminal = exc.code in policy.terminal_failures
+        suspect = False
+        if exc.code == "NOT_FOUND" and anonymous:
+            plan_state["not_found"] = plan_state.get("not_found", 0) + 1
+            if plan_state["walls"] or (plan_state["not_found"] == 1
+                                       and candidate in ("http", "scrapling_http")):
+                terminal, suspect = False, True
+        if exc.code in ("AUTH_REQUIRED", "AUTH_EXPIRED") and anonymous:
+            plan_state["auth_walls"] = plan_state.get("auth_walls", 0) + 1
+            plan_state["walls"] += 1
+            terminal = plan_state["auth_walls"] >= policy.auth_wall_confirmations
+            suspect = not terminal
+        if suspect and not plan_state.get("reordered"):
+            # The same kind of fetcher would see the same fake wall, so the
+            # confirming reads come from fetchers that look different.
+            remaining = order[plan_state["position"] + 1:]
+            first = [item for item in policy.fake_wall_confirmers if item in remaining]
+            order[plan_state["position"] + 1:] = first + [i for i in remaining if i not in first]
+            plan_state["reordered"] = True
+        if exc.code in policy.escalation_failures:
+            plan_state["walls"] += 1
+        if (policy.escalate_after_walls and not resolved
+                and not plan_state["escalated"]
+                and plan_state["walls"] >= policy.escalate_after_walls):
+            remaining = order[plan_state["position"] + 1:]
+            paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
+            ahead = [item for item in remaining if item in paid]
+            if ahead:
+                order[plan_state["position"] + 1:] = ahead + [
+                    item for item in remaining if item not in paid]
+                plan_state["escalated"] = True
+                receipt.setdefault("routing", {})["escalated_to"] = ahead[0]
+        return "stop" if (resolved or terminal or candidate == order[-1]) else "next"
+
+    def _store_cache(self, result, receipt, url, adapter, policy, resolved, key,
+                     _route_scope, route_seed_scope, identity_capture, identity_authority):
+        """Cache an observed public (or verified identity) result for later freshness levels."""
+        if (receipt["status"] == "observed"
+                and not (resolved and (identity_capture is not None
+                    or getattr(resolved, "snapshot_policy", None)))):
+            if resolved:
+                self._identity_provider_authority(
+                    resolved, policy, expected=identity_authority)
+            if self._cache_key(url, adapter, policy, resolved,
+                    route_scope=_route_scope,
+                    route_seed_scope=route_seed_scope) != key:
+                raise WebFailure(
+                    "IDENTITY_PROVIDER_DENIED" if resolved
+                        else "PROVIDER_UNAVAILABLE",
+                    "Acquisition configuration changed before cache storage")
+            for freshness in ("hour","day","cached"):
+                cache_policy = replace(policy,freshness=freshness)
+                cache_path = self.state_dir/"cache"/(self._cache_key(
+                    url, adapter, cache_policy, resolved,
+                    route_scope=_route_scope,
+                    route_seed_scope=route_seed_scope)+".json")
+                cache_path.write_text(json.dumps(result,ensure_ascii=False)); cache_path.chmod(0o600)
+
+    def _bind_identity(self, resolved, policy, adapter, receipt):
+        """Pin the identity's provider authority and the adapter version for this read.
+
+        Returns (identity_provider, identity_authority, identity_capture_strategy).
+        """
+        identity_provider = None
+        identity_authority = None
+        identity_capture_strategy = None
+        if resolved:
+            identity_provider = resolved.provider
+            identity_capture_strategy = self._identity_capture_strategy(
+                resolved)
+            if (policy.provider_candidates is not None
+                    and policy.provider_candidates != (identity_provider,)):
+                raise WebFailure("IDENTITY_PROVIDER_DENIED",
+                    "Named identity provider candidates exceed its executor binding")
+            # Pin the exact startup provider definition before connecting
+            # to the owned browser. Authentication capability alone never
+            # grants authority to an alternate catalog entry.
+            identity_authority = self._identity_provider_authority(
+                resolved, policy,
+                operation="extract" if adapter else "read")
+            receipt.update(
+                provider_version=identity_authority.version,
+                provider_binding_id=identity_authority.binding_id)
+        if adapter:
+            receipt["adapter_version"] = self.adapters.require_enabled(
+                adapter).version
+            adapter_binding_id = self.adapters.binding_id(adapter)
+            if adapter_binding_id is not None:
+                receipt["adapter_binding_id"] = adapter_binding_id
+        return identity_provider, identity_authority, identity_capture_strategy
+
+    def _read_candidates(self, url, policy, adapter, resolved, identity_provider):
+        """Providers to try, in order, after context-stop and navigation checks."""
+        block_key = (urlparse(url).netloc,resolved.cache_scope) if resolved else urlparse(url).netloc
+        if self._blocked_domains.get(block_key) in policy.context_stop_failures:
+            raise WebFailure(self._blocked_domains[block_key], "Context stopped after an earlier access or rate block")
+        if policy.navigation_page > 1:
+            navigation_provider = (identity_provider if resolved
+                                   else policy.provider)
+            if (not navigation_provider
+                    or not self.providers.require_enabled(
+                        navigation_provider,policy).navigation):
+                raise WebFailure("POLICY_DENIED", "Numbered navigation requires an explicitly selected navigation-capable provider")
+        if resolved: candidates = [identity_provider]
+        elif policy.provider: candidates = [policy.provider]
+        elif policy.provider_candidates is not None: candidates = list(policy.provider_candidates)
+        else:
+            candidates = self.providers.candidates(policy,
+                configured=("steel",) if self.steel_api_url else (),
+                operation="extract" if adapter else "read")
+        if not candidates: raise WebFailure("POLICY_DENIED", "No permitted provider")
+        return candidates
+
+    def _check_acquisition_binding(self, url, adapter, policy, attempt_policy, resolved, receipt,
+                                   key, _route_scope, route_seed_scope, candidate,
+                                   candidate_version, candidate_binding_id,
+                                   identity_authority, attempt_cost):
+        """Refuse a result if the adapter, provider, identity or cache scope changed
+        while it was being acquired, or if its cost breaks the remaining cap."""
+        if adapter and self.adapters.require_enabled(adapter).version != receipt["adapter_version"]:
+            raise WebFailure("SCHEMA_CHANGED", "Adapter configuration changed during acquisition")
+        if resolved:
+            self._identity_provider_authority(
+                resolved, attempt_policy,
+                expected=identity_authority)
+            if self._cache_key(url, adapter, policy, resolved,
+                    route_scope=_route_scope,
+                    route_seed_scope=route_seed_scope) != key:
+                raise WebFailure("IDENTITY_PROVIDER_DENIED",
+                    "Named identity acquisition binding changed during execution")
+        elif (self.providers.require_enabled(
+                candidate, attempt_policy).version
+                != candidate_version
+                or self.providers.binding_id(candidate)
+                    != candidate_binding_id
+                or (adapter is not None
+                    and self.adapters.binding_id(adapter)
+                        != receipt.get(
+                            "adapter_binding_id"))
+                or self._cache_key(url, adapter, policy,
+                    resolved, route_scope=_route_scope,
+                    route_seed_scope=route_seed_scope) != key):
+            raise WebFailure("PROVIDER_UNAVAILABLE", "Acquisition configuration changed; retry with its current version")
+        if attempt_policy.max_cost_usd is not None and (
+                attempt_cost is None or attempt_cost > attempt_policy.max_cost_usd):
+            raise WebFailure("BUDGET_EXHAUSTED", "Acquisition cost cannot satisfy the remaining aggregate cap")
+
+    def _observed_attempt(self, response, policy, candidate, candidate_version,
+                          candidate_binding_id, attempt_started, _recipe,
+                          attempt_cost, cost_reported):
+        """The receipt row for a successful attempt, with any composite children."""
+        attempt = {"provider":candidate,"provider_version":candidate_version,
+            **({"provider_binding_id": candidate_binding_id}
+               if candidate_binding_id is not None else {}),
+            "status":"observed","latency_ms":round((time.monotonic()-attempt_started)*1000),
+            **({"route_recipe": _recipe} if _recipe else {}),
+            **({"cost_usd": attempt_cost} if cost_reported else {})}
+        if response.get("provider_attempts"):
+            # Child costs are included in this one outer cost;
+            # keep the tree descriptive instead of flattening it.
+            from .providers import _validated_provider_attempt_tree
+            try:
+                attempt["children"] = (
+                    _validated_provider_attempt_tree(
+                        response["provider_attempts"],
+                        max_depth=policy.provider_composition_max_depth,
+                        max_nodes=policy.provider_composition_max_attempts,
+                        max_bytes=policy.max_bytes))
+            except (ValueError, TypeError, OverflowError,
+                    RecursionError):
+                raise WebFailure("PROVIDER_DOWN",
+                    "Invalid composite provider attempt envelope") from None
+        return attempt
+
+    def _prepare_attempt(self, url, policy, adapter, candidate, resolved, context,
+                         identity_authority, identity_capture_strategy, prior_costs):
+        """Provider manifest, the attempt's policy (longer deadline for unblockers,
+        remaining cost cap) and, for an identity read, its one-shot capability.
+
+        Returns (manifest, attempt_policy, identity_capability, identity_binding).
+        """
+        manifest = self.providers.require_enabled(candidate, policy,
+            operation="extract" if adapter else "read")
+        from .hosted_providers import AGENT_PROVIDERS, UNBLOCKERS
+        if candidate in UNBLOCKERS:
+            policy_for_candidate = replace(policy, timeout_seconds=max(
+                policy.timeout_seconds, policy.unblocker_timeout_seconds))
+        elif candidate == "handoff":
+            policy_for_candidate = replace(policy, timeout_seconds=max(
+                policy.timeout_seconds, policy.handoff_timeout_seconds))
+        elif candidate in AGENT_PROVIDERS:
+            policy_for_candidate = replace(policy, timeout_seconds=max(
+                policy.timeout_seconds, policy.agent_provider_timeout_seconds))
+        else:
+            policy_for_candidate = policy
+        attempt_policy = _remaining_cost_policy(policy_for_candidate,
+            prior_costs, paid=manifest.paid)
+        if not resolved:
+            return manifest, attempt_policy, None, None
+        self.identities.recheck(resolved)
+        self._identity_provider_authority(
+            resolved, attempt_policy, expected=identity_authority)
+        identity_capability = _AuthenticatedProviderCapability(
+            identity_authority, resolved.cache_scope, url, attempt_policy,
+            capture_strategy=identity_capture_strategy)
+        return manifest, attempt_policy, identity_capability, (resolved, context, identity_capability)
+
+    def _verify_identity_response(self, response, resolved, attempt_policy,
+                                  identity_capability, identity_authority,
+                                  identity_capture_strategy):
+        """Check an identity provider used its exact one-shot capability and
+        returned Core's own acquisition. Returns (capture, private image sources).
+
+        The two failures that mean the response is not Core's are marked
+        `_discard_response` so the caller drops the response before reporting.
+        """
+        if (identity_capability.state != "consumed"
+                or identity_capability.response_fingerprint is None):
+            failure = WebFailure("IDENTITY_PROVIDER_DENIED",
+                "Authenticated provider did not consume its exact one-shot capability")
+            failure._discard_response = True
+            raise failure
+        self._identity_provider_authority(
+            resolved, attempt_policy, expected=identity_authority)
+        if identity_capture_strategy is not None:
+            self._require_current_capture_strategy(identity_capture_strategy)
+        if (_identity_acquisition_fingerprint(
+                response, attempt_policy.max_bytes,
+                capture_metadata=identity_capability.capture_metadata)
+                != identity_capability.response_fingerprint):
+            failure = WebFailure("IDENTITY_PROVIDER_DENIED",
+                "Authenticated provider replaced the Core acquisition result")
+            failure._discard_response = True
+            raise failure
+        return (copy.deepcopy(identity_capability.capture_metadata),
+                copy.deepcopy(identity_capability.private_image_sources or {}))
+
+    async def _read(self, url: str, policy: WebPolicy | None = None, provider: str | None = None,
+                    adapter: str | None = None, *, _route_scope=None, _recipe=None,
+                    _route_seeds=(), _seed_providers=(), _planning_failure=None,
+                    _prior_costs=(),
+                    _workload_assertions=None) -> dict:
+        policy = policy or WebPolicy()
+        if provider is not None: policy = replace(policy, provider=provider)
+        policy, route_context, public_route = self._plan_route(
+            url, policy, adapter, _route_scope, _route_seeds, _seed_providers)
+        trace, started, attempts = uuid.uuid4().hex, time.monotonic(), []
+        attempt_costs = []
+        result = {"url": None, "title": None, "text": "", "content": "", "content_type": "",
+                  "headers": {}, "structured": None, "image_urls": [], "images": [],
+                  "field_status": {"availability": "unknown", "transaction_price": "unknown"}}
+        from .actions import required_read_action
+        action_class = required_read_action(policy.identity)
+        receipt = {"trace_id":trace,"status":"failed","operation":"extract" if adapter else "read",
+                   "action_class":action_class,
+                   "acquisition_context": route_context,
+                   "adapter":adapter,"observed_at":None,"freshness_seconds":None,"cache_hit":False,
+                   "method":None,"identity":policy.identity,"http_status":None,"failure":None,
+                   "requested_url":None,"final_url":None,
+                   "confidence":None,"cost_usd":0,"cost_basis":"self-hosted software; excludes electricity/hardware",
+                   "evidence":[],"attempts":attempts}
+        if public_route: receipt["routing"] = public_route
+        if policy.retry_of_trace or policy.exclude_providers:
+            receipt["try_harder"] = {"retry_of": policy.retry_of_trace,
+                                     "excluded": list(policy.exclude_providers)}
+        if _recipe: receipt["route_recipe"] = _recipe
+        result["receipt"] = receipt
+        try:
+            if _planning_failure is not None:
+                raise _planning_failure
+            from .actions import require_action
+            require_action(policy, action_class)
+            _validate_url(url)
+            result["url"] = _output_url(url, named_identity=bool(policy.identity))
+            receipt["requested_url"] = result["url"]
+            resolved = self.identities.resolve(policy.identity,url,provider=policy.provider,
+                allow_local_browser=policy.allow_local_browser) if policy.identity else None
+            identity_capture = None
+            identity_private_image_sources = {}
+            identity_provider, identity_authority, identity_capture_strategy = (
+                self._bind_identity(resolved, policy, adapter, receipt))
+            with self.identities.lease(resolved) if resolved else nullcontext():
+                context = None
+                if resolved:
+                    context = await self._identity_step(self._identity_context(resolved,policy),policy,probe=True)
+                    auth_state = await self._identity_step(
+                        self._identity_health(
+                            context, resolved, policy,
+                            **({"capture_strategy": identity_capture_strategy}
+                               if identity_capture_strategy is not None
+                               else {})), policy)
+                    receipt.update(identity=resolved.id,authority_mode=resolved.authority_mode,
+                        executor=resolved.executor_id,profile_version=resolved.profile_version,
+                        identity_generation=resolved.generation,executor_generation=resolved.executor_generation,
+                        network_context=resolved.network_context,geography=resolved.geography,
+                        authentication=auth_state,browser_execution="owner_visible_snapshot" if getattr(resolved, "snapshot_policy", None) else "passive_read")
+                    self.identities.recheck(resolved)
+                route_seed_scope = ([seed["sha256"] for seed in _route_seeds]
+                                    if _route_seeds else None)
+                key = self._cache_key(url, adapter, policy, resolved,
+                    route_scope=_route_scope,
+                    route_seed_scope=route_seed_scope)
+                cached = self._cache_lookup(key,policy) if not resolved or (auth_state == "verified" and not getattr(resolved, "snapshot_policy", None)) else None
+                if cached:
+                    if resolved:
+                        self.identities.recheck(resolved)
+                        self._identity_provider_authority(
+                            resolved, policy, expected=identity_authority)
+                    self._save_trace(cached)
+                    return cached
+                candidates = self._read_candidates(url, policy, adapter, resolved, identity_provider)
+                order = list(candidates)
+                plan_state = {"position": 0, "walls": 0, "escalated": False}
+
+                def _ordered_plan():
+                    # Reads `order` lazily so escalation can reorder what is left.
+                    while plan_state["position"] < len(order):
+                        for retry_index in range(
+                                policy.provider_max_attempts_per_candidate):
+                            yield order[plan_state["position"]], retry_index
+                        plan_state["position"] += 1
+
+                provider_plan = _ordered_plan()
+                exhausted_candidates = set()
+                for candidate, retry_index in provider_plan:
+                    if candidate in exhausted_candidates:
+                        continue
+                    attempt_started = time.monotonic()
+                    attempt_final_url = None
+                    candidate_record = next((item for item in
+                        self.providers.inspect() if item["id"] == candidate), None)
+                    candidate_version = (identity_authority.version if resolved
+                        else (candidate_record.get("version")
+                              if candidate_record else None))
+                    candidate_binding_id = (identity_authority.binding_id
+                        if resolved else self.providers.binding_id(candidate))
+                    if candidate_version is not None:
+                        receipt["provider_version"] = candidate_version
+                    if candidate_binding_id is not None:
+                        receipt["provider_binding_id"] = candidate_binding_id
+                    response = None
+                    attempt_cost = 0
+                    cost_reported = False
+                    try:
+                        from .providers import ProviderRequest
+                        (manifest, attempt_policy, identity_capability, identity_binding) = (
+                            self._prepare_attempt(
+                                url, policy, adapter, candidate, resolved, context,
+                                identity_authority, identity_capture_strategy,
+                                [*_prior_costs, *attempt_costs]))
+                        candidate_version = manifest.version
+                        receipt["provider_version"] = candidate_version
+                        if manifest.paid:
+                            # Once a paid provider begins, absent reporting is
+                            # unknown even when its executor is local.
+                            attempt_cost, cost_reported = None, True
+                            receipt["cost_basis"] = "provider reported; excludes hardware"
+                        response=await self.providers.acquire(
+                            candidate,
+                            ProviderRequest(
+                                url, attempt_policy,
+                                "extract" if adapter else "read"),
+                            self._provider_services(
+                                identity_binding=identity_binding),
+                            _evidence_preparer=(
+                                self._prepare_provider_failure_evidence))
+                        if resolved:
+                            try:
+                                identity_capture, identity_private_image_sources = (
+                                    self._verify_identity_response(
+                                        response, resolved, attempt_policy,
+                                        identity_capability, identity_authority,
+                                        identity_capture_strategy))
+                            except WebFailure as failure:
+                                if getattr(failure, "_discard_response", False):
+                                    response = None
+                                raise
+                        if manifest.paid or "cost_usd" in response:
+                            attempt_cost = _measured_cost(response.get("cost_usd"))
+                            cost_reported = True
+                            receipt["cost_basis"]="provider reported; excludes hardware"
+                        content_readiness = _validated_content_readiness(
+                            response.get("content_readiness"), attempt_policy)
+                        if content_readiness is not None:
+                            response["content_readiness"] = content_readiness
+                        self._check_acquisition_binding(
+                            url, adapter, policy, attempt_policy, resolved, receipt,
+                            key, _route_scope, route_seed_scope, candidate,
+                            candidate_version, candidate_binding_id,
+                            identity_authority, attempt_cost)
+                        _validate_url(response["url"])
+                        attempt_final_url = response["url"]
+                        parsed = self._parse_acquired(
+                            response, adapter, url, policy, receipt, resolved,
+                            identity_capture, _workload_assertions)
+                        if resolved:
+                            parsed["image_urls"] = list(dict.fromkeys(
+                                _output_url(image_url,
+                                    named_identity=True)
+                                for image_url in parsed["image_urls"]
+                                if _output_url(image_url,
+                                    named_identity=True) is not None))
+                        _reject_unusable_page(candidate, candidate_record, policy, resolved,
+                                              adapter, response, parsed, url)
+                        pending_receipt_evidence = self._record_observation(
+                            result, receipt, response, parsed, policy, identity_capture)
+                        if policy.include_images:
+                            if resolved:
+                                result["images"] = await self._download_identity_images(
+                                    parsed["image_urls"], policy, resolved,
+                                    context,
+                                    private_sources=(
+                                        identity_private_image_sources))
+                            else:
+                                result["images"] = await self.download_images(
+                                    parsed["image_urls"], policy)
+                        if resolved:
+                            self.identities.recheck(resolved)
+                            self._identity_provider_authority(
+                                resolved, attempt_policy,
+                                expected=identity_authority)
+                            if identity_capture_strategy is not None:
+                                self._require_current_capture_strategy(
+                                    identity_capture_strategy)
+                        attempt = self._observed_attempt(
+                            response, policy, candidate, candidate_version,
+                            candidate_binding_id, attempt_started, _recipe,
+                            attempt_cost, cost_reported)
+                        receipt.update(
+                            status="observed", observed_at=utcnow(),
+                            **({"freshness_seconds": 0}
+                               if identity_capture is None else {}),
+                            method=candidate,
+                            http_status=response["http_status"],
+                            final_url=_output_url(
+                                attempt_final_url,
+                                named_identity=bool(policy.identity)),
+                            evidence=pending_receipt_evidence)
+                        attempts.append(attempt)
+                        attempt_costs.append(attempt_cost)
+                        receipt["cost_usd"] = _total_cost(attempt_costs)
+                        break
+                    except (WebFailure,IdentityFailure) as exc:
+                        receipt["method"] = candidate
+                        # Any completed acquisition response is authoritative
+                        # at the provider boundary, including named-identity
+                        # responses. An adapter may classify content but cannot
+                        # forge acquisition provenance, stage, evidence, or
+                        # accounting. Core parser stages remain useful recovery
+                        # diagnostics when no adapter plugin was invoked.
+                        self._record_failed_attempt(
+                            exc, response, attempt_final_url, adapter, policy,
+                            candidate, candidate_version, candidate_binding_id,
+                            attempt_started, attempt_cost, cost_reported, receipt,
+                            attempts, attempt_costs, _recipe, resolved)
+                        step = self._after_failed_attempt(
+                            exc, policy, candidate, candidate_record, retry_index,
+                            plan_state, order, resolved, receipt)
+                        if step == "retry":
+                            if policy.provider_retry_delay_seconds:
+                                await asyncio.sleep(
+                                    policy.provider_retry_delay_seconds)
+                            continue
+                        exhausted_candidates.add(candidate)
+                        if step == "stop":
+                            raise
+                receipt["latency_ms"] = round((time.monotonic()-started)*1000)
+                self._store_cache(result, receipt, url, adapter, policy, resolved, key,
+                                  _route_scope, route_seed_scope, identity_capture,
+                                  identity_authority)
+        except (WebFailure,IdentityFailure) as exc:
+            # Stopping the whole site protects a signed-in account; a public
+            # read's sign-in wall may be a bot redirect, so it stops nothing.
+            if exc.code in policy.context_stop_failures and (
+                    exc.code not in ("AUTH_REQUIRED", "AUTH_EXPIRED")
+                    or ('resolved' in locals() and resolved) or policy.profile):
+                block_key = (urlparse(url).netloc,resolved.cache_scope) if 'resolved' in locals() and resolved else urlparse(url).netloc
+                self._blocked_domains[block_key] = exc.code
+            # A policy/generation failure after acquisition must not return private payload.
+            if exc.code.startswith("IDENTITY_"):
+                for field,value in {"title":None,"text":"","content":"","structured":None,"images":[],"image_urls":[]}.items(): result[field]=value
+                receipt["evidence"] = []
+            if getattr(exc, "response_url", None) and not exc.code.startswith("IDENTITY_"):
+                result["url"] = _output_url(exc.response_url, named_identity=bool(policy.identity))
+                receipt["final_url"] = result["url"]
+            if getattr(exc, "failure_stage", None):
+                receipt["failure_stage"] = exc.failure_stage
+            receipt.update(status="failed",failure={"code":exc.code,"message":exc.message},
+                http_status=getattr(exc,"http_status",None),observed_at=utcnow(),
+                freshness_seconds=0,
+                latency_ms=round((time.monotonic()-started)*1000))
+        if policy.max_cost_usd is not None:
+            aggregate_cost = _total_cost([*_prior_costs, receipt["cost_usd"]])
+            receipt.update(max_cost_usd=policy.max_cost_usd,
+                cost_budget_satisfied=aggregate_cost is not None and aggregate_cost <= policy.max_cost_usd)
+        if receipt["status"] == "failed":
+            result["_repair_input"] = {
+                "policy": asdict(policy),
+                "workload_assertions": copy.deepcopy(
+                    _workload_assertions),
+            }
+        self._save_trace(result)
+        return result
+
+    def _save_trace(self, result, *, record_observations=True):
+        # Raw content remains in private evidence files; trace output keeps normalized metadata.
+        repair_context = result.pop("_repair_input", None)
+        receipt = result["receipt"]
+        trace_id = receipt.get("trace_id")
+        if (not isinstance(trace_id, str)
+                or re.fullmatch(r"[0-9a-f]{32}", trace_id) is None):
+            trace_id = uuid.uuid4().hex
+            receipt["trace_id"] = trace_id
+        _redact_result_urls(result)  # Also covers cached records from earlier versions.
+        if result["receipt"].get("status") == "failed":
+            from .recovery import recovery_handoff
+            repair_input = None
+            if repair_context is not None:
+                from .repair import store_repair_input
+                repair_input = store_repair_input(
+                    self.state_dir, trace_id, repair_context, receipt)
+            elif isinstance(receipt.get("recovery"), dict):
+                repair_input = receipt["recovery"].get("repair_input")
+            result["receipt"]["recovery"] = recovery_handoff(
+                result["receipt"], repair_input=repair_input)
+        if record_observations:
+            from .route_memory import record_observations as record_routing
+            record_routing(self.state_dir, result)
+        trace = copy.deepcopy(result)
+        trace.pop("content", None)
+        trace.pop("text", None)
+        if result["receipt"].get("identity"):
+            trace.pop("structured", None)
+        from .repair import _write_private_bytes
+        _write_private_bytes(
+            self.state_dir, ("traces", trace_id + ".json"),
+            json.dumps(trace, ensure_ascii=False, indent=2).encode())
+
+    async def search(self, query: str, source: str | None = None, limit: int = 10,
+                     engine_config: dict | None = None, policy: WebPolicy | None = None) -> dict:
+        """Search through installed sources; an explicit source never falls back."""
+        from .search_plugins import SearchRequest, SearchServices
+        if not isinstance(query, str) or not query.strip() or len(query) > 2000:
+            raise ValueError("Invalid search query")
+        if not 1 <= limit <= 100:
+            raise ValueError("Search limit must be 1..100")
+        if source is not None and not self.searches.contains(source):
+            raise ValueError("Unknown search source")
+        policy = policy or WebPolicy()
+        started = time.monotonic()
+        from .actions import require_action
+        try:
+            require_action(policy, "READ_PUBLIC")
+            candidates = self.searches.candidates(policy, explicit=source)
+        except WebFailure as exc:
+            candidates, planning_failure = [], exc
+        else:
+            planning_failure = None
+        if not candidates and planning_failure is None:
+            planning_failure = WebFailure("POLICY_DENIED", "No permitted search source")
+
+        def acquisition_can_charge(candidate_policy):
+            manifests = {item["id"]: item for item in self.providers.inspect()}
+            if candidate_policy.provider:
+                return bool(manifests.get(candidate_policy.provider, {}).get("paid"))
+            if candidate_policy.provider_candidates is not None:
+                return any(manifests.get(item, {}).get("paid")
+                           for item in candidate_policy.provider_candidates)
+            configured = ("steel",) if self.steel_api_url else ()
+            return any(manifests[item]["paid"] for item in self.providers.candidates(
+                candidate_policy, configured=configured, operation="read"))
+
+        search_attempts, provider_attempts, costs = [], [], []
+        last_bundle = None
+        last_bundle_binding_id = None
+        services = SearchServices(read=self.read)
+        for identifier in candidates:
+            source_started = time.monotonic()
+            manifest = self.searches.require_enabled(identifier, policy)
+            search_binding_id = self.searches.binding_id(identifier)
+            try:
+                source_policy = policy
+                if (manifest.transport_provider is not None
+                        and policy.provider is None
+                        and policy.provider_candidates is None):
+                    source_policy = replace(policy,
+                                            provider=manifest.transport_provider)
+                attempt_policy = _remaining_cost_policy(source_policy, costs,
+                    paid=manifest.paid or acquisition_can_charge(source_policy))
+                if identifier != candidates[-1]:
+                    # Another search source is left: fall back instead of retrying.
+                    attempt_policy = replace(attempt_policy,
+                        provider_max_attempts_per_candidate=1)
+                if policy.search_source_timeout_seconds is not None:
+                    source_timeout = min(attempt_policy.timeout_seconds,
+                                         policy.search_source_timeout_seconds)
+                    attempt_policy = replace(attempt_policy,
+                        timeout_seconds=source_timeout,
+                        content_ready_timeout_seconds=min(
+                            attempt_policy.content_ready_timeout_seconds,
+                            source_timeout))
+                config = engine_config if source is not None or identifier == "searxng" else None
+                bundle, manifest = await self.searches.search(identifier,
+                    SearchRequest(query, limit, attempt_policy, config), services)
+            except ValueError:
+                raise
+            except WebFailure as exc:
+                cost = getattr(exc, "cost_usd", None if manifest.paid else 0)
+                costs.append(_measured_cost(cost))
+                search_attempts.append({"source": identifier,
+                    "source_version": manifest.version,
+                    **({"search_binding_id": search_binding_id}
+                       if search_binding_id is not None else {}),
+                    "status": "failed", "failure": exc.code, "cost_usd": _measured_cost(cost),
+                    "latency_ms": round((time.monotonic() - source_started) * 1000)})
+                planning_failure = exc
+                if source is not None or exc.code in policy.search_terminal_failures:
+                    break
+                continue
+            response, acquisition = bundle["response"], bundle["acquisition"]
+            receipt = acquisition["receipt"]
+            last_bundle = bundle
+            last_bundle_binding_id = search_binding_id
+            cost = _measured_cost(receipt.get("cost_usd"))
+            costs.append(cost)
+            provider_attempts.extend({**attempt, "search_source": identifier,
+                                      "search_source_version": manifest.version}
+                                     for attempt in receipt.get("attempts", []))
+            failure = (receipt.get("failure") or {}).get("code")
+            search_attempts.append({"source": identifier,
+                "source_version": manifest.version,
+                **({"search_binding_id": search_binding_id}
+                   if search_binding_id is not None else {}),
+                "status": receipt.get("status"), **({"failure": failure} if failure else {}),
+                "cost_usd": cost, "latency_ms": round((time.monotonic() - source_started) * 1000),
+                "trace_id": receipt.get("trace_id"),
+                "evidence": copy.deepcopy(receipt.get("evidence", [])),
+                "upstream_failures": copy.deepcopy(response.get("upstream_failures", []))})
+            self._save_trace(acquisition, record_observations=False)
+            if receipt.get("status") == "observed":
+                break
+            if source is not None or failure in policy.search_terminal_failures:
+                break
+
+        if last_bundle is None:
+            failure = planning_failure or WebFailure("SEARCH_UNAVAILABLE", "Search sources were exhausted")
+            receipt = {"trace_id": uuid.uuid4().hex, "operation": "search",
+                "action_class": "READ_PUBLIC", "status": "failed",
+                "observed_at": None, "freshness_seconds": None, "cache_hit": False,
+                "method": None, "identity": policy.identity, "http_status": failure.http_status,
+                "failure": {"code": failure.code, "message": failure.message}, "requested_url": None,
+                "final_url": None, "confidence": None, "cost_usd": _total_cost(costs),
+                "cost_basis": "aggregate search-source acquisition cost", "evidence": [],
+                "attempts": provider_attempts, "latency_ms": round((time.monotonic() - started) * 1000)}
+            response = {"query": query, "source": source, "results": [], "receipt": receipt,
+                "query_attribution": None, "coverage": "unknown", "upstream_failures": []}
+            acquisition = {"receipt": receipt, "url": None, "search_results": []}
+        else:
+            response, acquisition = last_bundle["response"], last_bundle["acquisition"]
+            receipt = acquisition["receipt"]
+            receipt["attempts"] = provider_attempts
+            receipt["cost_usd"] = _total_cost(costs)
+            receipt["latency_ms"] = round((time.monotonic() - started) * 1000)
+            final_failure = (receipt.get("failure") or {}).get("code")
+            if (receipt.get("status") == "failed" and source is None
+                    and final_failure not in policy.search_terminal_failures):
+                receipt["failure"] = {"code": "SEARCH_UNAVAILABLE",
+                    "message": "Eligible search sources were exhausted"}
+        receipt["search_attempts"] = search_attempts
+        selected_search_binding_id = (last_bundle_binding_id
+            if last_bundle_binding_id is not None
+            else self.searches.binding_id(source) if source is not None else None)
+        if selected_search_binding_id is not None:
+            receipt["search_binding_id"] = selected_search_binding_id
+        if source is not None and "search_source_version" not in receipt:
+            source_record = next((item for item in self.searches.inspect()
+                                  if item["id"] == source), None)
+            if source_record is not None:
+                receipt["search_source_version"] = source_record["version"]
+        receipt["requested_search_source"] = source
+        basis = ("explicit_source" if source is not None else
+                 "policy_candidate_order" if policy.search_source_candidates is not None else
+                 "policy_preference_then_registry_order" if policy.search_source_prefer else
+                 "provisional_free_registry_order")
+        receipt["search_routing"] = {"selection_basis": basis,
+            "candidates": candidates, "automatic_fallback": source is None,
+            "benchmark_earned_order": False,
+            "source_timeout_seconds": policy.search_source_timeout_seconds}
+        if policy.max_cost_usd is not None:
+            receipt.update(max_cost_usd=policy.max_cost_usd,
+                cost_budget_satisfied=receipt["cost_usd"] is not None
+                and receipt["cost_usd"] <= policy.max_cost_usd)
+        response["receipt"] = receipt
+        response["results"] = [{**item, "receipt": copy.deepcopy(receipt)}
+                               for item in response["results"]]
+        acquisition["search_results"] = response["results"]
+        acquisition["query_attribution"] = response["query_attribution"]
+        self._save_trace(acquisition, record_observations=False)
+        return response
+
+    def import_evidence(self, content: str, url: str, observed_at: str,
+                        method: str = "operator_browser", content_type: str = "text/html",
+                        http_status: int | None = None, image_urls: list[str] | None = None,
+                        note: str | None = None) -> dict:
+        """Persist supplied browser observations without claiming automated access or live state.
+
+        This is an operator evidence bridge, not a programmable browser provider. The
+        caller supplies actual observation time and facts; availability remains unknown.
+        """
+        _validate_url(url)
+        if method not in {"operator_browser", "user_supplied"}: raise ValueError("Invalid import method")
+        observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        if observed.tzinfo is None: raise ValueError("Observation time must include timezone")
+        age = (datetime.now(timezone.utc) - observed).total_seconds()
+        if age < -60: raise ValueError("Observation time cannot be in the future")
+        if not isinstance(content, str) or len(content.encode()) > 40 * 1024 * 1024: raise ValueError("Invalid evidence size")
+        if content_type not in {"text/html", "text/plain", "application/json"}: raise ValueError("Unsupported imported representation")
+        parsed = parse_content(content, content_type, url, None,
+                               adapter_registry=self.adapters)
+        if image_urls is not None:
+            for image in image_urls: _validate_url(image)
+            parsed["image_urls"] = list(dict.fromkeys(image_urls))
+        artifact = self._save_bytes(content.encode(), ".json" if "json" in content_type else ".html" if "html" in content_type else ".txt")
+        result = {"url": url, "content": content, "content_type": content_type, "headers": {},
+                  **parsed, "images": [], "field_status": {"content": "operator_observed", "availability": "unknown", "transaction_price": "unknown"},
+                  "receipt": {"trace_id": uuid.uuid4().hex, "operation": "import_evidence", "status": "observed", "method": method,
+                    "observed_at": observed.isoformat(), "freshness_seconds": max(age,0), "http_status": http_status,
+                    "confidence": None, "failure": None, "cache_hit": False, "evidence": [artifact], "cost_usd": None,
+                    "cost_basis": "Operator observation cost not measured", "latency_ms": None, "identity": None,
+                    "attempts": [], "automation_verified": False, "note": note}}
+        self._save_trace(result)
+        return result
+
+    def import_image_evidence(self, raw: bytes, url: str, observed_at: str,
+                              policy: WebPolicy | None = None) -> dict:
+        """Decode supplied public browser bytes without fetching or claiming automation."""
+        policy = policy or WebPolicy()
+        if policy.identity or policy.provider == "local_cdp":
+            raise WebFailure("IDENTITY_POLICY_DENIED", "Public image import cannot attest a named identity")
+        _validate_url(url)
+        observed = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        if observed.tzinfo is None:
+            raise ValueError("Observation time must include timezone")
+        age = (datetime.now(timezone.utc) - observed).total_seconds()
+        if age < -60:
+            raise ValueError("Observation time cannot be in the future")
+        if not isinstance(raw, bytes):
+            raise ValueError("Image evidence must be bytes")
+        if len(raw) > policy.max_image_bytes:
+            raise WebFailure("LIMIT_EXCEEDED", "Imported image exceeds policy byte budget")
+        try:
+            with Image.open(io.BytesIO(raw)) as image:
+                image.load()
+                width, height, fmt = image.width, image.height, image.format
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+            raise WebFailure("INVALID_IMAGE", "Imported image could not be decoded") from None
+        return {"url": url, "status": "decoded", "http_status": None,
+                "width": width, "height": height, "format": fmt,
+                **self._save_bytes(raw, ".image"), "observed_at": observed.isoformat(),
+                "freshness_seconds": max(age, 0), "failure": None,
+                "method": "operator_browser", "automation_verified": False,
+                "source_binding": "operator_supplied"}
+
+    observe = import_evidence
+
+    def route_capabilities(self):
+        from .route_memory import capability_summary
+        return capability_summary(self.state_dir)
+
+    async def paginate(self, url, adapter=None, policy=None, *,
+                       continuation_adapter=None, policy_overrides=None):
+        from .pagination import paginate
+        from .routes import request_policy
+        if adapter is None:
+            raise ValueError("Paginate requires an adapter")
+        effective, protected = request_policy(policy, policy_overrides)
+        return await paginate(
+            self, url, adapter, effective,
+            continuation_adapter=continuation_adapter,
+            protected_fields=protected, policy_overrides=policy_overrides)
+
+    async def extract(self, url: str, adapter: str | None = None, policy: WebPolicy | None = None,
+                      provider: str | None = None, *, policy_overrides: dict | None = None,
+                      workload_assertions: dict | None = None):
+        if adapter is None:
+            adapter = "html"
+        if not self.adapters.contains(adapter):
+            raise ValueError("Unsupported adapter; register an installed trusted adapter first")
+        return await self.read(url, policy, provider=provider, adapter=adapter,
+                               policy_overrides=policy_overrides,
+                               workload_assertions=workload_assertions)
+
+    async def repair(self, trace_id: str, policy=None) -> dict:
+        from .repair import run_repair
+        return await run_repair(self, trace_id, policy)
+
+    def promote_repair(self, proposal_id: str, expected_sha256: str, policy=None) -> dict:
+        from .repair import promote_repair
+        return promote_repair(self, proposal_id, expected_sha256, policy)
+
+    def disable_repair(self, overlay_id: str, reason: str, policy=None) -> dict:
+        from .repair import disable_repair
+        return disable_repair(self, overlay_id, reason, policy)
+
+    async def download_images(self, urls: list[str], policy: WebPolicy | None = None) -> list[dict]:
+        """Download/decode exact image URLs with bounded concurrency and source attribution.
+
+        Byte artifacts are returned by private local path/hash, never base64 in a tool prompt.
+        A source rate/access block stops remaining downloads from that host.
+        """
+        policy = policy or WebPolicy()
+        from .actions import require_action, required_read_action
+        action_class = required_read_action(policy.identity)
+        try:
+            require_action(policy, action_class)
+        except WebFailure as exc:
+            return [{"url": url, "status": "failed", "failure": exc.code,
+                     "action_class": action_class,
+                     "identity": policy.identity}
+                    for url in urls[:policy.max_images]]
+        if policy.identity or policy.provider == "local_cdp":
+            images = []
+            resolved = None
+            try:
+                if not policy.identity:
+                    raise WebFailure("IDENTITY_REQUIRED", "Local CDP requires an enrolled named identity")
+                if not urls: return []
+                resolved = self.identities.resolve(policy.identity,urls[0],provider=policy.provider,
+                    allow_local_browser=policy.allow_local_browser,image=True)
+                with self.identities.lease(resolved):
+                    context = await self._identity_step(self._identity_context(resolved,policy),policy,probe=True)
+                    await self._identity_step(self._identity_health(context,resolved,policy),policy)
+                    images = await self._download_identity_images(urls,policy,resolved,context)
+                    self.identities.recheck(resolved)
+                return images
+            except (WebFailure,IdentityFailure) as exc:
+                return [{"url":url,"status":"failed","failure":exc.code,"identity":policy.identity} for url in urls[:policy.max_images]]
+        async def one(url):
+            domain = urlparse(url).netloc
+            sem = self._domain_sems.setdefault(domain, asyncio.Semaphore(self._per_domain_count))
+            async with sem:
+                if self._blocked_domains.get(domain) in policy.context_stop_failures:
+                    return {"url": url, "status": "failed", "failure": self._blocked_domains[domain]}
+                delay = self._domain_next.get(domain, 0) - time.monotonic()
+                if delay > 0: await asyncio.sleep(delay)
+                self._domain_next[domain] = time.monotonic() + self._domain_delay
+                result = await self._image(url, policy)
+                if result.get("failure") in policy.context_stop_failures:
+                    self._blocked_domains[domain] = result["failure"]
+                return result
+        # Batch releases its page semaphore before image acquisition. Sharing this
+        # instance limit therefore bounds concurrent independent image batches too.
+        async def limited(url):
+            async with self._global: return await one(url)
+        return await asyncio.gather(*(limited(url) for url in urls[:policy.max_images]))
+
+    async def batch(self, urls: list[str], policy: WebPolicy | None = None, adapter: str | None = None) -> list[dict]:
+        if policy and (policy.identity or policy.provider == "local_cdp"):
+            # One canonical profile lease per operation; serialize named batch jobs.
+            return [await self.read(url,policy,adapter=adapter) for url in urls]
+        async def one(url):
+            domain = urlparse(url).netloc
+            sem = self._domain_sems.setdefault(domain, asyncio.Semaphore(self._per_domain_count))
+            async with self._global, sem:
+                delay = self._domain_next.get(domain, 0) - time.monotonic()
+                if delay > 0: await asyncio.sleep(delay)
+                self._domain_next[domain] = time.monotonic() + self._domain_delay
+                result = await self.read(url, replace(policy, include_images=False) if policy and policy.include_images else policy, adapter=adapter)
+            if policy and policy.include_images and result["receipt"]["status"] == "observed":
+                result["images"] = await self.download_images(result["image_urls"], policy)
+                self._save_trace(result)
+            return result
+        # Preserve input attribution and order, including duplicate URLs and individual failures.
+        return await asyncio.gather(*(one(url) for url in urls))
+
+    def capabilities(self, domain: str | None = None) -> list[dict]:
+        """Empirical observation outcomes. These are not calibrated task-success probabilities."""
+        groups = {}
+        for path in (self.state_dir / "traces").glob("*.json"):
+            result = json.loads(path.read_text())
+            receipt = result["receipt"]
+            host = urlparse(result["url"]).hostname
+            if receipt.get("cache_hit") or (domain and host != domain): continue
+            for attempt in receipt.get("attempts", []):
+                key = (host, receipt.get("operation", "read"), attempt["provider"],
+                       receipt.get("identity"),receipt.get("authority_mode"),receipt.get("executor"),
+                       receipt.get("geography"),receipt.get("network_context"))
+                group = groups.setdefault(key, {"domain": host, "operation": key[1], "provider": key[2],
+                                              "identity_class": "explicit-local" if receipt.get("identity") else "public",
+                                              "identity":receipt.get("identity"),"authority_mode":receipt.get("authority_mode"),
+                                              "executor":receipt.get("executor"),"geography":receipt.get("geography"),
+                                              "network_context":receipt.get("network_context"),
+                                              "samples": 0, "observed": 0, "failures": {}, "latencies": [], "last_observed_at": None})
+                group["samples"] += 1
+                if attempt["status"] == "observed": group["observed"] += 1
+                else:
+                    code = attempt.get("failure", "UNKNOWN")
+                    group["failures"][code] = group["failures"].get(code, 0) + 1
+                group["latencies"].append(attempt["latency_ms"])
+                if receipt.get("observed_at"):
+                    group["last_observed_at"] = max(group["last_observed_at"] or "", receipt["observed_at"])
+        results = []
+        for group in groups.values():
+            group["median_latency_ms"] = statistics.median(group.pop("latencies"))
+            group["caveat"] = "Observation success only; no semantic listing-state correctness guarantee"
+            results.append(group)
+        return sorted(results, key=lambda group: (group["domain"] or "", group["operation"], group["provider"]))
+
+    def trace(self, trace_id: str) -> dict:
+        if not trace_id.isalnum(): raise ValueError("Invalid trace identifier")
+        result = _redact_result_urls(json.loads((self.state_dir / "traces" / (trace_id + ".json")).read_text()))
+        if result["receipt"].get("identity"):
+            resolved = self.identities.resolve(result["receipt"]["identity"],result["url"])
+            receipt = result["receipt"]
+            if receipt.get("identity_generation") != resolved.generation or receipt.get("executor_generation") != resolved.executor_generation:
+                raise IdentityFailure("IDENTITY_CHANGED", "Trace belongs to a different identity or profile generation")
+        return result

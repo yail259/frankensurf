@@ -1,0 +1,117 @@
+---
+title: Install
+description: Install Frankensurf on Linux, macOS or Windows and read your first page.
+---
+
+import { Steps, Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+Frankensurf is a Python package and needs Python 3.12 or newer. Pick your
+system:
+
+<Tabs syncKey="os">
+<TabItem label="Linux">
+
+<Steps>
+
+1. Install the package with the MCP extra, and a browser for JavaScript pages.
+
+   ```bash
+   git clone https://github.com/yail259/frankensurf.git
+   cd frankensurf
+   python3 -m venv .venv
+   .venv/bin/pip install -e '.[mcp]'
+   .venv/bin/playwright install --with-deps chromium
+   ```
+
+2. Read a page.
+
+   ```bash
+   .venv/bin/frankensurf read https://example.com
+   ```
+
+</Steps>
+
+</TabItem>
+<TabItem label="macOS">
+
+<Steps>
+
+1. Install Python 3.12 or newer if you don't have it, for example with
+   [Homebrew](https://brew.sh/): `brew install python@3.12`.
+
+2. Install the package with the MCP extra, and a browser for JavaScript pages.
+
+   ```bash
+   git clone https://github.com/yail259/frankensurf.git
+   cd frankensurf
+   python3 -m venv .venv
+   .venv/bin/pip install -e '.[mcp]'
+   .venv/bin/playwright install chromium
+   ```
+
+3. Read a page.
+
+   ```bash
+   .venv/bin/frankensurf read https://example.com
+   ```
+
+</Steps>
+
+<Aside type="caution">
+  macOS isn't part of our test runs yet. The core install is plain Python and
+  Playwright, so it should behave as on Linux; please
+  [open an issue](https://github.com/yail259/frankensurf/issues) if it doesn't.
+</Aside>
+
+</TabItem>
+<TabItem label="Windows">
+
+Frankensurf runs inside WSL (Windows Subsystem for Linux).
+
+<Steps>
+
+1. Install WSL with Ubuntu from an administrator PowerShell, then restart.
+
+   ```powershell
+   wsl --install -d Ubuntu
+   ```
+
+2. Open **Ubuntu** from the Start menu and follow the Linux steps there:
+
+   ```bash
+   git clone https://github.com/yail259/frankensurf.git
+   cd frankensurf
+   python3 -m venv .venv
+   .venv/bin/pip install -e '.[mcp]'
+   .venv/bin/playwright install --with-deps chromium
+   .venv/bin/frankensurf read https://example.com
+   ```
+
+</Steps>
+
+Your agent on Windows starts the server through WSL; see
+[Add to your agent](/docs/agents/).
+
+</TabItem>
+</Tabs>
+
+That is the free stack: plain HTTP, markdown negotiation, a local Chromium and
+Jina Reader. No account or key.
+
+## Optional extras
+
+Each one adds tools to the [escalation ladder](/docs/blocked/escalation/). The
+scripts run in a shell (on Windows, inside WSL); SearXNG and Steel need
+[Docker](https://docs.docker.com/get-docker/).
+
+| Add | Command |
+| --- | --- |
+| Local search ([SearXNG](/docs/integrations/searxng/)) | `bash scripts/start-search.sh` |
+| Self-hosted browser ([Steel](/docs/integrations/steel/)) | `bash scripts/start-steel.sh` |
+| Stealth browsers ([Camoufox](/docs/integrations/camoufox/), [Scrapling](/docs/integrations/scrapling/)) | `bash scripts/install-public-providers.sh` |
+| [Crawl4AI](/docs/integrations/crawl4ai/) | `bash scripts/install-crawl4ai-provider.sh` |
+| Paid services | [Add keys](/docs/blocked/paid-tools/) |
+
+<Aside type="tip">
+  Next, [add Frankensurf to your agent](/docs/agents/).
+</Aside>

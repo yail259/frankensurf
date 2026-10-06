@@ -1,0 +1,325 @@
+{
+  "schema": "frankensurf.sitebench-corpus/v1",
+  "note": "Real deep pages with content checks. Search cases follow their live listing links. Wall labels for third-party sites come from public reputation, not vendor detection. Link patterns are product URL shapes checked against the live page on 2026-10-05 (Best Buy moved to /product/<slug>/<id>; Cash Converters products end in a long numeric id). A followed link that answers NOT_FOUND is a dead listing, counted separately as dead_link.",
+  "cases": [
+    {
+      "site": "gumtree",
+      "wall": "peakhour",
+      "kind": "search",
+      "url": "https://www.gumtree.com.au/s-sydney/sony+a7/k0l3003435?sort=date",
+      "follow": {
+        "pattern": "/web/listing/[^/]+/\\d+",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "gumtree",
+      "wall": "peakhour",
+      "kind": "search",
+      "url": "https://www.gumtree.com.au/s-sydney/macbook+pro/k0l3003435?sort=date",
+      "follow": {
+        "pattern": "/web/listing/[^/]+/\\d+",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "ebay",
+      "wall": "bot_check",
+      "kind": "search",
+      "url": "https://www.ebay.com.au/sch/i.html?_nkw=sony+a7iii",
+      "follow": {
+        "pattern": "/itm/\\d+",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "ebay",
+      "wall": "bot_check",
+      "kind": "search",
+      "url": "https://www.ebay.com.au/sch/i.html?_nkw=fujifilm+x100v",
+      "follow": {
+        "pattern": "/itm/\\d+",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "facebook",
+      "wall": "login",
+      "kind": "search",
+      "url": "https://www.facebook.com/marketplace/sydney/search?query=sony%20a7iii",
+      "follow": {
+        "pattern": "/marketplace/item/\\d+",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      },
+      "identity": "facebook-scripted"
+    },
+    {
+      "site": "cashconverters",
+      "wall": "js_app",
+      "kind": "search",
+      "url": "https://www.cashconverters.com.au/shop?query=sony",
+      "follow": {
+        "pattern": "/shop/(?:[^/?]+/)+\\d{9,}",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "reebelo",
+      "wall": "js_app",
+      "kind": "search",
+      "url": "https://www.reebelo.com.au/search?q=iphone",
+      "follow": {
+        "pattern": "/collections/[^/?]+\\?skuId=",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "cex",
+      "wall": "js_app",
+      "kind": "search",
+      "url": "https://au.webuy.com/search?stext=iphone",
+      "follow": {
+        "pattern": "/product-detail",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "backmarket",
+      "wall": "js_app",
+      "kind": "search",
+      "url": "https://www.backmarket.com.au/en-au/search?q=iphone",
+      "follow": {
+        "pattern": "/en-au/p/",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "jbhifi",
+      "wall": "js_app",
+      "kind": "search",
+      "url": "https://www.jbhifi.com.au/search?query=sony%20camera",
+      "follow": {
+        "pattern": "/products/",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "amazon-au",
+      "wall": "bot_check",
+      "kind": "search",
+      "url": "https://www.amazon.com.au/s?k=sony+a7iii",
+      "follow": {
+        "pattern": "/dp/[A-Z0-9]{10}",
+        "n": 3,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "grays",
+      "wall": "static",
+      "kind": "search",
+      "url": "https://www.grays.com/search?searchText=camera",
+      "follow": {
+        "pattern": "/lot/\\d{4}-\\d+/",
+        "n": 2,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "movebikes",
+      "wall": "static_json",
+      "kind": "json",
+      "expect": "handle",
+      "url": "https://movebikes.com.au/collections/second-hand/products.json?limit=250&page=1"
+    },
+    {
+      "site": "pedl",
+      "wall": "static_json",
+      "kind": "json",
+      "expect": "handle",
+      "url": "https://www.pedl.com.au/collections/ex-demo-refurbished-e-bikes/products.json?limit=250&page=1"
+    },
+    {
+      "site": "airbnb",
+      "wall": "js_app",
+      "kind": "search",
+      "url": "https://www.airbnb.com.au/s/Sydney/homes",
+      "follow": {
+        "pattern": "/rooms/\\d+",
+        "n": 2,
+        "min_links": 5,
+        "kind": "article"
+      }
+    },
+    {
+      "site": "indeed",
+      "wall": "cloudflare",
+      "kind": "search",
+      "url": "https://www.indeed.com/jobs?q=python+developer",
+      "follow": {
+        "pattern": "/viewjob|/rc/clk|jk=",
+        "n": 2,
+        "min_links": 5,
+        "kind": "article"
+      }
+    },
+    {
+      "site": "tripadvisor",
+      "wall": "datadome",
+      "kind": "search",
+      "url": "https://www.tripadvisor.com.au/Hotels-g255060-Sydney_New_South_Wales-Hotels.html",
+      "follow": {
+        "pattern": "/Hotel_Review-",
+        "n": 2,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "leboncoin",
+      "wall": "datadome",
+      "kind": "search",
+      "url": "https://www.leboncoin.fr/recherche?text=velo",
+      "follow": {
+        "pattern": "/ad/",
+        "n": 2,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "nike",
+      "wall": "akamai",
+      "kind": "search",
+      "url": "https://www.nike.com/au/w/mens-shoes-nik1zy7ok",
+      "follow": {
+        "pattern": "/au/t/",
+        "n": 2,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "bestbuy",
+      "wall": "akamai",
+      "kind": "search",
+      "url": "https://www.bestbuy.com/site/searchpage.jsp?st=laptop&intl=nosplash",
+      "follow": {
+        "pattern": "/product/[^/]+/[A-Z0-9]{8,}",
+        "n": 2,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "zillow",
+      "wall": "perimeterx",
+      "kind": "search",
+      "url": "https://www.zillow.com/homes/for_sale/Austin,-TX_rb/",
+      "follow": {
+        "pattern": "/homedetails/",
+        "n": 2,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "walmart",
+      "wall": "perimeterx",
+      "kind": "search",
+      "url": "https://www.walmart.com/search?q=laptop",
+      "follow": {
+        "pattern": "/ip/",
+        "n": 2,
+        "min_links": 5,
+        "kind": "listing"
+      }
+    },
+    {
+      "site": "g2",
+      "wall": "cloudflare",
+      "kind": "article",
+      "url": "https://www.g2.com/products/slack/reviews",
+      "expect": "Slack"
+    },
+    {
+      "site": "crunchbase",
+      "wall": "cloudflare",
+      "kind": "article",
+      "url": "https://www.crunchbase.com/organization/anthropic",
+      "expect": "Anthropic"
+    },
+    {
+      "site": "wikipedia",
+      "wall": "static",
+      "kind": "article",
+      "url": "https://en.wikipedia.org/wiki/Sony_%CE%B17_III",
+      "expect": "\u03b17 III|A7 III"
+    },
+    {
+      "site": "python-docs",
+      "wall": "static",
+      "kind": "article",
+      "url": "https://docs.python.org/3/library/asyncio-task.html",
+      "expect": "TaskGroup"
+    },
+    {
+      "site": "mdn",
+      "wall": "static",
+      "kind": "article",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "expect": "Too Many Requests"
+    },
+    {
+      "site": "cloudflare-docs",
+      "wall": "static",
+      "kind": "article",
+      "url": "https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/",
+      "expect": "text/markdown"
+    },
+    {
+      "site": "arxiv",
+      "wall": "pdf",
+      "kind": "pdf",
+      "url": "https://arxiv.org/pdf/1706.03762",
+      "expect": "Attention"
+    },
+    {
+      "site": "w3",
+      "wall": "pdf",
+      "kind": "pdf",
+      "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "expect": "Dummy PDF file",
+      "min_chars": 10
+    },
+    {
+      "site": "github-api",
+      "wall": "static_json",
+      "kind": "json",
+      "url": "https://api.github.com/repos/unclecode/crawl4ai",
+      "expect": "license"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "frankensurf-site",
+  "type": "module",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "astro dev --host 0.0.0.0 --port 4322",
+    "build": "astro build",
+    "preview": "astro preview --host 0.0.0.0 --port 4322",
+    "deploy": "npm run build && npx --yes wrangler@4.146.0 pages deploy dist --project-name=frankensurf --branch=main"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.42.5",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@fontsource/special-elite": "^5.3.0",
+    "astro": "^7.3.5"
+  }
+}
