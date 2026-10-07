@@ -92,6 +92,26 @@ export const chipLogos: Record<string, string> = {
   "Crawl4AI": "crawl4ai.svg", "fastCRW": "fastcrw.png",
 };
 
+// Each tool's own docs page, keyed by the names the marquee and bento chips use. Integration
+// pages link on to the provider. Tools Frankensurf pairs with rather than runs (Stagehand,
+// DevTools MCP) have no page.
+const integration = (slug: string) => `/docs/integrations/${slug}/`;
+export const docsFor: Record<string, string> = {
+  "Firecrawl": integration("firecrawl"), "Jina Reader": integration("jina-reader"), "Jina": integration("jina-reader"),
+  "Crawl4AI": integration("crawl4ai"), "fastCRW": integration("fastcrw"), "Markdown for Agents": "/docs/read/markdown/",
+  "Kernel": integration("kernel"), "Steel": integration("steel"), "Anchor": integration("anchor"),
+  "Browserbase": integration("browserbase"), "Hyperbrowser": integration("hyperbrowser"),
+  "Browser Run": integration("cloudflare-browser-run"), "Cloudflare": integration("cloudflare-browser-run"),
+  "Parallel": integration("parallel"), "Exa": integration("exa"), "Brave": integration("brave"),
+  "Brave Search": integration("brave"), "Tavily": integration("tavily"), "Playwright": integration("local-chromium"),
+  "Skyvern": integration("skyvern"), "Browser Use": integration("browser-use"), "Camoufox": integration("camoufox"),
+  "Patchright": integration("patchright"), "nodriver": integration("nodriver"), "Bright Data": integration("bright-data"),
+  "ZenRows": integration("zenrows"), "Zyte": integration("zyte"), "Scrapfly": integration("scrapfly"),
+  "Apify": integration("apify"), "Web Bot Auth": "/docs/blocked/signed-requests/",
+  "Saved sessions": "/docs/read/signed-in/", "Human handoff": "/docs/blocked/handoff/",
+  "Claude": "/docs/agents/", "GPT": "/docs/agents/", "Gemini": "/docs/agents/", "Open-weight": "/docs/agents/",
+};
+
 export const layers: {
   key: string; name: string;
   parts: { name: string; take: string; src: SourceKey; kind: "oss" | "managed" | "standard" }[];
