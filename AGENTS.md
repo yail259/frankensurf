@@ -46,7 +46,9 @@ conservative non-goals. Key rules:
 - **Substrate, not consumer.** FrankenSurf serves any agent. Resale formats,
   sold comps, valuation and site packs belong in consumer projects.
   Do not add new site-specific Python modules; per-site knowledge is route-seed
-  or field-map data. Consumers pin tagged releases.
+  or field-map data, or a site module (`site_modules.py`) that callers save in
+  their own state directory. No site module ships in this repo; tests use
+  synthetic fixtures. Consumers pin tagged releases.
 
 The SPEC section 22 milestones
 (H benchmark harness, P plugins and policy, M route memory) still apply.

@@ -56,6 +56,7 @@ export default defineConfig({
             { label: "Batch read", slug: "docs/read/batch" },
             { label: "Signed-in pages", slug: "docs/read/signed-in" },
             { label: "Profiles", slug: "docs/read/profiles" },
+            { label: "Site modules", slug: "docs/read/site-modules" },
           ] },
           { label: "Search", slug: "docs/search" },
           { label: "Watch", slug: "docs/watch" },

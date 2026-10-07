@@ -86,7 +86,13 @@ climbing:
   (from parameters such as `q`, `kw` or `keywords`, or from your `expect_terms`),
   a results page whose items and text never mention it comes back observed but
   marked `completeness.off_query`. `receipt.next_step` says the search URL is
-  probably wrong. A page still loading its results escalates as before.
+  probably wrong. A page still loading its results escalates as before. Once
+  you know the right URL, a [site module](/docs/read/site-modules/) template
+  keeps it.
+- **Pages a site module vouches for.** When a saved module's assertions pass,
+  the page is complete even if it has few links, because the module knows its
+  results live in JSON. A module's `invalid` markers turn the site's own error
+  or empty-feed page into `NOT_FOUND`.
 - **Site error pages.** A redirect to an `error` or `404` path, an error title
   such as "Page not found", or a short page saying the page doesn't exist fails
   as `NOT_FOUND`. A plain fetch's error page gets one confirming read from a

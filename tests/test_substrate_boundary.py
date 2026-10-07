@@ -18,7 +18,7 @@ CORE = frozenset({
     "identity_snapshots", "managed_browsers", "mcp_server", "pagination", "plugin_catalog", "profiles",
     "provider_worker", "providers", "public_entry", "recovery", "repair",
     "route_memory", "routes", "runtime", "scrapling_ready", "search", "search_plugins",
-    "web_do",
+    "site_modules", "web_do",
 })
 
 SITE_WORDS = re.compile(r"ebay|gumtree|depop|reverb|carsales|bikesales|cashconverters|grays|allbids|lloyds|pickles"
@@ -34,6 +34,14 @@ def test_no_new_modules_outside_core():
 
 def test_no_site_named_modules():
     assert not [path.name for path in SRC.glob("*.py") if SITE_WORDS.search(path.stem)]
+
+
+def test_no_site_modules_ship_with_frankensurf(tmp_path):
+    # Site modules are the operator's data: no bundled layer, no packaged module files.
+    from frankensurf.site_modules import SiteModuleRegistry
+    assert SiteModuleRegistry(tmp_path / "site-modules.json").inspect() == []
+    packaged = [path.name for path in SRC.rglob("*") if "module" in path.name and path.suffix == ".json"]
+    assert packaged == []
 
 
 def test_only_generic_adapters_are_registered():

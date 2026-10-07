@@ -279,6 +279,9 @@ class RouteRecipeRegistry:
     Operations only read the effective view. A same-ID operator record replaces
     its bundled seed, including a disabled override.
     """
+    # Names this store in errors; the site module store shares this machinery.
+    label = "Public route"
+
     def __init__(self, path):
         self.path = Path(path).expanduser()
 
@@ -335,11 +338,11 @@ class RouteRecipeRegistry:
         except FileNotFoundError:
             return []
         except OSError:
-            raise RouteRecipeError("Public route configuration is unavailable") from None
+            raise RouteRecipeError(f"{self.label} configuration is unavailable") from None
         try:
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
-                raise RouteRecipeError("Public route configuration must be a private owned file")
+                raise RouteRecipeError(f"{self.label} configuration must be a private owned file")
             with os.fdopen(fd, "r", encoding="utf-8") as stream:
                 fd = None
                 data = json.load(stream)
@@ -347,7 +350,7 @@ class RouteRecipeRegistry:
         except RouteRecipeError:
             raise
         except (OSError, ValueError, TypeError):
-            raise RouteRecipeError("Invalid public route configuration") from None
+            raise RouteRecipeError(f"Invalid {self.label.lower()} configuration") from None
         finally:
             if fd is not None:
                 os.close(fd)
@@ -365,33 +368,37 @@ class RouteRecipeRegistry:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             if self.path.parent.is_symlink():
-                raise RouteRecipeError("Public route directory must be owned local storage")
+                raise RouteRecipeError(f"{self.label} directory must be owned local storage")
             lock_path = self.path.with_name(self.path.name + ".lock")
             fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
             info = os.fstat(fd)
             if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
                 os.close(fd)
-                raise RouteRecipeError("Public route lock must be a private owned file")
+                raise RouteRecipeError(f"{self.label} lock must be a private owned file")
             with os.fdopen(fd, "a") as stream:
                 fcntl.flock(stream, fcntl.LOCK_EX)
                 yield
         except OSError:
-            raise RouteRecipeError("Public route configuration could not be saved") from None
+            raise RouteRecipeError(f"{self.label} configuration could not be saved") from None
 
     def _save(self, recipes):
+        self._save_document({"schema": "frankensurf.public-route-recipes/v1",
+                             "recipes": [recipe.record() for recipe in recipes]})
+
+    def _save_document(self, document, prefix=".route-recipes-"):
+        """Write the store atomically as a private file (mkstemp creates it 0600)."""
         destination = None
         try:
-            fd, destination = tempfile.mkstemp(prefix=".route-recipes-", dir=self.path.parent)
+            fd, destination = tempfile.mkstemp(prefix=prefix, dir=self.path.parent)
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump({"schema": "frankensurf.public-route-recipes/v1",
-                           "recipes": [recipe.record() for recipe in recipes]}, stream, sort_keys=True, allow_nan=False)
+                json.dump(document, stream, sort_keys=True, allow_nan=False)
                 stream.write("\n")
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(destination, self.path)
             destination = None
         except OSError:
-            raise RouteRecipeError("Public route configuration could not be saved") from None
+            raise RouteRecipeError(f"{self.label} configuration could not be saved") from None
         finally:
             if destination is not None:
                 Path(destination).unlink(missing_ok=True)

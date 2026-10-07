@@ -124,9 +124,41 @@ def _load_json(path, label):
     return value
 
 
+def _module_op(args):
+    """frankensurf module list | show ID | add FILE | enable ID | disable ID | rm ID"""
+    from pathlib import Path
+    from .site_modules import SiteModuleRegistry
+    registry = SiteModuleRegistry(Path(args.state).expanduser() / "routes" / "site-modules.json")
+    action, rest = args.urls[0], args.urls[1:]
+    if action == "list":
+        return registry.inspect()
+    if action == "add":
+        return registry.put(_load_json(rest[0], "site module file"))
+    if action == "show":
+        module = registry.get(rest[0])
+        return {**module.metadata(), "module": module.record()}
+    if action in ("enable", "disable"):
+        registry.enable(rest[0], action == "enable")
+        return registry.get(rest[0]).metadata()
+    registry.delete(rest[0])
+    return {"deleted": rest[0]}
+
+
+def _template_params(pairs):
+    params = {}
+    for pair in pairs or ():
+        name, separator, value = pair.partition("=")
+        if not separator or not name:
+            raise ValueError("--param takes NAME=VALUE")
+        params[name] = value
+    return params
+
+
 async def run(args):
     if args.operation in _PROFILE_OPERATIONS:
         result = await _profile_op(args)
+    elif args.operation == "module":
+        result = _module_op(args)
     elif args.operation in _LOCAL_OPERATIONS:
         result = _bot_auth(args)
     elif args.operation in _OPERATOR_OPERATIONS:
@@ -193,10 +225,15 @@ async def run(args):
             elif args.operation == "watch":
                 result = await web.watch(args.urls[0], link_pattern=args.link_pattern,
                                          policy_overrides=policy_kwargs)
+            elif args.operation == "read-template":
+                result = await web.read_template(args.urls[0], args.urls[1],
+                                                 _template_params(args.param),
+                                                 policy_overrides=policy_kwargs)
             else:
-                result = await web.read(args.urls[0], policy_overrides=policy_kwargs,
-                                        **({"retry_of": args.try_harder_than}
-                                           if args.try_harder_than else {}))
+                extra = {"retry_of": args.try_harder_than} if args.try_harder_than else {}
+                if args.module is not None:
+                    extra["module"] = False if args.module == "none" else args.module
+                result = await web.read(args.urls[0], policy_overrides=policy_kwargs, **extra)
     if not args.raw:
         for entry in result if isinstance(result, list) else [result]:
             entry.pop("content", None)
@@ -216,8 +253,12 @@ def build_parser():
         "search", "images", "do", "import", "repair", "repair-promote", "watch",
         "repair-disable", "executor-enroll", "identity-enroll",
         "identity-status", "identity-revoke", "bot-auth-init", "bot-auth-directory",
-        "profile-login", "profile-list", "profile-delete"])
+        "profile-login", "profile-list", "profile-delete", "module", "read-template"])
     parser.add_argument("urls", nargs="*")
+    parser.add_argument("--module", metavar="ID",
+        help="read: shape the read with this saved site module, or 'none' to turn modules off")
+    parser.add_argument("--param", action="append", metavar="NAME=VALUE",
+        help="read-template: a template parameter; repeat for each")
     parser.add_argument("--link-pattern",
         help="watch: regular expression a link URL must match to count as an item")
     parser.add_argument("--state", default="state")
@@ -351,6 +392,15 @@ def parse_args(argv=None):
     elif args.operation in _LOCAL_OPERATIONS:
         if args.urls:
             parser.error(args.operation + " takes no arguments")
+    elif args.operation == "module":
+        action = args.urls[0] if args.urls else None
+        if action == "list" and len(args.urls) == 1:
+            pass
+        elif action not in {"show", "add", "enable", "disable", "rm"} or len(args.urls) != 2:
+            parser.error("module takes: list | show ID | add FILE | enable ID | disable ID | rm ID")
+    elif args.operation == "read-template":
+        if len(args.urls) != 2:
+            parser.error("read-template takes MODULE_ID TEMPLATE (and --param NAME=VALUE)")
     elif args.operation == "identity-status":
         if len(args.urls) > 1:
             parser.error("identity-status accepts at most one identity ID")

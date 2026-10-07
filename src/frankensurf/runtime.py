@@ -1228,6 +1228,14 @@ def _reject_unusable_page(candidate, candidate_record, policy, resolved, adapter
             and _site_error(parsed.get("title"), parsed.get("text"), url, response.get("url"))):
         raise WebFailure("NOT_FOUND", "Provider returned the site's error or not-found page",
                          response.get("http_status"), response_url=response.get("url"))
+    # The site's own markers, from the site module shaping this read.
+    from .site_modules import ACTIVE as ACTIVE_MODULE
+    active_module = ACTIVE_MODULE.get()
+    if (active_module is not None and adapter in (None, "html")
+            and active_module.invalid_page(parsed.get("title"), parsed.get("text"),
+                                           response.get("url") or url)):
+        raise WebFailure("NOT_FOUND", "The site module marks this page as the site's error or empty page",
+                         response.get("http_status"), response_url=response.get("url"))
     if candidate == "http" and policy.provider is None and "html" in response["content_type"]:
         unresolved = re.search(r"\{\{[^{}]+\}\}",parsed["text"])
         # Exact adapters validate their own projections. Short product
@@ -1398,6 +1406,8 @@ class Runtime:
             current_capture_binding)
         from .routes import RouteRecipeRegistry
         self.routes = RouteRecipeRegistry(self.state_dir / "routes" / "recipes.json")
+        from .site_modules import SiteModuleRegistry
+        self.site_modules = SiteModuleRegistry(self.state_dir / "routes" / "site-modules.json")
         self._identity_browsers = {}
         self._global = asyncio.Semaphore(concurrency)
         self._per_domain_count = per_domain
@@ -2755,10 +2765,92 @@ class Runtime:
 
     async def read(self, url: str, policy: WebPolicy | None = None, provider: str | None = None,
                    adapter: str | None = None, *, policy_overrides: dict | None = None,
-                   workload_assertions: dict | None = None, retry_of: str | None = None) -> dict:
+                   workload_assertions: dict | None = None, retry_of: str | None = None,
+                   module: str | bool | None = None, module_override: dict | None = None) -> dict:
         """Read a page. ``retry_of`` is the agent's "try harder": pass the trace_id
         of a read whose page was not what you needed, and this read skips every
-        tool that one tried and starts from the strongest remaining tool."""
+        tool that one tried and starts from the strongest remaining tool.
+
+        Site modules (see site_modules.py): by default a saved, enabled module
+        matching the URL shapes the read. ``module`` names one (its origin must
+        match), ``module=False`` turns modules off, and ``module_override`` runs
+        an unsaved module for this read only. With a module, the result gains
+        ``items`` and the receipt gains ``module``; raw page data is unchanged.
+        """
+        from .site_modules import ACTIVE as ACTIVE_MODULE, SiteModule, SiteModuleError
+        selected, source = None, None
+        try:
+            if module_override is not None:
+                selected, source = SiteModule.from_record(module_override), "override"
+            elif isinstance(module, str):
+                selected, source = self.site_modules.get(module), "named"
+            elif module is None and isinstance(url, str):
+                selected, source = self.site_modules.match(url), "matched"
+            elif module is not False:
+                raise SiteModuleError("module must be a module ID, None or False")
+            if selected is not None and not selected.same_origin(url):
+                raise SiteModuleError(f"Site module {selected.id} is for {selected.match['origin']}")
+        except SiteModuleError as error:
+            if source == "matched":
+                selected = None  # A broken store never stops ordinary reads.
+            else:
+                from .routes import request_policy
+                effective, _ = request_policy(policy, policy_overrides)
+                return await self._read(url, effective, adapter=adapter,
+                                        _planning_failure=WebFailure("POLICY_DENIED", str(error)))
+        if selected is None:
+            return await self._read_entry(url, policy, provider, adapter, policy_overrides,
+                                          workload_assertions, retry_of)
+        if policy is None:
+            # The module's operational defaults; anything the caller set wins.
+            policy_overrides = {**selected.policy_overrides(), **(policy_overrides or {})}
+        token = ACTIVE_MODULE.set(selected)
+        try:
+            result = await self._read_entry(url, policy, provider, adapter, policy_overrides,
+                                            workload_assertions, retry_of)
+        finally:
+            ACTIVE_MODULE.reset(token)
+        self._apply_module(selected, source, url, result, policy, policy_overrides)
+        return result
+
+    def _apply_module(self, selected, source, url, result, policy, policy_overrides):
+        from .completeness import query_terms
+        from .repair import evaluate_workload_assertions
+        from .site_modules import receipt_record
+        receipt = result.get("receipt") or {}
+        if receipt.get("status") != "observed":
+            invalid = "site module" in str((receipt.get("failure") or {}).get("message") or "")
+            receipt["module"] = receipt_record(selected, source, None, None, invalid=invalid)
+            return
+        from .routes import request_policy
+        effective, _ = request_policy(policy, policy_overrides)
+        output = selected.extract(result, url, query_terms=query_terms(url, effective.expect_terms))
+        validation = (evaluate_workload_assertions(output, selected.assertions)
+                      if selected.assertions is not None else None)
+        result["items"] = output["items"]
+        if output.get("next_url"):
+            result["next_url"] = output["next_url"]
+        receipt["module"] = receipt_record(selected, source, output, validation)
+
+    def _module_satisfied(self, result, url, terms):
+        """True when the active module's assertions pass on this page."""
+        from .site_modules import ACTIVE as ACTIVE_MODULE
+        selected = ACTIVE_MODULE.get()
+        if selected is None or selected.assertions is None or not selected.items:
+            return False
+        from .completeness import query_terms
+        from .repair import evaluate_workload_assertions
+        output = selected.extract(result, url, query_terms=query_terms(url, terms))
+        return evaluate_workload_assertions(output, selected.assertions)["status"] == "passed"
+
+    async def read_template(self, module_id: str, template: str, params: dict | None = None,
+                            **kwargs) -> dict:
+        """Read a URL built from a saved module's template, shaped by that module."""
+        built = self.site_modules.get(module_id).build_url(template, params)
+        return await self.read(built, module=module_id, **kwargs)
+
+    async def _read_entry(self, url, policy, provider, adapter, policy_overrides,
+                          workload_assertions, retry_of):
         from .routes import request_policy
         if retry_of is not None:
             policy, policy_overrides = self._retry_policy(retry_of, policy, policy_overrides)
@@ -2967,7 +3059,11 @@ class Runtime:
                 "reason": "off_query",
                 "how": ("These results don't mention the query, so this is probably the site's"
                         " default feed: the search URL's query parameter may be wrong or ignored."
-                        " Check the site's own search URL.")}
+                        " Check the site's own search URL, or save it in a site module.")}
+            return first
+        if not verdict["complete"] and self._module_satisfied(first, url, terms):
+            # The site module knows where this site keeps its results.
+            record.update(complete=True, reason=None, module="passed")
             return first
         borderline = (verdict["complete"] and verdict.get("kind") == "search"
                       and verdict.get("item_links", 0) < effective.completeness_borderline_items
@@ -3019,6 +3115,10 @@ class Runtime:
             costs.append(step_receipt.get("cost_usd"))
             observed = step_receipt.get("status") == "observed"
             step_verdict = assess(url, step, expect_terms=terms) if observed else None
+            if (step_verdict and not step_verdict["complete"]
+                    and self._module_satisfied(step, url, terms)):
+                step_verdict = {**step_verdict, "complete": True, "reason": None,
+                                "score": max(step_verdict["score"], best_score + 1)}
             steps.append({"provider": identifier, "status": step_receipt.get("status"),
                           "failure": (step_receipt.get("failure") or {}).get("code"),
                           "complete": step_verdict["complete"] if step_verdict else False,

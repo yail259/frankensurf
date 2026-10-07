@@ -50,6 +50,10 @@ read planned, after skipping anything unavailable.
 - **`next_step`** appears when a read stopped at a wall a person could clear
   (it names `handoff`), or when a results page doesn't mention the query
   (`reason: "off_query"`: the search URL is probably wrong).
+- **`module`** names the [site module](/docs/read/site-modules/) that shaped
+  the read: `id`, `version`, `sha256`, `source` (`matched`, `named` or
+  `override`), `items`, `next_url`, and `assertions` with `status` (`passed`,
+  `failed`, or `invalid` when its markers matched the site's error page).
 - **`completeness`** records the structure check: page kind, item links,
   prices, every escalation step, and for searches with a known query, `query`
   (terms, matching items, text mentions) and `off_query`.
