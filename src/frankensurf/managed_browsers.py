@@ -98,6 +98,8 @@ async def _render(endpoint, url, policy, service):
                         state=policy.wait_state, timeout=timeout_ms)
                 if policy.settle_ms:
                     await page.wait_for_timeout(policy.settle_ms)
+                from .runtime import _scroll_for_lazy, _scroll_screens
+                await _scroll_for_lazy(page, _scroll_screens(policy))
                 content_type = response.headers.get("content-type", "") if response else ""
                 if "json" in content_type.lower():
                     raw = await response.body()

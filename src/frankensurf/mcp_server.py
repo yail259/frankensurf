@@ -26,6 +26,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
                include_images: bool | None = None, freshness: str | None = None,
                identity: str | None = None, allow_handoff: bool | None = None,
                profile: str | None = None, try_harder_than: str | None = None,
+               expect_terms: list[str] | None = None, card_images: bool | None = None,
                acquisition_policy: dict | None = None) -> dict:
     """Retrieve evidence. Omitted settings use runtime defaults and operator public routes.
 
@@ -38,10 +39,17 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     try_harder_than takes the trace_id of an earlier read whose page wasn't what
     you needed: this read skips every tool that one tried and starts from the
     strongest remaining tool. receipt.if_not_right says what is left to try.
+    expect_terms are words a search page's results should mention besides the
+    URL's own query; results that mention none come back flagged
+    completeness.off_query, with receipt.next_step, instead of escalating.
+    card_images=True adds cards: each result link with its title and its own
+    thumbnail URL, from the same page load.
     """
     options = _acquisition_overrides(acquisition_policy, {"provider": provider,
         "render": render, "include_images": include_images, "freshness": freshness,
-        "identity": identity, "allow_handoff": allow_handoff, "profile": profile})
+        "identity": identity, "allow_handoff": allow_handoff, "profile": profile,
+        "expect_terms": tuple(expect_terms) if expect_terms else None,
+        "card_images": card_images})
     # Agents read text: ask servers for markdown first (T0). Callers can pass
     # acquisition_policy={"prefer_markdown": false} for raw HTML structure.
     options.setdefault("prefer_markdown", True)

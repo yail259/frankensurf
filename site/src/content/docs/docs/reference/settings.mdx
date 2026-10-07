@@ -37,6 +37,9 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `capture_json_max_bytes` | 2 MB | Largest captured JSON response kept. |
 | `include_images` | `False` | Download and check the page's images. |
 | `max_images` | `50` | Most images to download. |
+| `card_images` | `False` | Add `cards`: each result link with its title and own thumbnail URL. |
+| `scroll_screens` | `0` | Screens a browser scrolls before capture so lazy content loads (3 with `card_images`). |
+| `expect_terms` | `()` | Words search results should mention besides the URL query; results that mention none are flagged `off_query`. |
 | `max_image_bytes` | 20 MB | Largest image accepted. |
 | `image_max_attempts` | `2` | Attempts per image. |
 | `image_retry_delay_seconds` | `0.25` | Delay between image attempts. |

@@ -54,6 +54,8 @@ async def _packet(url, policy, provider):
                "scrapling_navigation_wait_until": policy.scrapling_navigation_wait_until, "scrapling_load_dom": policy.scrapling_load_dom, "scrapling_google_search":policy.scrapling_google_search, "scrapling_solve_cloudflare": policy.scrapling_solve_cloudflare, "wait_selector": policy.wait_selector, "wait_state": policy.wait_state, "content_ready_selector": policy.content_ready_selector, "content_ready_timeout_seconds": policy.content_ready_timeout_seconds, "max_pages": policy.max_pages}
     for key in ("capture_json_responses", "capture_json_max_items", "capture_json_max_bytes"):
         request[key]=getattr(policy,key)
+    from .runtime import _scroll_screens
+    request["scroll_screens"] = _scroll_screens(policy)
     from .profiles import ACTIVE
     profile = ACTIVE.get() if getattr(policy, "profile", None) else None
     if profile is not None:

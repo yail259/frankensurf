@@ -26,6 +26,9 @@ _POLICY_ARGUMENTS = {
     "markdown": "prefer_markdown",
     "handoff": "allow_handoff",
     "profile": "profile",
+    "expect": "expect_terms",
+    "card_images": "card_images",
+    "scroll_screens": "scroll_screens",
     "search_source_candidates": "search_source_candidates",
     "search_source_allow": "search_source_allow",
     "search_source_prefer": "search_source_prefer",
@@ -43,7 +46,7 @@ def _policy_kwargs(args):
     # per-source search timeout; other numeric zero values retain their meaning.
     values = {field: getattr(args, argument) for argument, field in _POLICY_ARGUMENTS.items()
               if getattr(args, argument) is not None}
-    for field in ("provider_candidates", "provider_retry_failures",
+    for field in ("provider_candidates", "provider_retry_failures", "expect_terms",
                   "search_source_candidates", "search_source_allow",
                   "search_source_prefer",
                   "action_classes", "browser_do_allowed_origins",
@@ -240,6 +243,12 @@ def build_parser():
     parser.add_argument("--render", action="store_true", default=None)
     parser.add_argument("--images", action="store_true", default=None)
     parser.add_argument("--max-images", type=int)
+    parser.add_argument("--card-images", action="store_true", default=None,
+        help="Add cards: each result link with its title and its own thumbnail URL")
+    parser.add_argument("--scroll-screens", type=int,
+        help="Scroll this many screens before capture so lazy content loads")
+    parser.add_argument("--expect", action="append",
+        help="A word the search results should mention; repeat for more")
     parser.add_argument("--agent-task",
         help="Task for the browser agent, e.g. 'search for sony a7iii'; the agent may finish on any allowed page")
     parser.add_argument("--markdown", action="store_true", default=None,
