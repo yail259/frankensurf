@@ -157,6 +157,9 @@ def _template_params(pairs):
 async def run(args):
     if args.operation in _PROFILE_OPERATIONS:
         result = await _profile_op(args)
+    elif args.operation == "module" and args.urls[0] == "repair":
+        async with Runtime(state_dir=args.state) as web:
+            result = await web.propose_module_repair(args.urls[1], _load_json(args.urls[2], "site module file"))
     elif args.operation == "module":
         result = _module_op(args)
     elif args.operation in _LOCAL_OPERATIONS:
@@ -396,8 +399,11 @@ def parse_args(argv=None):
         action = args.urls[0] if args.urls else None
         if action == "list" and len(args.urls) == 1:
             pass
+        elif action == "repair" and len(args.urls) == 3:
+            pass
         elif action not in {"show", "add", "enable", "disable", "rm"} or len(args.urls) != 2:
-            parser.error("module takes: list | show ID | add FILE | enable ID | disable ID | rm ID")
+            parser.error("module takes: list | show ID | add FILE | enable ID | disable ID | rm ID"
+                         " | repair TRACE_ID FILE")
     elif args.operation == "read-template":
         if len(args.urls) != 2:
             parser.error("read-template takes MODULE_ID TEMPLATE (and --param NAME=VALUE)")

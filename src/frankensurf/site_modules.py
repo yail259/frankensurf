@@ -749,7 +749,146 @@ def receipt_record(module, source, output, validation, invalid=False):
         record["status"] = validation["status"]
     if invalid:
         record["status"] = "invalid"
+    if record.get("status") in ("failed", "invalid") and source != "override":
+        record["repair"] = ("The site may have changed. Draft the next version of this module and"
+                            " propose it with propose_module_repair(trace_id, module): FrankenSurf checks"
+                            " it against this page and a fresh read; the owner then promotes it.")
     return record
+
+
+# ---- repair: the calling agent proposes, Core validates, the owner promotes ----
+
+MODULE_PATCH = "module_patch"
+
+
+def _fixture_result(content, url, final_url):
+    """A retained page rebuilt into the fields a module reads."""
+    from .runtime import _parse_builtin_content
+    parsed = _parse_builtin_content(content, "text/html", final_url or url, None)
+    return {"url": final_url or url, "content": content, "title": parsed.get("title"),
+            "text": parsed.get("text") or "", "structured": parsed.get("structured")}
+
+
+def _check(module, result, url, assertions, source):
+    """Run a module over one page against the base module's assertions."""
+    from .completeness import query_terms
+    from .repair import evaluate_workload_assertions
+    if module.invalid_page(result.get("title"), result.get("text"), result.get("url")):
+        return {"source": source, "status": "failed", "reason": "invalid_page", "items": 0}
+    output = module.extract(result, url, query_terms=query_terms(url))
+    validation = evaluate_workload_assertions(output, assertions)
+    return {"source": source, "status": validation["status"], "items": output["count"],
+            "assertions": validation}
+
+
+async def propose_module_repair(runtime, trace_id, candidate, *, run_live_canary=True):
+    """Validate an agent-drafted next version of a module that failed on a read.
+
+    The proposal must keep the module's ID and origin and use a new version.
+    It is checked with the base module's own assertions (a fix can't weaken the
+    contract) against the page the failing read retained and, when asked, a
+    fresh independent read. Nothing changes until the owner promotes it with
+    promote_repair(proposal_id, proposal_sha256).
+    """
+    from .repair import (REPAIR_PROPOSAL_SCHEMA, REPAIR_VALIDATION_SCHEMA, _canonical_json,
+                         _evidence_rows, _json_artifact_bytes, _load_evidence, _write_json_artifact)
+    trace = runtime.trace(trace_id)
+    receipt = trace.get("receipt") or {}
+    used = receipt.get("module") or {}
+    if receipt.get("identity") or used.get("status") not in ("failed", "invalid") or used.get("source") == "override":
+        raise SiteModuleError("Only a public read whose saved module failed can be repaired")
+    base = runtime.site_modules.get(used["id"])
+    if base.fingerprint != used.get("sha256"):
+        raise SiteModuleError("The module changed after that read; read again with the current version")
+    if base.assertions is None:
+        raise SiteModuleError("A module needs assertions before it can be repaired")
+    proposed = candidate if isinstance(candidate, SiteModule) else SiteModule.from_record(candidate)
+    if proposed.id != base.id or proposed.match["origin"] != base.match["origin"]:
+        raise SiteModuleError("A repair keeps the module's ID and origin")
+    if proposed.version == base.version:
+        raise SiteModuleError("A repair needs a new version")
+    url = receipt.get("requested_url") or trace.get("url")
+    checks = []
+    for descriptor in _evidence_rows(receipt)[:4]:
+        try:
+            content = _load_evidence(descriptor, 20 * 1024 * 1024, state_dir=runtime.state_dir)
+        except (OSError, ValueError):
+            continue
+        if "<" not in content[:2000]:
+            continue
+        page = _fixture_result(content, url, receipt.get("final_url"))
+        checks.append({**_check(proposed, page, url, base.assertions, "retained_failure_fixture"),
+                       "evidence": descriptor,
+                       "base": _check(base, page, url, base.assertions, "base_on_fixture")["status"]})
+    canary = {"status": "not_requested", "attempts": []}
+    if run_live_canary:
+        fresh = await runtime.read(url, module_override=proposed.record(),
+                                   policy_overrides={"freshness": "now"})
+        fresh_receipt = fresh.get("receipt") or {}
+        attempt = {"trace_id": fresh_receipt.get("trace_id"), "method": fresh_receipt.get("method"),
+                   "evidence": _evidence_rows(fresh_receipt)}
+        if fresh_receipt.get("status") == "observed":
+            attempt.update(_check(proposed, fresh, url, base.assertions, "independent_live_canary"))
+        else:
+            attempt.update(status="failed", failure=(fresh_receipt.get("failure") or {}).get("code"))
+        canary = {"status": attempt["status"], "attempts": [attempt]}
+    fixture_passed = any(item["status"] == "passed" for item in checks)
+    state = ("canary_validated" if fixture_passed and canary["status"] == "passed"
+             else "fixture_validated" if fixture_passed and not run_live_canary
+             else "validation_failed")
+    body = {"schema": REPAIR_PROPOSAL_SCHEMA, "version": 1, "kind": MODULE_PATCH,
+            "target": {"operation": "read", "url": url, "failure_trace_id": trace_id, "identity_class": "public",
+                       "module": {"id": base.id, "base_version": base.version, "base_sha256": base.fingerprint,
+                                  "base_record": base.record()}},
+            "change": proposed.record()}
+    proposal_id = hashlib.sha256(_canonical_json(body)).hexdigest()
+    validation = {"schema": REPAIR_VALIDATION_SCHEMA, "proposal_id": proposal_id,
+                  "status": "passed" if state == "canary_validated" else "failed",
+                  "original_assertions": base.assertions, "checks": checks, "live_canary": canary}
+    proposal = {**body, "id": proposal_id, "state": state,
+                "validation_sha256": hashlib.sha256(_json_artifact_bytes(validation)).hexdigest()}
+    proposal_artifact = _write_json_artifact(runtime.state_dir, ("repairs", "proposals", proposal_id,
+                                                                 "proposal.json"), proposal)
+    _write_json_artifact(runtime.state_dir, ("repairs", "proposals", proposal_id, "validation.json"), validation)
+    return {"status": "proposal_ready" if state == "canary_validated" else "validation_failed",
+            "proposal": {"id": proposal_id, "sha256": proposal_artifact["sha256"], "state": state,
+                         "module": proposed.id, "from_version": base.version, "to_version": proposed.version},
+            "validation": validation,
+            "promotion": {"automatic": False,
+                          "required_action": ("Owner promotion: frankensurf repair-promote " + proposal_id
+                                              + " --proposal-sha256 " + proposal_artifact["sha256"])
+                          if state == "canary_validated" else "Revise the module and propose again"}}
+
+
+def promote_module_patch(runtime, proposal, validation, validation_raw, expected_sha256):
+    """Activate a validated module patch: re-check, save the new version, keep the old for rollback."""
+    from .repair import _load_evidence
+    target = proposal.get("target") or {}
+    base_info = target.get("module") or {}
+    if (validation.get("status") != "passed" or (validation.get("live_canary") or {}).get("status") != "passed"
+            or target.get("identity_class") != "public"):
+        raise ValueError("Promotion requires a passed fixture check and a passed live canary")
+    current = runtime.site_modules.get(base_info.get("id"))
+    if current.fingerprint != base_info.get("base_sha256"):
+        raise ValueError("The module changed after the proposal was validated")
+    proposed = SiteModule.from_record(proposal["change"])
+    assertions = validation.get("original_assertions")
+    url = target.get("url")
+    passed = False
+    for check in validation.get("checks") or ():
+        try:
+            content = _load_evidence(check["evidence"], 20 * 1024 * 1024, state_dir=runtime.state_dir)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        page = _fixture_result(content, url, None)
+        if _check(proposed, page, url, assertions, "promotion_fixture_revalidation")["status"] == "passed":
+            passed = True
+            break
+    if not passed:
+        raise ValueError("The retained page no longer validates the proposal")
+    runtime.site_modules.put(proposed)
+    return {"id": proposed.id, "version": proposed.version, "sha256": proposed.fingerprint,
+            "previous": {"version": current.version, "sha256": current.fingerprint}}
 
 
 __all__ = ["SCHEMA", "SiteModule", "SiteModuleError", "SiteModuleRegistry", "ACTIVE", "receipt_record"]

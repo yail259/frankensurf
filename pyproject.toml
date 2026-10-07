@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frankensurf"
-version = "0.23.0"
+version = "0.24.0"
 description = "Evidence-first web substrate: one call to read any site, for any agent on any model"
 requires-python = ">=3.12"
 dependencies = ["httpx>=0.28,<1", "beautifulsoup4>=4.13,<5", "playwright>=1.63,<2", "Pillow>=12,<13", "tiktoken>=0.14,<1", "jsonschema>=4.23,<5", "pypdf>=6,<7", "cryptography>=44"]
