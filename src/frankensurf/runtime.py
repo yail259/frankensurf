@@ -2821,6 +2821,7 @@ class Runtime:
         if receipt.get("status") != "observed":
             invalid = "site module" in str((receipt.get("failure") or {}).get("message") or "")
             receipt["module"] = receipt_record(selected, source, None, None, invalid=invalid)
+            self._annotate_trace(receipt, "module")
             return
         from .routes import request_policy
         effective, _ = request_policy(policy, policy_overrides)
@@ -2831,6 +2832,7 @@ class Runtime:
         if output.get("next_url"):
             result["next_url"] = output["next_url"]
         receipt["module"] = receipt_record(selected, source, output, validation)
+        self._annotate_trace(receipt, "module")
 
     def _module_satisfied(self, result, url, terms):
         """True when the active module's assertions pass on this page."""
@@ -4106,6 +4108,21 @@ class Runtime:
         self._save_trace(result)
         return result
 
+    def _annotate_trace(self, receipt, key):
+        """Copy one receipt field into the read's saved trace (it was added after saving)."""
+        trace_id = receipt.get("trace_id")
+        if not isinstance(trace_id, str) or re.fullmatch(r"[0-9a-f]{32}", trace_id) is None:
+            return
+        from .repair import _read_private_bytes, _write_private_bytes
+        try:
+            trace = json.loads(_read_private_bytes(self.state_dir, ("traces", trace_id + ".json"),
+                                                   64 * 1024 * 1024))
+            trace["receipt"][key] = copy.deepcopy(receipt[key])
+            _write_private_bytes(self.state_dir, ("traces", trace_id + ".json"),
+                                 json.dumps(trace, ensure_ascii=False, indent=2).encode())
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+
     def _save_trace(self, result, *, record_observations=True):
         # Raw content remains in private evidence files; trace output keeps normalized metadata.
         repair_context = result.pop("_repair_input", None)
@@ -4397,6 +4414,15 @@ class Runtime:
     async def repair(self, trace_id: str, policy=None) -> dict:
         from .repair import run_repair
         return await run_repair(self, trace_id, policy)
+
+    async def propose_module_repair(self, trace_id: str, module: dict, *, run_live_canary: bool = True) -> dict:
+        """Validate a drafted next version of a site module that failed on a read.
+
+        Checked with the base module's assertions against the page that read
+        retained and a fresh independent read; activated only by the owner's
+        promote_repair(proposal_id, proposal_sha256)."""
+        from .site_modules import propose_module_repair
+        return await propose_module_repair(self, trace_id, module, run_live_canary=run_live_canary)
 
     def promote_repair(self, proposal_id: str, expected_sha256: str, policy=None) -> dict:
         from .repair import promote_repair

@@ -107,5 +107,52 @@ frankensurf module disable example.search
 ## When a site changes
 
 When a module's assertions start failing, `receipt.module.status` says
-`failed` and the raw page is still there. Your agent can look at the page,
-then save a fixed module under a new `version`.
+`failed` (or `invalid`), `receipt.module.repair` says what to do, and the raw
+page is still there. Your agent can either:
+
+- **Save a fix directly.** Put the module again under a new `version`. Fine
+  for your own modules.
+- **Propose a fix through repair.** Use this when changes should be reviewed.
+  The agent drafts the next version (same `id` and origin, new `version`) and
+  proposes it with the failing read's `trace_id`. Frankensurf then:
+  1. checks it with the **old version's assertions**, so a fix can't pass by
+     weakening the checks;
+  2. runs it over the page the failing read kept;
+  3. runs it over a fresh, independent read;
+  4. records the proposal and its validation. Nothing changes yet.
+
+  The owner promotes it with `repair-promote`. Promotion re-checks the kept
+  page, refuses if the module changed in the meantime, saves the new version
+  and records it in the repair history. `repair-disable` rolls back to the
+  version it replaced.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+proposal = await web.propose_module_repair(failing_trace_id, next_version)
+# proposal["status"] == "proposal_ready" once the kept page and a fresh read pass
+web.promote_repair(proposal["proposal"]["id"], proposal["proposal"]["sha256"])   # owner
+web.disable_repair(proposal["proposal"]["id"], "rolled back after review")      # undo
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf module repair TRACE_ID example-search-v2.json
+frankensurf repair-promote PROPOSAL_ID --proposal-sha256 SHA256
+frankensurf repair-disable PROPOSAL_ID --disable-reason "rolled back after review"
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "repair_site_module", "arguments": { "trace_id": "…", "module": { "id": "example.search", "version": "2", "...": "..." } } }
+```
+
+Agents can propose, but only the owner promotes, from the CLI or Python.
+
+</TabItem>
+</Tabs>

@@ -1128,7 +1128,7 @@ ACTIVE_OVERLAYS_SCHEMA = "frankensurf.active-repair-overlays/v1"
 class PromotionPolicy:
     """Local owner policy for atomic activation and disable operations."""
 
-    allowed_kinds: tuple[str, ...] = ("adapter_patch",)
+    allowed_kinds: tuple[str, ...] = ("adapter_patch", "module_patch")
     max_reason_chars: int = 2048
     max_registry_bytes: int = 4 * 1024 * 1024
     max_revalidation_bytes: int = 40 * 1024 * 1024
@@ -1136,7 +1136,7 @@ class PromotionPolicy:
     def __post_init__(self):
         if (type(self.allowed_kinds) is not tuple
                 or not self.allowed_kinds
-                or any(value not in {"adapter_patch", "route_patch"}
+                or any(value not in {"adapter_patch", "route_patch", "module_patch"}
                        for value in self.allowed_kinds)
                 or len(set(self.allowed_kinds)) != len(self.allowed_kinds)):
             raise ValueError("allowed_kinds must contain distinct repair kinds")
@@ -1250,6 +1250,8 @@ def promote_repair(runtime, proposal_id, expected_sha256, policy=None):
             or proposal.get("state") != "canary_validated"
             or proposal.get("kind") not in policy.allowed_kinds):
         raise ValueError("Proposal is not eligible for promotion")
+    if proposal["kind"] == "module_patch":
+        return _promote_module_patch(runtime, proposal_id, proposal, expected_sha256, policy)
     if proposal["kind"] != "adapter_patch":
         raise ValueError("This release activates declarative adapter overlays only")
     validation_raw = _read_private_bytes(
@@ -1377,6 +1379,44 @@ def promote_repair(runtime, proposal_id, expected_sha256, policy=None):
     }
 
 
+def _promote_module_patch(runtime, proposal_id, proposal, expected_sha256, policy):
+    """Owner promotion of an agent-proposed site module version (see site_modules.py)."""
+    from .runtime import utcnow
+    from .site_modules import promote_module_patch
+    validation_raw = _read_private_bytes(
+        runtime.state_dir, ("repairs", "proposals", proposal_id, "validation.json"),
+        policy.max_revalidation_bytes)
+    validation = json.loads(validation_raw)
+    if (type(validation) is not dict
+            or validation.get("schema") != REPAIR_VALIDATION_SCHEMA
+            or validation.get("proposal_id") != proposal_id
+            or proposal.get("validation_sha256") != hashlib.sha256(validation_raw).hexdigest()):
+        raise ValueError("Module repair validation changed after the proposal")
+    activated = promote_module_patch(runtime, proposal, validation, validation_raw, expected_sha256)
+    with _overlay_registry_transaction(runtime.state_dir):
+        registry = _load_overlay_registry(runtime.state_dir, policy.max_registry_bytes)
+        now = utcnow()
+        overlay = {
+            "id": proposal_id, "status": "active", "kind": "module_patch",
+            "proposal_id": proposal_id, "proposal_version": proposal["version"],
+            "proposal_sha256": expected_sha256,
+            "validation_sha256": hashlib.sha256(validation_raw).hexdigest(),
+            "activated_at": now, "disabled_at": None, "disable_reason": None,
+            "target": copy.deepcopy(proposal["target"]), "change": copy.deepcopy(proposal["change"]),
+            "module": activated,
+        }
+        registry["revision"] += 1
+        registry["overlays"][proposal_id] = overlay
+        registry["history"].append({"event": "activate", "overlay_id": proposal_id, "at": now,
+                                    "revision": registry["revision"], "kind": "module_patch",
+                                    "proposal_sha256": expected_sha256})
+        registry_artifact = _atomic_overlay_registry(runtime.state_dir, registry, policy.max_registry_bytes)
+    return {"status": "promoted", "module": activated, "registry_revision": registry["revision"],
+            "registry_artifact": registry_artifact, "automatic": False,
+            "rollback": {"operation": "disable-repair", "overlay_id": proposal_id,
+                         "restores_version": activated["previous"]["version"]}}
+
+
 def disable_repair(runtime, overlay_id, reason, policy=None):
     """Atomically disable an active overlay while retaining rollback history."""
     from .runtime import utcnow
@@ -1395,6 +1435,13 @@ def disable_repair(runtime, overlay_id, reason, policy=None):
         overlay = registry["overlays"].get(overlay_id)
         if not isinstance(overlay, dict) or overlay.get("status") != "active":
             raise ValueError("Repair overlay is not active")
+        if overlay.get("kind") == "module_patch":
+            # Roll the site module back to the version the patch replaced, but
+            # never over a version someone saved after the promotion.
+            current = runtime.site_modules.get(overlay["module"]["id"])
+            if current.fingerprint != overlay["module"]["sha256"]:
+                raise ValueError("The module changed after promotion; edit it directly instead")
+            runtime.site_modules.put(overlay["target"]["module"]["base_record"])
         now = utcnow()
         overlay["status"] = "disabled"
         overlay["disabled_at"] = now

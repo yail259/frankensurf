@@ -86,6 +86,17 @@ async def read_template(module: str, template: str, params: dict | None = None,
 
 
 @server.tool()
+async def repair_site_module(trace_id: str, module: dict) -> dict:
+    """Propose a fixed site module after a read reported receipt.module.status
+    failed or invalid. module is the full next version (same id and origin, new
+    version). FrankenSurf checks it with the old version's own assertions
+    against the page that read kept and a fresh read. Activation is the owner's
+    call (frankensurf repair-promote); this tool never changes the saved module."""
+    async with runtime() as web:
+        return await web.propose_module_repair(trace_id, module)
+
+
+@server.tool()
 async def site_modules(action: str = "list", module_id: str | None = None,
                        module: dict | None = None) -> dict | list:
     """Save and manage site modules: per-site knowledge as data, never code.
