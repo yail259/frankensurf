@@ -47,8 +47,12 @@ read planned, after skipping anything unavailable.
 - **`requested_url`** and **`final_url`** stay separate, so redirects show.
 - **`cost_usd`** is the sum of measured provider costs. If any attempt's cost
   is unknown, the total is `null`, never a guess.
-- **`next_step`** appears when a read stopped at a wall a person could clear;
-  it names `handoff`.
+- **`next_step`** appears when a read stopped at a wall a person could clear
+  (it names `handoff`), or when a results page doesn't mention the query
+  (`reason: "off_query"`: the search URL is probably wrong).
+- **`completeness`** records the structure check: page kind, item links,
+  prices, every escalation step, and for searches with a known query, `query`
+  (terms, matching items, text mentions) and `off_query`.
 - Cookies, keys and credential URL parameters never appear.
 
 ## Freshness

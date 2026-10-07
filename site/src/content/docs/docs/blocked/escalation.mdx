@@ -58,7 +58,7 @@ isn't better, the HTTP page stands; the only cost is time.
 ### Completeness
 
 Then every automatic read gets a structural check (`completeness.py`).
-Frankensurf never looks at what you searched for, only at the page's shape:
+It looks at the page's shape:
 
 - **Search and category pages** (a query parameter, or a path such as `/search`)
   need at least 10 distinct same-site item links (product, listing or detail
@@ -75,6 +75,23 @@ and keeps the most complete one it saw. A search page that passes only narrowly
 gets one read from the strongest allowed tool, a paid one when allowed. `completeness_max_extra_reads` (default
 4) and `completeness_deadline_seconds` (default 150) bound the extra work, and
 `receipt.completeness` lists every step.
+
+### Pages a stronger tool can't fix
+
+Some wrong pages look right to every tool, so Frankensurf names them instead of
+climbing:
+
+- **Off-query results.** A site that ignores an unknown search parameter shows
+  its default feed, which passes the structure check. When the query is known
+  (from parameters such as `q`, `kw` or `keywords`, or from your `expect_terms`),
+  a results page whose items and text never mention it comes back observed but
+  marked `completeness.off_query`. `receipt.next_step` says the search URL is
+  probably wrong. A page still loading its results escalates as before.
+- **Site error pages.** A redirect to an `error` or `404` path, an error title
+  such as "Page not found", or a short page saying the page doesn't exist fails
+  as `NOT_FOUND`. A plain fetch's error page gets one confirming read from a
+  different tool, since some sites serve fake 404s to bots; then the read
+  stops.
 
 ## Skipping ahead
 

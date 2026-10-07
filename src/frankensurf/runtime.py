@@ -126,6 +126,15 @@ class WebPolicy:
     # Escalation reads exist because a page looked unfinished, so they give
     # script-rendered content at least this long to appear.
     completeness_settle_ms: int = 5000
+    # Words a search page's results should mention, on top of the query in its
+    # URL. A complete-looking results page that mentions none of them is
+    # flagged off_query instead of escalated (see completeness.py).
+    expect_terms: tuple[str, ...] = ()
+    # Pair each result card's link with its own image in the same load
+    # (result["cards"]). Browsers scroll scroll_screens viewport heights first
+    # so lazy thumbnails load; card_images alone scrolls 3.
+    card_images: bool = False
+    scroll_screens: int = 0
     # The calling agent's "try harder" lever (see Runtime.read retry_of): skip
     # these providers, and order the rest strongest-first.
     exclude_providers: tuple[str, ...] = ()
@@ -303,6 +312,13 @@ class WebPolicy:
                  "retry_of_trace must be a trace ID")
         _require(_is_int(self.completeness_settle_ms, 0),
                  "completeness_settle_ms must be a nonnegative integer")
+        _require(isinstance(self.expect_terms, tuple) and len(self.expect_terms) <= 10
+                 and all(isinstance(term, str) and 0 < len(term.strip()) <= 100
+                         for term in self.expect_terms),
+                 "expect_terms must be up to 10 nonempty strings")
+        _require(type(self.card_images) is bool, "card_images must be a boolean")
+        _require(_is_int(self.scroll_screens, 0) and self.scroll_screens <= 20,
+                 "scroll_screens must be an integer from 0 to 20")
         _require(_is_int(self.completeness_borderline_items, 0),
                  "completeness_borderline_items must be a nonnegative integer")
         _require(_is_int(self.completeness_max_extra_reads, 0),
@@ -907,6 +923,67 @@ def _wall_after_parse(title, text, requested_url, final_url):
     return None
 
 
+_SCROLL_SCRIPT = """async (screens) => {
+  for (let i = 0; i < screens; i++) {
+    window.scrollBy(0, window.innerHeight);
+    await new Promise((done) => setTimeout(done, 350));
+  }
+  window.scrollTo(0, 0);
+}"""
+
+
+def _scroll_screens(policy) -> int:
+    """Viewport heights to scroll before capture, so lazy images and cards load."""
+    return policy.scroll_screens or (3 if policy.card_images else 0)
+
+
+async def _scroll_for_lazy(page, screens: int) -> None:
+    if screens:
+        try:
+            await page.evaluate(_SCROLL_SCRIPT, screens)
+        except Exception:
+            # Scrolling is a best-effort nudge; the page as loaded still stands.
+            pass
+
+
+# A site's own error or not-found page, served with HTTP 200. Every tool sees
+# the same page, so climbing the ladder only repeats it.
+_ERROR_PAGE_PATH = re.compile(r"/(error|errors|errorpage|error-page|error_page|404|"
+                              r"not-?found|page-?not-?found|pagenotfound)(\.aspx|\.html?|\.php|\.jsp|/|$)",
+                              re.I)
+_ERROR_TITLES = frozenset({
+    "error", "404", "404 error", "404 not found", "not found", "page not found",
+    "404 - page not found", "404 page not found", "error 404", "an error has occurred",
+    "an error occurred", "something went wrong", "server error", "oops! something went wrong",
+    "sorry, something went wrong", "page cannot be found", "the page cannot be found",
+    "this page isn't available", "this page could not be found", "page unavailable"})
+_ERROR_PHRASES = (
+    "the page you requested could not be found", "the page you are looking for could not be found",
+    "the page you were looking for doesn't exist", "the page you're looking for doesn't exist",
+    "the page you are looking for does not exist", "an unexpected error has occurred",
+    "we couldn't find the page you were looking for", "this page doesn't exist")
+_ERROR_TEXT_MAX = 4000
+# An error title is strong evidence even under a site's cookie banner and footer.
+_ERROR_TITLE_TEXT_MAX = 20000
+
+
+def _site_error(title, text, requested_url, final_url):
+    """True for a site's error or not-found page that came back as a page."""
+    try:
+        requested, final = urlparse(requested_url), urlparse(final_url or requested_url)
+    except ValueError:
+        return False
+    moved = final.hostname and (final.hostname + final.path) != (requested.hostname or "") + requested.path
+    if moved and _ERROR_PAGE_PATH.search(final.path) and not _ERROR_PAGE_PATH.search(requested.path):
+        return True
+    body = (text or "").strip().lower()
+    parts = re.split(r"\s+[|\-–—:]\s+", (title or "").strip().lower().lstrip("# ").strip())
+    if (len(body) < _ERROR_TITLE_TEXT_MAX
+            and any(part.strip(" .!") in _ERROR_TITLES for part in parts if part)):
+        return True
+    return len(body) < _ERROR_TEXT_MAX and any(phrase in body for phrase in _ERROR_PHRASES)
+
+
 def _image_urls(structured: object, soup: BeautifulSoup | None, url: str) -> list[str]:
     found: list[str] = []
     def visit(obj):
@@ -1142,6 +1219,15 @@ def _reject_unusable_page(candidate, candidate_record, policy, resolved, adapter
                           response, parsed, url):
     """Raise when a provider returned an app shell, an empty render, a challenge
     or a sign-in page instead of the page, so the next provider is tried."""
+    # A site's own error page is the answer, not an unfinished page: checked
+    # first, so a short one is not mistaken for an empty render. A public
+    # read's NOT_FOUND gets one confirming provider (fake 404s served to
+    # bots), then stops instead of climbing the whole ladder.
+    if (not resolved and adapter in (None, "html")
+            and any(kind in response["content_type"] for kind in ("html", "markdown"))
+            and _site_error(parsed.get("title"), parsed.get("text"), url, response.get("url"))):
+        raise WebFailure("NOT_FOUND", "Provider returned the site's error or not-found page",
+                         response.get("http_status"), response_url=response.get("url"))
     if candidate == "http" and policy.provider is None and "html" in response["content_type"]:
         unresolved = re.search(r"\{\{[^{}]+\}\}",parsed["text"])
         # Exact adapters validate their own projections. Short product
@@ -1652,6 +1738,7 @@ class Runtime:
             if policy.wait_selector:
                 await page.locator(policy.wait_selector).first.wait_for(state=policy.wait_state, timeout=policy.timeout_seconds * 1000)
             if policy.settle_ms: await page.wait_for_timeout(policy.settle_ms)
+            await _scroll_for_lazy(page, _scroll_screens(policy))
             content_readiness = await self._wait_content_readiness(
                 page, policy, deadline, PWTimeout)
             content,raw,content_type = await self._browser_representation(page,response,policy)
@@ -1917,6 +2004,7 @@ class Runtime:
             if policy.wait_selector:
                 await page.locator(policy.wait_selector).first.wait_for(state=policy.wait_state, timeout=policy.timeout_seconds*1000)
             if policy.settle_ms: await page.wait_for_timeout(policy.settle_ms)
+            await _scroll_for_lazy(page, _scroll_screens(policy))
             content_readiness = await self._wait_content_readiness(
                 page, policy, deadline, PWTimeout)
             content,raw,content_type = await self._browser_representation(page,response,policy)
@@ -2865,10 +2953,22 @@ class Runtime:
         no step helps, the first page stands.
         """
         from .completeness import assess
-        verdict = assess(url, first)
+        terms = effective.expect_terms
+        verdict = assess(url, first, expect_terms=terms)
         record = {key: verdict.get(key) for key in ("kind", "complete", "item_links", "prices",
                                                     "text_chars", "reason")}
+        if verdict.get("query"):
+            record["query"] = verdict["query"]
         first["receipt"]["completeness"] = record
+        if verdict.get("off_query"):
+            # Another tool would read the same wrong page: hand it back, named.
+            record["off_query"] = True
+            first["receipt"]["next_step"] = {
+                "reason": "off_query",
+                "how": ("These results don't mention the query, so this is probably the site's"
+                        " default feed: the search URL's query parameter may be wrong or ignored."
+                        " Check the site's own search URL.")}
+            return first
         borderline = (verdict["complete"] and verdict.get("kind") == "search"
                       and verdict.get("item_links", 0) < effective.completeness_borderline_items
                       and verdict.get("prices", 0) < 2 * 4)
@@ -2918,7 +3018,7 @@ class Runtime:
             step_receipt = step.get("receipt") or {}
             costs.append(step_receipt.get("cost_usd"))
             observed = step_receipt.get("status") == "observed"
-            step_verdict = assess(url, step) if observed else None
+            step_verdict = assess(url, step, expect_terms=terms) if observed else None
             steps.append({"provider": identifier, "status": step_receipt.get("status"),
                           "failure": (step_receipt.get("failure") or {}).get("code"),
                           "complete": step_verdict["complete"] if step_verdict else False,
@@ -3794,6 +3894,19 @@ class Runtime:
                                               adapter, response, parsed, url)
                         pending_receipt_evidence = self._record_observation(
                             result, receipt, response, parsed, policy, identity_capture)
+                        if policy.card_images and "html" in (response.get("content_type") or ""):
+                            from .completeness import cards
+                            found = cards(response.get("content") or "", response.get("url") or url,
+                                          structured=parsed.get("structured"))
+                            if resolved:
+                                # Signed-in pages: strip private tokens like other output URLs.
+                                found = [{**card,
+                                          "url": _output_url(card["url"], named_identity=True),
+                                          "image": card["image"] and _output_url(card["image"],
+                                                                                 named_identity=True)}
+                                         for card in found]
+                                found = [card for card in found if card["url"]]
+                            result["cards"] = found
                         if policy.include_images:
                             if resolved:
                                 result["images"] = await self._download_identity_images(
@@ -3869,6 +3982,7 @@ class Runtime:
             # A policy/generation failure after acquisition must not return private payload.
             if exc.code.startswith("IDENTITY_"):
                 for field,value in {"title":None,"text":"","content":"","structured":None,"images":[],"image_urls":[]}.items(): result[field]=value
+                result.pop("cards", None)
                 receipt["evidence"] = []
             if getattr(exc, "response_url", None) and not exc.code.startswith("IDENTITY_"):
                 result["url"] = _output_url(exc.response_url, named_identity=bool(policy.identity))

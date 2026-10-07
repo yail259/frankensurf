@@ -13,6 +13,31 @@ downloads them and checks each one.
 - One bad image never fails the read.
 - Download exact URLs on their own with `download_images`.
 
+## Result cards
+
+On a search or listing page, `card_images` pairs each result with its own
+thumbnail in the same load, so checking results by eye or with a vision model
+doesn't cost a page load per item. Each card is `{url, title, image}`.
+
+- **Order:** entries from the page's JSON-LD `ItemList` come first, then
+  linked cards that have an image, then the rest. Menu links never crowd out
+  results.
+- **Which image:** a card's image is the one inside its link, or inside the
+  nearest container that holds no other result. Neighbouring cards never share
+  one, and logos and icons are skipped.
+- **Lazy images:** lazy-loaded images are found through `data-src` and
+  `srcset`, and browsers scroll first so they load.
+- **Unlinked cards:** some sites render cards without links and list the URLs
+  only in JSON-LD. Those cards come back with their URL but no image, because
+  matching them up is site knowledge.
+
+```python
+page = await web.read("https://shop.example.com/search?q=lamp",
+                      policy_overrides={"card_images": True})
+for card in page["cards"]:
+    print(card["title"], card["image"])
+```
+
 ## Usage
 
 <Tabs syncKey="lang">
@@ -48,4 +73,6 @@ frankensurf images https://example.com/a.jpg https://example.com/b.png
 | --- | --- | --- |
 | `include_images` | `false` | Download the page's images. |
 | `max_images` | `50` | Most images to download. It caps the count; it doesn't mean the gallery is complete. |
+| `card_images` | `false` | Add `cards`: each result link with its title and its own thumbnail URL. |
+| `scroll_screens` | `0` | Screens to scroll in a browser before capture so lazy images load. `card_images` alone scrolls 3. |
 | `max_image_bytes` | 20 MB | Largest image accepted. |

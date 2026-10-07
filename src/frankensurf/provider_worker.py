@@ -150,6 +150,25 @@ async def _page_failure(page, request, code, status=None, stage=None):
     return packet
 
 
+_SCROLL_SCRIPT = """async (screens) => {
+  for (let i = 0; i < screens; i++) {
+    window.scrollBy(0, window.innerHeight);
+    await new Promise((done) => setTimeout(done, 350));
+  }
+  window.scrollTo(0, 0);
+}"""
+
+
+async def _scroll_for_lazy(page, request):
+    """Scroll a few screens so lazy images and cards load; best effort."""
+    screens = request.get("scroll_screens") or 0
+    if screens:
+        try:
+            await page.evaluate(_SCROLL_SCRIPT, screens)
+        except Exception:
+            pass
+
+
 async def _content_readiness(page, request):
     """Bounded optional semantic readiness; timeout still captures page truth."""
     selector = request.get("content_ready_selector")
@@ -232,6 +251,7 @@ async def _direct_camoufox(page, url, request, timeout, maximum):
     if request["settle_ms"]:
         _report_stage("document_settle")
         await page.wait_for_timeout(request["settle_ms"])
+    await _scroll_for_lazy(page, request)
     content_readiness = await _content_readiness(page, request)
     _report_stage("response_capture")
     content, mime = await _representation(page, response, maximum)
@@ -312,6 +332,7 @@ async def acquire(request):
                 if request.get("wait_selector"):
                     _report_stage("selector_readiness")
                     await page.locator(request["wait_selector"]).first.wait_for(state=request["wait_state"])
+                await _scroll_for_lazy(page, request)
                 capture["content_readiness"] = await _content_readiness(page, request)
                 _report_stage("screenshot_capture")
                 capture["screenshot"]=await page.screenshot(full_page=False)
