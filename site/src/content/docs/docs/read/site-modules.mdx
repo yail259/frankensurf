@@ -1,0 +1,111 @@
+---
+title: Site modules
+description: Save what your agent learns about a site, as data, and reuse it on every read.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+When your agent works out how a site really works, it can save that as a
+**site module** instead of writing a throwaway parser. Typical lessons:
+
+- the search URL only takes `q`;
+- results sit as JSON inside the page;
+- listing URLs live in JSON-LD and need pairing with the cards.
+
+Every later read of that site comes back shaped: `items` with the fields you
+named, the next page, and checks that tell you when the site changes.
+
+A module is **data, never code**, and lives in your own state folder.
+Frankensurf ships none; site knowledge stays with whoever learned it.
+
+## What a module holds
+
+```json
+{
+  "id": "example.search", "version": "1",
+  "match": { "origin": "https://www.example.com", "path_pattern": "/search" },
+  "templates": { "search": { "url": "https://www.example.com/search?q={query}",
+                             "params": { "query": "required" } } },
+  "sources": { "hits": { "kind": "embedded_json", "decode": "next_flight", "marker": "\"hits\":" } },
+  "items": { "from": "hits", "fields": {
+    "title": "ObjectTitle",
+    "url": { "path": "ITEM_URL", "type": "url" },
+    "price": { "path": "ObjectPrice", "type": "number" } } },
+  "assertions": { "schema": "frankensurf.workload-assertions/v1", "checks": [
+    { "path": "items", "operator": "minimum_count", "value": 5 },
+    { "path": "matching_query", "operator": "minimum_count", "value": 3 } ] },
+  "notes": "Search takes q; searchTerm is silently ignored."
+}
+```
+
+| Part | What it does |
+| --- | --- |
+| `match` | `origin` and a `path_pattern` (a regular expression over the URL path), like a route recipe. Optional `query_keys`. |
+| `templates` | URLs with `{params}`, each `"required"` or `{default, encoding: "query" \| "path"}`. They always stay on the module's origin. |
+| `readiness` | `selector` to wait for (bounded), `settle_ms`. |
+| `sources` | Where rows live: `jsonld` (`type`, `path`), `embedded_json` (`selector`, `marker`, `path`, optional `decode: "next_flight"` for Next.js pages), `captured_json` (JSON the page fetched: `url_contains`, `path`), or `html` (`item_selector` and `fields`, each a `selector` and optional `attribute` or list of attributes tried in order). |
+| `items` | A field map over one source: `name: "path"` or `{path, type}` with `type` `auto`, `text`, `number` or `url`. `join` fills blanks from a second source, by `position` or by `{left, right}` key. `limit`, default 200. |
+| `pagination` | `{param, start, step, max_pages}` or `{next_selector}`. The read returns `next_url`. |
+| `invalid` | Markers of the site's error or empty-feed page: `final_url_contains`, `title`, `text`. Such a page fails as `NOT_FOUND` instead of climbing to stronger tools. |
+| `assertions` | A `frankensurf.workload-assertions/v1` set over `{items, count, first, matching_query}`. Operators are `nonempty`, `equals` and `minimum_count`. |
+| `policy_defaults` | Operational settings, such as `scroll_screens` or `settle_ms`. |
+
+**What a module can never do:** name an identity, pick or allow providers,
+allow paid tools, or reach another origin. Any setting you pass on the call
+wins over the module's.
+
+## Using modules
+
+- **Saved modules:** an enabled one that matches the URL shapes the read by
+  default.
+- **One read:** name a module with `module`, run an unsaved one with
+  `module_override`, or turn modules off with `module=False` (`none` on the CLI
+  and MCP).
+- **What comes back:** `items` and, with pagination, `next_url`. The receipt
+  gains `module`: its `id`, `version`, `sha256`, how it was chosen, the item
+  count and the assertion results (`status`: `passed`, `failed` or `invalid`).
+  Raw page data is unchanged.
+- **Completeness:** a page whose module assertions pass counts as complete, so
+  a site that keeps its results in JSON isn't escalated for having few links.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+web.site_modules.put(module)                      # save or replace (bump version)
+page = await web.read_template("example.search", "search", {"query": "desk lamp"})
+for item in page["items"]:
+    print(item["title"], item["price"], item["url"])
+print(page["receipt"]["module"]["status"])        # passed / failed / invalid
+
+await web.read(url, module=False)                 # without modules
+web.site_modules.enable("example.search", False)  # or disable it
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf module add example-search.json
+frankensurf module list
+frankensurf read-template example.search search --param query="desk lamp"
+frankensurf read https://www.example.com/search?q=lamp --module none
+frankensurf module disable example.search
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "site_modules", "arguments": { "action": "put", "module": { "id": "example.search", "version": "1", "...": "..." } } }
+{ "tool": "read_template", "arguments": { "module": "example.search", "template": "search", "params": { "query": "desk lamp" } } }
+```
+
+</TabItem>
+</Tabs>
+
+## When a site changes
+
+When a module's assertions start failing, `receipt.module.status` says
+`failed` and the raw page is still there. Your agent can look at the page,
+then save a fixed module under a new `version`.

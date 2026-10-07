@@ -27,6 +27,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
                identity: str | None = None, allow_handoff: bool | None = None,
                profile: str | None = None, try_harder_than: str | None = None,
                expect_terms: list[str] | None = None, card_images: bool | None = None,
+               module: str | None = None, module_override: dict | None = None,
                acquisition_policy: dict | None = None) -> dict:
     """Retrieve evidence. Omitted settings use runtime defaults and operator public routes.
 
@@ -44,6 +45,9 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     completeness.off_query, with receipt.next_step, instead of escalating.
     card_images=True adds cards: each result link with its title and its own
     thumbnail URL, from the same page load.
+    A saved site module matching the URL shapes the read by default (see the
+    site_modules tool): the result gains items and receipt.module. module names
+    one, "none" turns modules off, module_override runs an unsaved module once.
     """
     options = _acquisition_overrides(acquisition_policy, {"provider": provider,
         "render": render, "include_images": include_images, "freshness": freshness,
@@ -53,11 +57,69 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     # Agents read text: ask servers for markdown first (T0). Callers can pass
     # acquisition_policy={"prefer_markdown": false} for raw HTML structure.
     options.setdefault("prefer_markdown", True)
+    extra = {"retry_of": try_harder_than} if try_harder_than else {}
+    if module is not None:
+        extra["module"] = False if module == "none" else module
+    if module_override is not None:
+        extra["module_override"] = module_override
     async with runtime() as web:
-        result = await web.read(url, policy_overrides=options,
-                                **({"retry_of": try_harder_than} if try_harder_than else {}))
+        result = await web.read(url, policy_overrides=options, **extra)
         result.pop("content", None)
         return result
+
+
+@server.tool()
+async def read_template(module: str, template: str, params: dict | None = None,
+                        expect_terms: list[str] | None = None, card_images: bool | None = None,
+                        acquisition_policy: dict | None = None) -> dict:
+    """Read a URL built from a saved site module's template, e.g. its search URL
+    with params={"query": "desk lamp"}. The module shapes the read: the result
+    has items, next_url when the module knows pagination, and receipt.module
+    with its assertion results."""
+    options = _acquisition_overrides(acquisition_policy, {
+        "expect_terms": tuple(expect_terms) if expect_terms else None, "card_images": card_images})
+    options.setdefault("prefer_markdown", True)
+    async with runtime() as web:
+        result = await web.read_template(module, template, params, policy_overrides=options)
+        result.pop("content", None)
+        return result
+
+
+@server.tool()
+async def site_modules(action: str = "list", module_id: str | None = None,
+                       module: dict | None = None) -> dict | list:
+    """Save and manage site modules: per-site knowledge as data, never code.
+
+    action: list | get | put | enable | disable | delete. put takes module, a
+    frankensurf.site-module/v1 object: id, version, match {origin, path_pattern},
+    and any of templates (URLs with {params}), readiness {selector, settle_ms},
+    sources (jsonld | embedded_json | captured_json | html), items {from,
+    fields, join}, pagination, invalid markers, assertions
+    (frankensurf.workload-assertions/v1 over {items, count, first,
+    matching_query}) and operational policy_defaults. A module can never grant
+    identity, providers, paid tools or other origins. Saving the same id again
+    replaces it; bump version when you change it.
+    """
+    async with runtime() as web:
+        registry = web.site_modules
+        if action == "list":
+            return registry.inspect()
+        if action == "put":
+            if module is None:
+                raise ValueError("put needs module")
+            return registry.put(module)
+        if module_id is None:
+            raise ValueError(action + " needs module_id")
+        if action == "get":
+            found = registry.get(module_id)
+            return {**found.metadata(), "module": found.record()}
+        if action in ("enable", "disable"):
+            registry.enable(module_id, action == "enable")
+            return registry.get(module_id).metadata()
+        if action == "delete":
+            registry.delete(module_id)
+            return {"deleted": module_id}
+        raise ValueError("action must be list, get, put, enable, disable or delete")
 
 
 @server.tool()
