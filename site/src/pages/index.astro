@@ -2,11 +2,13 @@
 import "../styles/global.css";
 import StitchedWave from "../assets/stitched-wave.svg";
 import stitchedWaveMint from "../assets/stitched-wave-mint.svg?url";
-import { sources, marquee, walls, toolRows, usRow, cellClass, chipLogos, layers, stats, failures, versus, usVersus, ledger, rungs } from "../data/site";
+import { sources, marquee, walls, toolRows, usRow, cellClass, chipLogos, docsFor, layers, stats, failures, versus, usVersus, ledger, rungs } from "../data/site";
 
 const repo = "https://github.com/yail259/frankensurf";
 const half = Math.ceil(marquee.length / 2);
 const rowA = marquee.slice(0, half), rowB = marquee.slice(half);
+// Marquee rows repeat for the loop; the repeats are hidden from assistive tech and the tab order.
+const loop = (row: typeof marquee) => [...row, ...row].map((t, i) => ({ ...t, repeat: i >= row.length, href: docsFor[t.name] }));
 const maxFail = Math.max(...failures.map((f) => Math.max(f.today, f.target)));
 const gap = (f: { today: number; target: number }) => {
   const d = f.today - f.target;
@@ -95,8 +97,12 @@ const bricks = [2, 19, 45, 62].flatMap((y, row) =>
 
   <section class="marquee-sec" aria-label="Tools Frankensurf is built on">
     <div class="marquee">
-      <div class="track">{[...rowA, ...rowA].map((t, i) => <span class:list={["logo", { "logo-repeat": i >= rowA.length }]} aria-hidden={i >= rowA.length ? "true" : undefined}><img src={`/logos/${t.logo}`} alt="" width="22" height="22" loading="lazy" />{t.name}</span>)}</div>
-      <div class="track rev">{[...rowB, ...rowB].map((t, i) => <span class:list={["logo", { "logo-repeat": i >= rowB.length }]} aria-hidden={i >= rowB.length ? "true" : undefined}><img src={`/logos/${t.logo}`} alt="" width="22" height="22" loading="lazy" />{t.name}</span>)}</div>
+      {[loop(rowA), loop(rowB)].map((row, r) => (
+        <div class:list={["track", { rev: r === 1 }]}>{row.map((t) => {
+          const Tag = t.href ? "a" : "span";
+          return <Tag class:list={["logo", { "logo-repeat": t.repeat }]} href={t.href} aria-hidden={t.repeat ? "true" : undefined} tabindex={t.repeat && t.href ? -1 : undefined}><img src={`/logos/${t.logo}`} alt="" width="22" height="22" loading="lazy" />{t.name}</Tag>;
+        })}</div>
+      ))}
     </div>
   </section>
 
@@ -233,7 +239,7 @@ const bricks = [2, 19, 45, 62].flatMap((y, row) =>
           <div class="chips">
             {l.parts.map((p) => (
               <details class="chip" name={`tools-${l.key}`}><summary>{chipLogos[p.name] ? <img src={`/logos/${chipLogos[p.name]}`} alt="" width="14" height="14" loading="lazy" /> : <span class="mono" aria-hidden="true">{p.name[0]}</span>}{p.name}</summary>
-                <div class="tip"><span class="kind">{kindLabel[p.kind]}</span>{p.take}<a href={sources[p.src].url}>{sources[p.src].label} ↗</a></div>
+                <div class="tip"><span class="kind">{kindLabel[p.kind]}</span>{p.take}<a href={sources[p.src].url}>{sources[p.src].label} ↗</a>{docsFor[p.name] && <a class="setup" href={docsFor[p.name]}>Set up in Frankensurf →</a>}</div>
               </details>
             ))}
           </div>

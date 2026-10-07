@@ -163,7 +163,9 @@ pre.code { margin: 0; font: 13px/1.7 var(--mono); color: var(--fg-2); white-spac
 .track.rev { animation-direction: reverse; animation-duration: 75s; }
 .track .logo { display: inline-flex; align-items: center; gap: 10px; font: 600 15px var(--sans); letter-spacing: -0.01em; color: var(--muted); white-space: nowrap; transition: color 0.2s; }
 .track .logo img { width: 22px; height: 22px; border-radius: 6px; object-fit: contain; flex: none; }
-.track .logo:hover { color: var(--fg); }
+.track .logo:hover, .track .logo:focus-visible { color: var(--fg); }
+.track a.logo { text-decoration: none; }
+.marquee:hover .track, .marquee:focus-within .track { animation-play-state: paused; }
 @keyframes marq { to { transform: translateX(-50%); } }
 
 /* ---------- sections ---------- */
@@ -245,6 +247,7 @@ h2 { margin: 0; font-weight: 600; font-size: clamp(34px, 4.6vw, 58px); line-heig
 .tip { position: absolute; z-index: 10; left: 0; bottom: calc(100% + 8px); width: 260px; padding: 12px; border-radius: 10px; border: 1px solid var(--line-2); background: #18191d; box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.8); font-size: 12.5px; line-height: 1.5; color: var(--fg-2); opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 0.18s, transform 0.18s; }
 .tip a { pointer-events: auto; display: block; margin-top: 6px; font: 12px var(--mono); color: var(--sea); text-decoration: none; }
 .chip[open] .tip { opacity: 1; transform: none; pointer-events: auto; }
+.tip a.setup { margin-top: 2px; color: var(--accent); }
 .tip .kind { display: block; margin-bottom: 4px; font: 11px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); }
 
 /* bento graphics: one drawing language, all on the same 240x76 stage. Hairline wires and boxes
