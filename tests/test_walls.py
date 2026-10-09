@@ -76,3 +76,44 @@ async def test_site_sessions_keep_cookies_for_a_day(tmp_path):
         assert web._site_session("www.shop.example.com", 24) == []
     with pytest.raises(ValueError):
         WebPolicy(site_session_hours=-1)
+
+
+def test_wall_vendors_are_named_from_headers_and_pages():
+    import httpx
+    from frankensurf.runtime import wall_vendor
+    assert wall_vendor(httpx.Headers({"server": "cloudflare", "cf-ray": "1"})) == "cloudflare"
+    assert wall_vendor(httpx.Headers([("set-cookie", "datadome=x; Path=/")])) == "datadome"
+    assert wall_vendor(httpx.Headers({"server": "AkamaiGHost"})) == "akamai"
+    assert wall_vendor(httpx.Headers({}), "<title>Vercel Security Checkpoint</title>") == "vercel"
+    assert wall_vendor(httpx.Headers({"server": "nginx"})) is None
+
+
+async def test_the_router_learns_which_tool_gets_past_a_wall_vendor(tmp_path, registry):
+    calls = []
+
+    def walled(identifier):
+        class Plugin:
+            def __init__(self):
+                self.manifest = ProviderManifest(identifier, "1", rendering=identifier != "http")
+
+            def available(self, configured):
+                return True
+
+            async def acquire(self, request, services):
+                calls.append(identifier)
+                if identifier == "stealthy":
+                    return {"url": request.url, "content": PAGE, "content_type": "text/html", "http_status": 200}
+                failure = WebFailure("BLOCKED", "fixture wall")
+                failure.wall_vendor = "datadome"
+                raise failure
+        return Plugin()
+    registry(walled("http"), walled("slow_a"), walled("slow_b"), walled("stealthy"))
+    policy = {**POLICY, "warm_up_on_wall": False}
+    async with Runtime(tmp_path) as web:
+        for n in range(4):
+            result = await web.read(f"https://shop{n}.example.com/p/item-{n}", policy_overrides=policy)
+            assert result["receipt"]["method"] == "stealthy" and result["receipt"]["wall_vendor"] == "datadome"
+        calls.clear()
+        learned = await web.read("https://shop9.example.com/p/item-9", policy_overrides=policy)
+    assert learned["receipt"]["routing"]["learned_for"] == {"vendor": "datadome", "first": "stealthy"}
+    assert calls == ["http", "stealthy"]

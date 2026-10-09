@@ -1611,6 +1611,41 @@ def _consent_leads(text) -> bool:
     return len(_CONSENT.findall((text or "")[:2500])) >= 3
 
 
+WALL_VENDORS = ("cloudflare", "akamai", "datadome", "perimeterx", "imperva", "kasada", "aws_waf",
+                "vercel", "sucuri")
+
+
+def wall_vendor(headers, body: str = "") -> str | None:
+    """Which bot-defence service answered, from the response's own headers,
+    cookies and challenge page. Infrastructure vendors, not sites."""
+    try:
+        items = [(str(key).lower(), str(value).lower()) for key, value in headers.multi_items()]
+    except AttributeError:
+        items = [(str(key).lower(), str(value).lower()) for key, value in dict(headers or {}).items()]
+    names = {key for key, _ in items}
+    values = " ".join(f"{key}={value}" for key, value in items)
+    body = (body or "")[:20000].lower()
+    if "cf-ray" in names or "cf-mitigated" in names or "server=cloudflare" in values or "/cdn-cgi/challenge" in body:
+        return "cloudflare"
+    if "x-datadome" in names or "datadome=" in values or "captcha-delivery.com" in body:
+        return "datadome"
+    if "x-px" in names or "_px" in values and "set-cookie" in names or "perimeterx" in body or "px-captcha" in body:
+        return "perimeterx"
+    if "x-kpsdk-ct" in names or "x-kpsdk-r" in names or "kpsdk" in body:
+        return "kasada"
+    if "incap_ses" in values or "visid_incap" in values or "x-iinfo" in names or "incapsula" in body:
+        return "imperva"
+    if "akamaighost" in values or "akamai-grn" in names or "_abck=" in values or "bm_sz=" in values:
+        return "akamai"
+    if "x-amzn-waf-action" in names or "aws-waf-token" in values or "awswaf" in body:
+        return "aws_waf"
+    if "x-vercel-mitigated" in names or "vercel security checkpoint" in body:
+        return "vercel"
+    if "x-sucuri-id" in names or "sucuri website firewall" in body:
+        return "sucuri"
+    return None
+
+
 def _user_agent() -> str:
     """Plain HTTP reads say who they are, with a contact URL, as polite-bot
     policies ask (Wikimedia refuses agents without one)."""
@@ -1912,7 +1947,11 @@ class Runtime:
                 final_url = str(response.url)
                 _validate_url(final_url)
                 failure = _status_failure(response.status_code)
-                if failure: raise WebFailure(failure, "HTTP response requires stop", response.status_code, response_url=final_url)
+                if failure:
+                    refused = WebFailure(failure, "HTTP response requires stop", response.status_code,
+                                         response_url=final_url)
+                    refused.wall_vendor = wall_vendor(response.headers)
+                    raise refused
                 raw = bytearray()
                 async for chunk in response.aiter_bytes():
                     raw.extend(chunk)
@@ -1922,7 +1961,10 @@ class Runtime:
                     _merge_response_cookies(profile, response)
                 content = data.decode(response.encoding or "utf-8", errors="replace")
                 if "html" in response.headers.get("content-type", "") and _challenge(content):
-                    raise WebFailure("CAPTCHA", "Challenge page observed", response.status_code, response_url=final_url)
+                    challenge = WebFailure("CAPTCHA", "Challenge page observed", response.status_code,
+                                           response_url=final_url)
+                    challenge.wall_vendor = wall_vendor(response.headers, content)
+                    raise challenge
                 return {"url": str(response.url), "content": content, "raw": data,
                         "content_type": response.headers.get("content-type", ""), "http_status": response.status_code,
                         "headers": {k: v for k, v in response.headers.items() if k in _SAFE_HEADERS}}
@@ -3508,6 +3550,11 @@ class Runtime:
                                     workload_assertions, effective)
         result = await self._warm_up_retry(url, result, policy, provider, adapter, policy_overrides,
                                            workload_assertions, effective)
+        if not effective.identity and not effective.profile:
+            try:
+                self._learn_wall(result.get("receipt") or {})
+            except OSError:
+                pass
         if _wants_second_opinion(result, effective, provider):
             result = await self._second_opinion(url, result, policy, adapter, policy_overrides,
                                                 workload_assertions, effective)
@@ -4626,6 +4673,45 @@ class Runtime:
                 receipt.setdefault("routing", {})["escalated_to"] = ahead[0]
         return "stop" if (resolved or terminal or candidate == order[-1]) else "next"
 
+    def _wall_stats_path(self):
+        return self.state_dir / "wall-stats.json"
+
+    def _wall_stats(self):
+        try:
+            return json.loads(self._wall_stats_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _route_by_vendor(self, vendor, order, plan_state, receipt, minimum=3):
+        """Move the tools that got past this wall vendor most often to the front of
+        what is left. Learned from this machine's own reads, never from site names."""
+        stats = self._wall_stats().get(vendor) or {}
+        remaining = order[plan_state["position"] + 1:]
+        rated = sorted(((tool, (stats[tool][0] + 1) / (stats[tool][1] + 2)) for tool in remaining
+                        if tool in stats and stats[tool][1] >= minimum), key=lambda pair: -pair[1])
+        ahead = [tool for tool, rate in rated if rate >= 0.5]
+        if ahead:
+            order[plan_state["position"] + 1:] = ahead + [tool for tool in remaining if tool not in ahead]
+            receipt.setdefault("routing", {})["learned_for"] = {"vendor": vendor, "first": ahead[0]}
+
+    def _learn_wall(self, receipt):
+        """After a read that met a named wall: which tools tried, which got through."""
+        vendor = receipt.get("wall_vendor")
+        if vendor not in WALL_VENDORS:
+            return
+        attempts = [item for item in receipt.get("attempts") or [] if isinstance(item, dict)]
+        winner = receipt.get("method") if receipt.get("status") == "observed" else None
+        stats = self._wall_stats()
+        tools = stats.setdefault(vendor, {})
+        for tool in dict.fromkeys(item.get("provider") for item in attempts[1:] if item.get("provider")):
+            wins, tries = tools.get(tool, [0, 0])
+            tools[tool] = [wins + (1 if tool == winner else 0), tries + 1]
+        path = self._wall_stats_path()
+        fd, temporary = tempfile.mkstemp(prefix=".walls-", dir=self.state_dir)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(stats, stream)
+        os.replace(temporary, path)
+
     def _store_cache(self, result, receipt, url, adapter, policy, resolved, key,
                      _route_scope, route_seed_scope, identity_capture, identity_authority):
         """Cache an observed public (or verified identity) result for later freshness levels."""
@@ -5068,6 +5154,11 @@ class Runtime:
                             candidate, candidate_version, candidate_binding_id,
                             attempt_started, attempt_cost, cost_reported, receipt,
                             attempts, attempt_costs, _recipe, resolved)
+                        vendor = getattr(exc, "wall_vendor", None)
+                        if vendor and not plan_state.get("vendor") and not resolved:
+                            plan_state["vendor"] = vendor
+                            receipt["wall_vendor"] = vendor
+                            self._route_by_vendor(vendor, order, plan_state, receipt)
                         step = self._after_failed_attempt(
                             exc, policy, candidate, candidate_record, retry_index,
                             plan_state, order, resolved, receipt)

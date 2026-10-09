@@ -1403,6 +1403,9 @@ class ProviderRegistry:
             if expose_cost:
                 kwargs["cost_usd"] = aggregate_cost
             safe = WebFailure(code, message, http_status, **kwargs)
+            from .runtime import WALL_VENDORS
+            if error.__dict__.get("wall_vendor") in WALL_VENDORS:
+                safe.wall_vendor = error.__dict__["wall_vendor"]
             evidence = error.__dict__.get("_public_failure_evidence")
             try:
                 safe_evidence = (_evidence_references(
