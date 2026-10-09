@@ -88,6 +88,17 @@ Also in the box: profiles (log in once, reuse the session from any tool), human
 handoff for CAPTCHAs and 2FA, site modules (save what your agent learns about a
 site as data), and Web Bot Auth request signing.
 
+Reading many pages from one site? Let Frankensurf learn it first::
+
+    frankensurf module discover https://www.example.com/ --query "desk lamp" --save
+
+That finds the site's search (its schema.org ``SearchAction``, its search form,
+or by typing once into its search box), reads the results, and saves a site
+module: where the items live in the page's own data, plus a search template.
+From then on every search on that site comes back as structured ``items``, and
+``batch_template`` runs many searches as one polite batch. Check the sample rows
+before saving; the draft can pick the wrong list.
+
 How it works
 ------------
 
