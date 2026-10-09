@@ -175,8 +175,11 @@ def _placeholder(text: str, zero_prices: int, prices: int) -> str | None:
     """Why the text is an unrendered placeholder, or None."""
     if zero_prices and not prices:
         return f"{zero_prices} price(s) of 0 and no real price: the prices have not loaded"
-    leaks = len(_UNRENDERED.findall(text[:200_000]))
-    if leaks >= 3:
+    # Count outside links and URLs (ad URLs carry "undefined" legitimately), and
+    # relative to the page: three in a short page is a template, not in a long one.
+    prose = re.sub(r"\]\([^)]*\)|https?://\S+", " ", text[:200_000])
+    leaks = len(_UNRENDERED.findall(prose))
+    if leaks >= 3 and leaks * 4000 >= len(prose):
         return f"{leaks} unrendered template values ({{{{ }}}}, NaN, undefined) in the text"
     return None
 
@@ -190,6 +193,48 @@ def _link_text_share(content: str, text: str) -> float:
     for found in _ANCHOR.finditer(content[:2_000_000]):
         linked += len(" ".join(_TAG.sub(" ", found.group(4)).split()))
     return min(linked / max(len(" ".join(text.split())), 1), 1.0)
+
+
+# Article conventions: schema.org types, Open Graph, and the paths publishers use.
+_ARTICLE_TYPES = {"Article", "NewsArticle", "BlogPosting", "Report", "ScholarlyArticle", "AnalysisNewsArticle",
+                  "OpinionNewsArticle", "ReviewNewsArticle", "TechArticle", "LiveBlogPosting"}
+_ARTICLE_PATH = re.compile(r"(?i)/(news|article|articles|story|stories|blog|blogs|post|posts|opinion|"
+                           r"insights?|press|media-releases?|press-releases?)/|/20\d\d/\d{1,2}/")
+_OG_ARTICLE = re.compile(r"""<meta[^>]+property=["']og:type["'][^>]+content=["']article""", re.I)
+MIN_ARTICLE_CHARS = 600
+
+
+def article_like(url: str, result: dict) -> str | None:
+    """How a page says it holds an article: "markup" (schema.org or Open Graph),
+    "path" (a publisher-style URL), or None."""
+    structured = result.get("structured") if isinstance(result.get("structured"), dict) else {}
+    for block in structured.get("jsonld") or ():
+        for node in (block.get("@graph") or [block]) if isinstance(block, dict) else block if isinstance(block, list) else ():
+            kinds = node.get("@type") if isinstance(node, dict) else None
+            kinds = {kinds} if isinstance(kinds, str) else set(kinds) if isinstance(kinds, list) else set()
+            if kinds & _ARTICLE_TYPES:
+                return "markup"
+    if _OG_ARTICLE.search((result.get("content") or "")[:200_000]):
+        return "markup"
+    path = urlparse(url).path or ""
+    last = [segment for segment in path.split("/") if segment][-1:] or [""]
+    # The path alone counts only with a story-like last segment: /news/ itself is a section.
+    if _ARTICLE_PATH.search(path) and (last[0].count("-") >= 2 or re.search(r"\d{5,}", last[0]) is not None):
+        return "path"
+    return None
+
+
+# A teaser in front of a subscription: schema.org's own flag, or the usual words.
+_PAYWALL = re.compile(
+    r"(?i)(unlock (this|the) (story|article)|subscribe (now )?to (continue|keep) reading|to (continue|keep) "
+    r"reading,? (please )?(subscribe|sign in|log in|register)|already a subscriber|this (article|story|content) "
+    r"is (only )?(available )?(to|for) (subscribers|members)|subscribers? only|create a free account to (continue|read))")
+_NOT_FREE = re.compile(r"""["']isAccessibleForFree["']\s*:\s*["']?(false|False)""")
+
+
+def paywalled(result: dict) -> bool:
+    content = (result.get("content") or "")[:400_000]
+    return bool(_NOT_FREE.search(content) or _PAYWALL.search(result.get("text") or ""))
 
 
 def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
@@ -220,7 +265,31 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
             return {"kind": kind, "complete": False, "score": score, "item_links": items, "prices": prices,
                     "text_chars": len(text), "link_text_share": round(share, 2),
                     "reason": f"{round(share * 100)}% of the text is links: menus, not the page"}
-    if kind == "search":
+    article = None
+    # Markup that says "article" is trusted whatever numbers the story quotes;
+    # a path alone only counts on a page without prices (product slugs look alike).
+    how = article_like(url, result) if kind != "search" else None
+    if how == "markup" or (how == "path" and prices == 0):
+        # An article page is complete when its article is there, however long
+        # the menus around it: judge the extracted main text, not the page.
+        from .main_content import main_content, paragraphs
+        found = main_content(content, content_type, result.get("url") or url) or {}
+        article = {"chars": found.get("chars", 0), "paragraphs": paragraphs(found.get("text") or ""),
+                   "method": found.get("method")}
+        if article["chars"] < 1500 and paywalled(result):
+            article["paywall"] = True
+        if article["chars"] < MIN_ARTICLE_CHARS or article["paragraphs"] < 2:
+            return {"kind": "article", "complete": False, "score": score + article["chars"], "item_links": items,
+                    "prices": prices, "text_chars": len(text), "article": article,
+                    **({"paywall": True} if article.get("paywall") else {}),
+                    "reason": (f"paywalled: only {article['chars']} characters of the article are free"
+                               if article.get("paywall") else
+                               f"article page with {article['chars']} characters of article "
+                               f"({article['paragraphs']} paragraphs) in {len(text)} of text")}
+    if article is not None:
+        complete, reason = True, None
+        score += article["chars"]
+    elif kind == "search":
         complete = items >= min_items or prices >= min_prices
         reason = None if complete else f"search page with {items} item links and {prices} prices"
     elif kind == "item":
@@ -229,8 +298,12 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
     else:
         complete = len(text) >= min_text_chars or (len(text) >= 400 and "<script" not in content)
         reason = None if complete else f"page with {len(text)} characters of text"
-    verdict = {"kind": kind, "complete": complete, "score": score, "item_links": items,
-               "prices": prices, "text_chars": len(text), "reason": reason}
+    verdict = {"kind": "article" if article is not None else kind, "complete": complete, "score": score,
+               "item_links": items, "prices": prices, "text_chars": len(text), "reason": reason}
+    if article is not None:
+        verdict["article"] = article
+        if article.get("paywall"):
+            verdict["paywall"] = True
     if not prices:
         gate = _INTERACTION_GATE.search(text[:500_000])
         if gate:
@@ -247,6 +320,30 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
                 verdict.update(complete=False, off_query=True, reason=(
                     "results don't mention the query (" + ", ".join(match["terms"]) + ")"))
     return verdict
+
+
+def quality(verdict: dict | None, receipt: dict | None = None) -> dict:
+    """A short grade for any read: good (the content is there), partial (there,
+    with warnings) or poor (a placeholder, a wall, the wrong results, menus)."""
+    verdict = verdict or {}
+    flags = [name for name in ("placeholder", "off_query", "cookie_notice", "paywall") if verdict.get(name)]
+    if verdict.get("link_text_share"):
+        flags.append("menus")
+    if verdict.get("needs_interaction"):
+        flags.append("needs_interaction")
+    if (receipt or {}).get("archived"):
+        flags.append("archived")
+    if not verdict.get("complete", True) or {"placeholder", "off_query", "cookie_notice", "menus"} & set(flags):
+        grade = "poor"
+    elif flags:
+        grade = "partial"
+    else:
+        grade = "good"
+    out = {"grade": grade, "kind": verdict.get("kind"), "flags": flags}
+    for key in ("reason", "article", "item_links", "prices", "text_chars"):
+        if verdict.get(key) is not None:
+            out[key] = verdict[key]
+    return out
 
 
 _SRCSET_URL = re.compile(r"\s*([^\s,]+)(?:\s+[\d.]+[wx])?\s*(?:,|$)")

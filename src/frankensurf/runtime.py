@@ -3317,6 +3317,8 @@ class Runtime:
             result = await self._ensure_complete(url, result, policy, adapter, policy_overrides,
                                                  workload_assertions, effective)
         self._offer_try_harder(result, effective)
+        if adapter is None:
+            self._grade(url, result, effective)
         if effective.main_content and (result.get("receipt") or {}).get("status") == "observed":
             from .main_content import main_content
             found = main_content(result.get("content") or "", result.get("content_type") or "",
@@ -3413,6 +3415,27 @@ class Runtime:
                     task.cancel()
             await asyncio.gather(main, hedge, return_exceptions=True)
 
+    def _grade(self, url, result, effective):
+        """receipt.quality on every observed document read: good, partial or poor,
+        and why. Agents (and fallbacks to paid tools) can route on it."""
+        receipt = result.get("receipt") or {}
+        if receipt.get("status") != "observed" or not isinstance(url, str):
+            return
+        content_type = str(result.get("content_type") or "")
+        if "html" not in content_type and "markdown" not in content_type:
+            return
+        from .completeness import assess, quality
+        try:
+            verdict = assess(result.get("url") or url, result, expect_terms=effective.expect_terms)
+        except Exception:
+            return
+        record = receipt.get("completeness") or {}
+        # The escalation's own verdict wins where it has one (it saw every step).
+        for key in ("off_query", "placeholder", "needs_interaction"):
+            if record.get(key):
+                verdict[key] = record[key]
+        receipt["quality"] = quality(verdict, receipt)
+
     async def _second_opinion(self, url, first, policy, adapter, policy_overrides,
                               workload_assertions, effective):
         """Ask a rendering provider too, and keep the page with clearly more content.
@@ -3462,7 +3485,7 @@ class Runtime:
                                                     "text_chars", "reason")}
         if verdict.get("query"):
             record["query"] = verdict["query"]
-        for key in ("placeholder", "link_text_share", "needs_interaction"):
+        for key in ("placeholder", "link_text_share", "needs_interaction", "article"):
             if verdict.get(key):
                 record[key] = verdict[key]
         first["receipt"]["completeness"] = record

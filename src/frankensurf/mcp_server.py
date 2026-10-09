@@ -2,7 +2,11 @@ import os
 from mcp.server.fastmcp import FastMCP
 from .runtime import Runtime, WebPolicy, default_state_dir
 
-server = FastMCP("FrankenSurf")
+from . import skill as _skill
+
+# The agent skill doubles as the server's instructions, so every MCP client
+# learns which tool and option fits, and how to read a receipt.
+server = FastMCP("FrankenSurf", instructions=_skill.body())
 
 
 def runtime():

@@ -31,8 +31,28 @@ _CONSENT = re.compile(r"(?i)\b(cookies?|consent|accept all|reject all|privacy se
 _MD_LINK = re.compile(r"!?\[([^\]]*)\]\(([^)]*)\)")
 
 
+_CACHE: dict = {}
+
+
 def main_content(content: str, content_type: str, url: str, text: str | None = None) -> dict | None:
-    """{"text", "method", "chars"} for an HTML or markdown page, or None."""
+    """{"text", "method", "chars"} for an HTML or markdown page, or None.
+    The last few pages are cached: a read assesses and returns the same page."""
+    key = (url, content_type, len(content or ""), hash(content or ""))
+    if key in _CACHE:
+        return _CACHE[key]
+    found = _main_content(content, content_type, url)
+    if len(_CACHE) >= 32:
+        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE[key] = found
+    return found
+
+
+def paragraphs(text: str) -> int:
+    """Prose paragraphs: lines of 80+ characters that are not mostly links."""
+    return sum(1 for line in (text or "").splitlines() if _body_line(line))
+
+
+def _main_content(content, content_type, url):
     kind = (content_type or "").lower()
     if not content:
         return None
