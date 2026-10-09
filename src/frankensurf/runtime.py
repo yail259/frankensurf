@@ -124,6 +124,8 @@ class WebPolicy:
     # Free ladder tools tried at once while escalating (the first complete page
     # wins, the rest are cancelled). Paid tools always run one at a time.
     completeness_parallel: int = 2
+    # Stop escalating once two tools have read the same page as the first one.
+    completeness_stop_on_agreement: bool = True
     # When an automatic public read is still climbing after this many seconds,
     # one read pinned to the first free tool on completeness_ladder starts too;
     # a complete page from either wins and the other is cancelled. 0 turns it off.
@@ -372,6 +374,8 @@ class WebPolicy:
                  "completeness_borderline_items must be a nonnegative integer")
         _require(_is_int(self.completeness_max_extra_reads, 0),
                  "completeness_max_extra_reads must be a nonnegative integer")
+        _require(type(self.completeness_stop_on_agreement) is bool,
+                 "completeness_stop_on_agreement must be a boolean")
         _require(_is_int(self.completeness_parallel, 1) and self.completeness_parallel <= 4,
                  "completeness_parallel must be an integer from 1 to 4")
         _require(_is_number(self.hedge_after_seconds), "hedge_after_seconds must be finite and nonnegative")
@@ -3840,6 +3844,16 @@ class Runtime:
                 **{key: list(value) for key, value in extra.items()}},
                 workload_assertions=workload_assertions)
 
+        agreements = {"count": 0}
+
+        def same_page(step_verdict):
+            """A step that read what the first read did: same item links, similar text."""
+            if not step_verdict:
+                return False
+            first_chars, chars = verdict.get("text_chars") or 0, step_verdict.get("text_chars") or 0
+            return (abs((step_verdict.get("item_links") or 0) - (verdict.get("item_links") or 0)) <= 1
+                    and abs(chars - first_chars) <= 0.2 * max(chars, first_chars, 1))
+
         def judge(identifier, step):
             """Record one step; True when it is a complete page."""
             nonlocal best, best_score, record
@@ -3855,6 +3869,12 @@ class Runtime:
                           "failure": (step_receipt.get("failure") or {}).get("code"),
                           "complete": step_verdict["complete"] if step_verdict else False,
                           "trace_id": step_receipt.get("trace_id")})
+            # Only browsers count: a plain fetcher agreeing says little about what a
+            # stronger browser would see.
+            renders = next((item.get("rendering") for item in self.providers.inspect() if item["id"] == identifier),
+                           False) or identifier == "interact"
+            if renders and step_verdict and not step_verdict["complete"] and same_page(step_verdict):
+                agreements["count"] += 1
             if step_verdict and step_verdict["score"] > best_score:
                 best, best_score = step, step_verdict["score"]
                 record = {**record, "complete": step_verdict["complete"],
@@ -3882,6 +3902,12 @@ class Runtime:
                 for next_done in asyncio.as_completed(tasks):
                     identifier, step = await next_done
                     if judge(identifier, step):
+                        finished = True
+                        break
+                    if agreements["count"] >= 2 and effective.completeness_stop_on_agreement:
+                        # Two more tools read the page the first one did: it is this
+                        # page, not an unfinished one. Stop climbing.
+                        record["agreed"] = True
                         finished = True
                         break
             finally:

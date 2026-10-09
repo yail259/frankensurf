@@ -277,3 +277,28 @@ async def test_off_query_from_plain_http_gets_one_rendered_read(tmp_path, escala
     assert receipt["method"] == "local"
     assert receipt["completeness"]["rendered_after_off_query"] == "http"
     assert "Lamp 3" in result["text"]
+
+
+async def test_escalation_stops_when_two_browsers_read_the_same_page(tmp_path, escalating):
+    log = []
+    escalating(plugin("cheap", SHELL),
+               slow_plugin("browser_a", SHELL, 0, log, rendering=True),
+               slow_plugin("browser_b", SHELL, 0, log, rendering=True),
+               slow_plugin("browser_c", RESULTS, 0, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "completeness_ladder": ["browser_a", "browser_b", "browser_c"]})
+    record = result["receipt"]["completeness"]
+    assert record["agreed"] is True and ("start", "browser_c") not in log
+
+
+def test_results_are_recognised_by_shape_when_their_links_mention_the_query():
+    from frankensurf.completeness import result_group
+    url = "https://pkgs.example.org/packages?q=json"
+    links = "".join(f'<a href="/packages/json-tool-{n}">json-tool-{n}</a>' for n in range(10))
+    menu = "".join(f'<a href="/docs/topic{n}">Topic {n}</a>' for n in range(12))
+    assert result_group(links + menu, url, ["json"]) == 10
+    assert result_group(menu, url, ["json"]) == 0
+    verdict = assess(url, {"content": "<html><body>" + links + menu + "</body></html>",
+                           "text": "json tool " * 200, "content_type": "text/html"})
+    assert verdict["complete"] and verdict["item_links"] >= 10

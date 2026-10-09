@@ -155,6 +155,35 @@ def _item_like(path: str) -> bool:
                for segment in path.split("/") if segment)
 
 
+def result_group(html: str, base: str, terms) -> int:
+    """Links that are results by shape: many distinct same-site links under one
+    path prefix (/packages/<name>, /project/<name>), at least a third of whose
+    link texts mention the query. A menu shares a prefix too, but not the query."""
+    if not terms:
+        return 0
+    host = (urlparse(base).hostname or "").removeprefix("www.")
+    base_path = urlparse(base).path.rstrip("/")
+    groups: dict[str, dict[str, str]] = {}
+    for _before, href, _after, inner in _ANCHOR.findall(html[:4_000_000]):
+        parsed = urlparse(urljoin(base, href.replace("&amp;", "&")))
+        if parsed.scheme not in ("http", "https") or (parsed.hostname or "").removeprefix("www.") != host:
+            continue
+        path = parsed.path.rstrip("/")
+        if not path or path == base_path or _NOT_ITEM.search(path) or "/" not in path.strip("/"):
+            continue
+        prefix, leaf = path.rsplit("/", 1)
+        text = html_lib.unescape(_TAG.sub(" ", inner) + " " + leaf).lower()
+        groups.setdefault(prefix, {})[leaf] = text
+    best = 0
+    for leaves in groups.values():
+        if len(leaves) < 8:
+            continue
+        matching = sum(1 for text in leaves.values() if any(term in text for term in terms))
+        if matching >= max(3, len(leaves) / 3):
+            best = max(best, len(leaves))
+    return best
+
+
 def item_links(html: str, base: str) -> int:
     """Distinct same-site links that look like items (products, listings, detail pages)."""
     host = (urlparse(base).hostname or "").removeprefix("www.")
@@ -258,6 +287,8 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
     if "html" not in content_type and "markdown" not in content_type:
         return {"kind": kind, "complete": True, "score": len(text), "reason": "not a document page"}
     items = item_links(content, result.get("url") or url)
+    if kind == "search" and items < min_items:
+        items = max(items, result_group(content, result.get("url") or url, query_terms(url, expect_terms)))
     found_prices = _PRICE.findall(text)
     # "$0" and "$ 0.00" are a price that has not loaded yet, not a price.
     prices = sum(1 for price in found_prices if not _ZERO_PRICE.search(price))
