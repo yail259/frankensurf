@@ -37,14 +37,15 @@ jobs:
           frankensurf setup || true
       - name: Where is this machine?
         run: curl -s https://ipinfo.io/json | python -c "import json,sys; d=json.load(sys.stdin); print(d.get('org'), d.get('city'), d.get('country'))"
-      - name: 139 held-out sites, free tools
+      - name: Held-out sites, free tools
         run: |
           mkdir -p out /tmp/tb
-          touch out/heldout4-free-server.jsonl
+          SET="${BENCH_SET:-heldout5}"
+          touch out/$SET-free-server.jsonl
           PYTHONPATH=.:src python scripts/toolbench.py --state /tmp/tb \
-            --rows benchmarks/2026-10-06/sitebench-paid-v0.14.jsonl --only-set heldout4 \
-            --arms stitched_free --workers 4 --label heldout4-free-server \
-            --resume out/heldout4-free-server.jsonl > out/toolbench.log 2>&1 || true
+            --rows benchmarks/2026-10-06/sitebench-paid-v0.14.jsonl --only-set $SET \
+            --arms stitched_free --workers 4 --label $SET-free-server \
+            --resume out/$SET-free-server.jsonl > out/toolbench.log 2>&1 || true
           tail -3 out/toolbench.log
       - name: 108 news and company articles, free tools, main content
         run: |

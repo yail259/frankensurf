@@ -11,6 +11,8 @@ content checks:
   heldout2 scripts/toolbench-heldout2.json: a second untouched set, chosen
            after the first held-out run, that validates changes made since
   heldout4 scripts/toolbench-heldout4.json: 139 more, chosen before launch
+  heldout5 scripts/toolbench-heldout5.json: 150 more, chosen after v0.29 for
+           fresh accuracy figures (scripts/make_heldout5.py)
   heldout3 scripts/toolbench-heldout3.json: 152 sites chosen before any was
            read, after the completeness escalation was designed
 
@@ -53,7 +55,8 @@ EVALS = Path.home() / ".local/share/frankensurf/evals/toolbench"
 HELDOUT = {"heldout": Path(__file__).with_name("toolbench-heldout.json"),
            "heldout2": Path(__file__).with_name("toolbench-heldout2.json"),
            "heldout3": Path(__file__).with_name("toolbench-heldout3.json"),
-           "heldout4": Path(__file__).with_name("toolbench-heldout4.json")}
+           "heldout4": Path(__file__).with_name("toolbench-heldout4.json"),
+           "heldout5": Path(__file__).with_name("toolbench-heldout5.json")}
 COMMON = {"origin_cooldown_seconds": 0, "freshness": "now"}
 ARMS = {
     "http": {"provider": "http"},
@@ -258,14 +261,16 @@ def summarize(rows: list[dict]) -> dict:
                     "heldout": block([r for r in mine if r["set"] == "heldout"]),
                     "heldout2": block([r for r in mine if r["set"] == "heldout2"]),
                     "heldout3": block([r for r in mine if r["set"] == "heldout3"]),
-                    "heldout4": block([r for r in mine if r["set"] == "heldout4"])}
+                    "heldout4": block([r for r in mine if r["set"] == "heldout4"]),
+                    "heldout5": block([r for r in mine if r["set"] == "heldout5"])}
     # Oracle: the best any single tool can do if you knew in advance which to use.
     singles = [arm for arm in out if arm not in STITCHED]
     for name, keep in (("main_public", lambda r: r["set"] == "main" and not r["login"]),
                        ("heldout", lambda r: r["set"] == "heldout"),
                        ("heldout2", lambda r: r["set"] == "heldout2"),
                        ("heldout3", lambda r: r["set"] == "heldout3"),
-                       ("heldout4", lambda r: r["set"] == "heldout4")):
+                       ("heldout4", lambda r: r["set"] == "heldout4"),
+                       ("heldout5", lambda r: r["set"] == "heldout5")):
         urls = {r["url"] for r in rows if keep(r)}
         covered = {r["url"] for r in rows if keep(r) and r["arm"] in singles and r["valid"]}
         out.setdefault("_union_of_single_tools", {})[name] = {"cases": len(urls), "valid": len(covered)}
@@ -279,7 +284,7 @@ def main(argv=None):
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--gap", type=float, default=2.0, help="seconds between arms on one URL")
     parser.add_argument("--arms", nargs="*", default=list(ARMS))
-    parser.add_argument("--only-set", nargs="*", choices=["main", "heldout", "heldout2", "heldout3", "heldout4"])
+    parser.add_argument("--only-set", nargs="*", choices=["main", "heldout", "heldout2", "heldout3", "heldout4", "heldout5"])
     parser.add_argument("--label", default="run")
     parser.add_argument("--resume", type=Path, help="rows file to continue; finished (arm, URL) pairs are skipped")
     args = parser.parse_args(argv)
