@@ -185,6 +185,12 @@ class WebPolicy:
     # Also return main_text: the article without menus, footers and banners
     # (main_content.py; trafilatura when installed).
     main_content: bool = False
+    # Safe read-only browser actions on browser reads (interactions.py):
+    # dismiss_consent (reject, never accept), load_more, reveal.
+    interactions: tuple[str, ...] = ()
+    # When a page needs a choice, is only a consent notice, or is a thin
+    # search page, try one local-browser read with those actions first.
+    interact_on_escalation: bool = True
     # Items from any listing page with no saved module: the page's own data is
     # searched for its item list (module discovery, no extra read) and the
     # draft module comes back too, ready to save.
@@ -319,6 +325,10 @@ class WebPolicy:
         _require(type(self.allow_archive) is bool, "allow_archive must be a boolean")
         _require(type(self.block_private_network) is bool, "block_private_network must be a boolean")
         _require(type(self.main_content) is bool, "main_content must be a boolean")
+        from .interactions import ACTIONS as _ACTIONS
+        _require(isinstance(self.interactions, tuple) and set(self.interactions) <= set(_ACTIONS),
+                 "interactions is a tuple of: " + ", ".join(_ACTIONS))
+        _require(type(self.interact_on_escalation) is bool, "interact_on_escalation must be a boolean")
         _require(type(self.auto_items) is bool, "auto_items must be a boolean")
         _require(_is_int(self.search_merge_sources, 1) and self.search_merge_sources <= 10,
                  "search_merge_sources must be an integer from 1 to 10")
@@ -1956,6 +1966,10 @@ class Runtime:
                 await page.locator(policy.wait_selector).first.wait_for(state=policy.wait_state, timeout=policy.timeout_seconds * 1000)
             if policy.settle_ms: await page.wait_for_timeout(policy.settle_ms)
             await _scroll_for_lazy(page, _scroll_screens(policy))
+            performed = None
+            if policy.interactions:
+                from .interactions import run as interact
+                performed = await interact(page, policy.interactions)
             content_readiness = await self._wait_content_readiness(
                 page, policy, deadline, PWTimeout)
             content,raw,content_type = await self._browser_representation(page,response,policy)
@@ -1970,6 +1984,7 @@ class Runtime:
                     "content_type": content_type, "http_status": status,
                     "headers": {}, "screenshot": screenshot,
                     **({"captured_json": captured} if captured is not None else {}),
+                    **({"interactions": performed} if performed is not None else {}),
                     **({"content_readiness": content_readiness}
                        if content_readiness is not None else {})}
         except WebFailure: raise
@@ -3536,7 +3551,12 @@ class Runtime:
         borderline = (verdict["complete"] and verdict.get("kind") == "search"
                       and verdict.get("item_links", 0) < effective.completeness_borderline_items
                       and verdict.get("prices", 0) < 2 * 4)
-        if verdict["complete"] and not borderline:
+        one_action_away = (effective.interact_on_escalation and effective.allow_local_browser
+                           and self.providers.is_available("local")
+                           and (verdict.get("needs_interaction")
+                                or "consent" in str(verdict.get("reason") or "")
+                                or (verdict.get("kind") == "search" and not verdict["complete"])))
+        if verdict["complete"] and not borderline and not one_action_away:
             return first
         receipt = first["receipt"]
         tried = {attempt.get("provider") for attempt in receipt.get("attempts") or ()}
@@ -3556,6 +3576,11 @@ class Runtime:
             except WebFailure:
                 continue
             ladder.append(identifier)
+        if one_action_away:
+            ladder = ["interact"] + [item for item in ladder if item != "local"]
+            if verdict["complete"]:
+                # A complete page whose prices wait for a choice: only the action can add them.
+                ladder = ["interact"]
         best, best_score, steps = first, verdict["score"], []
         if borderline:
             # A narrow pass gets one opinion from the strongest allowed tool:
@@ -3571,12 +3596,16 @@ class Runtime:
 
         async def run_step(identifier, delay):
             await asyncio.sleep(delay)
+            # "interact": the local browser with the safe actions (interactions.py).
+            pinned = "local" if identifier == "interact" else identifier
+            extra = {"interactions": ("dismiss_consent", "reveal", "load_more")} if identifier == "interact" else {}
             if policy is not None:
                 return identifier, await self._read_unpaced(
-                    url, replace(policy, provider_candidates=(identifier,), settle_ms=settle),
+                    url, replace(policy, provider_candidates=(pinned,), settle_ms=settle, **extra),
                     None, adapter, workload_assertions=workload_assertions)
             return identifier, await self._read_unpaced(url, None, None, adapter, policy_overrides={
-                **(policy_overrides or {}), "provider_candidates": [identifier], "settle_ms": settle},
+                **(policy_overrides or {}), "provider_candidates": [pinned], "settle_ms": settle,
+                **{key: list(value) for key, value in extra.items()}},
                 workload_assertions=workload_assertions)
 
         def judge(identifier, step):
@@ -4179,6 +4208,8 @@ class Runtime:
                 requested_freshness_satisfied=False,semantic_freshness="partial_owner_visible_evidence")
         if response.get("content_readiness"):
             receipt["content_readiness"] = response["content_readiness"]
+        if response.get("interactions") is not None:
+            receipt["interactions"] = response["interactions"]
         if response.get("archived"):
             # A stored copy: say so wherever the agent looks.
             receipt["archived"] = response["archived"]

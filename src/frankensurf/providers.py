@@ -1652,6 +1652,15 @@ class ProviderRegistry:
                         or not archived["snapshot_url"].startswith("https://")):
                     raise WebFailure("PROVIDER_DOWN", "Archive provider did not date its copy")
                 filtered["archived"] = dict(archived)
+            performed = result.get("interactions")
+            if performed is not None:
+                # What the safe actions did: short, bounded, plain.
+                if (type(performed) is not list or len(performed) > 20
+                        or any(type(item) is not dict or set(item) - {"action", "label", "ok", "grew"}
+                               or not isinstance(item.get("action"), str)
+                               or len(str(item.get("label") or "")) > 120 for item in performed)):
+                    raise WebFailure("PROVIDER_DOWN", "Invalid interaction record")
+                filtered["interactions"] = [dict(item) for item in performed]
             captured = result.get("captured_json")
             if captured is not None and request.policy.capture_json_responses:
                 # Raw page data is passed through only when the caller opted in,
