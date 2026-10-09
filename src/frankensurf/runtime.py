@@ -191,6 +191,13 @@ class WebPolicy:
     # When a page needs a choice, is only a consent notice, or is a thin
     # search page, try one local-browser read with those actions first.
     interact_on_escalation: bool = True
+    # A public read that ends at a wall (BLOCKED, CAPTCHA) gets one more try:
+    # a stealth browser that enters through the site's home page first, as a
+    # person arrives, instead of landing cold on the deep link.
+    warm_up_on_wall: bool = True
+    # The local browser keeps each site's cookies (a challenge it passed, the
+    # consent it rejected) for this many hours; 0 turns it off.
+    site_session_hours: float = 24.0
     # Items from any listing page with no saved module: the page's own data is
     # searched for its item list (module discovery, no extra read) and the
     # draft module comes back too, ready to save.
@@ -329,6 +336,8 @@ class WebPolicy:
         _require(isinstance(self.interactions, tuple) and set(self.interactions) <= set(_ACTIONS),
                  "interactions is a tuple of: " + ", ".join(_ACTIONS))
         _require(type(self.interact_on_escalation) is bool, "interact_on_escalation must be a boolean")
+        _require(type(self.warm_up_on_wall) is bool, "warm_up_on_wall must be a boolean")
+        _require(_is_number(self.site_session_hours), "site_session_hours must be finite and nonnegative")
         _require(type(self.auto_items) is bool, "auto_items must be a boolean")
         _require(_is_int(self.search_merge_sources, 1) and self.search_merge_sources <= 10,
                  "search_merge_sources must be an integer from 1 to 10")
@@ -1956,7 +1965,24 @@ class Runtime:
                 capture = _JsonCapture(policy.capture_json_max_items, policy.capture_json_max_bytes)
                 capture_listener = capture.listener()
                 page.on("response", capture_listener)
-            response = await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds * 1000)
+            session_site = None
+            if profile is None and provider == "local" and policy.site_session_hours and not policy.identity:
+                session_site = urlparse(url).netloc
+                cookies = self._site_session(session_site, policy.site_session_hours)
+                if cookies:
+                    try:
+                        await context.add_cookies(cookies)
+                    except PWError:
+                        pass
+            if policy.public_entry_url and provider == "local":
+                from .public_entry import valid_entry
+                if valid_entry(policy.public_entry_url, url):
+                    await page.goto(policy.public_entry_url, wait_until="domcontentloaded",
+                                    timeout=policy.timeout_seconds * 1000)
+                    await page.wait_for_timeout(min(policy.settle_ms or 1500, 4000))
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds * 1000,
+                                       **({"referer": policy.public_entry_url}
+                                          if policy.public_entry_url and provider == "local" else {}))
             final_url = page.url
             _validate_url(final_url)
             status = response.status if response else None
@@ -1974,6 +2000,11 @@ class Runtime:
                 page, policy, deadline, PWTimeout)
             content,raw,content_type = await self._browser_representation(page,response,policy)
             if _challenge(content): raise WebFailure("CAPTCHA", "Browser challenge page observed", status, response_url=page.url)
+            if session_site is not None:
+                try:
+                    self._save_site_session(session_site, await context.cookies())
+                except PWError:
+                    pass
             if profile is not None and profile.merge(await context.storage_state()):
                 profile.changed = True
             screenshot = self._save_bytes(await page.screenshot(full_page=False), ".png")
@@ -2006,6 +2037,34 @@ class Runtime:
             if context and (provider not in {"local_cdp", "steel"} or profile is not None):
                 try: await context.close()
                 except PWError: pass
+
+    def _site_session_path(self, site):
+        return self.state_dir / "site-sessions" / (hashlib.sha256(site.encode()).hexdigest() + ".json")
+
+    def _site_session(self, site, hours):
+        """Cookies the local browser kept for this site, if still fresh. Anonymous
+        state only: never a profile's, never an identity's."""
+        try:
+            saved = json.loads(self._site_session_path(site).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        if time.time() - saved.get("at", 0) > hours * 3600:
+            return []
+        now = time.time()
+        return [cookie for cookie in saved.get("cookies") or []
+                if isinstance(cookie, dict) and (cookie.get("expires", -1) in (-1, None) or cookie["expires"] > now)]
+
+    def _save_site_session(self, site, cookies):
+        host = site.split(":")[0].removeprefix("www.")
+        kept = [cookie for cookie in cookies if str(cookie.get("domain", "")).lstrip(".").removeprefix("www.")
+                in (host,) or host.endswith("." + str(cookie.get("domain", "")).lstrip("."))][:200]
+        path = self._site_session_path(site)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".session-", dir=path.parent)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump({"site": site, "at": time.time(), "cookies": kept}, stream)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
 
     def identity_status(self, identity_id: str | None = None) -> dict:
         return self.identities.status(identity_id)
@@ -3358,6 +3417,8 @@ class Runtime:
                 await asyncio.sleep(min(delay, effective.origin_min_interval_seconds))
         result = await self._hedged(url, policy, provider, adapter, policy_overrides,
                                     workload_assertions, effective)
+        result = await self._warm_up_retry(url, result, policy, provider, adapter, policy_overrides,
+                                           workload_assertions, effective)
         if _wants_second_opinion(result, effective, provider):
             result = await self._second_opinion(url, result, policy, adapter, policy_overrides,
                                                 workload_assertions, effective)
@@ -3391,6 +3452,42 @@ class Runtime:
                 entry["code"] = code
             data[key] = entry
             self._pacing_save(data)
+        return result
+
+    async def _warm_up_retry(self, url, result, policy, provider, adapter, policy_overrides,
+                             workload_assertions, effective):
+        """One more try at a walled page, entering through the site's home page."""
+        receipt = result.get("receipt") or {}
+        code = (receipt.get("failure") or {}).get("code")
+        if (code not in ("BLOCKED", "CAPTCHA") or not effective.warm_up_on_wall or not isinstance(url, str)
+                or provider or effective.provider or effective.provider_candidates is not None
+                or effective.identity or effective.profile or not effective.allow_local_browser):
+            return result
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or parsed.path in ("", "/"):
+            return result  # The home page itself was walled; entering through it changes nothing.
+        tools = [tool for tool in ("camoufox", "patchright", "local")
+                 if self.providers.is_available(tool) and tool not in effective.exclude_providers]
+        if not tools:
+            return result
+        entry = f"https://{parsed.netloc}/"
+        settle = max(effective.settle_ms, 2500)
+        if policy is not None:
+            second = await self._read_unpaced(url, replace(policy, provider_candidates=tuple(tools),
+                                                           public_entry_url=entry, settle_ms=settle),
+                                              None, adapter, workload_assertions=workload_assertions)
+        else:
+            second = await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                **(policy_overrides or {}), "provider_candidates": tools, "public_entry_url": entry,
+                "settle_ms": settle}, workload_assertions=workload_assertions)
+        second_receipt = second.get("receipt") or {}
+        record = {"entry": entry, "tools": tools, "status": second_receipt.get("status"),
+                  "trace_id": second_receipt.get("trace_id"),
+                  "failure": (second_receipt.get("failure") or {}).get("code")}
+        if second_receipt.get("status") == "observed":
+            second_receipt["warm_up"] = {**record, "after": code}
+            return second
+        receipt["warm_up"] = record
         return result
 
     def _hedge_tool(self, effective, adapter):
