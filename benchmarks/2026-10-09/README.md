@@ -77,3 +77,13 @@ refuse more often than a home connection.
 
 The rest of the gap is the data-centre address; FRANKENSURF_PROXY routes the
 local tools through a proxy the owner brings (not measured here).
+
+## Watching many sites (watch_sites)
+
+The 108 sites behind `articles-108.json`, watched from a home connection
+(`scripts`-free; see watch.mdx). First poll, 2-day window: 1,004 requests, 14
+minutes, 2,301 new pages on 77 sites; 51 sites had feeds, 43 only sitemaps,
+14 neither. A poll straight after reported 247 (undated sitemap pages, now
+treated as baseline), and the next one 43, all dated within minutes of the
+poll: real new or changed pages. A repeat poll costs about 370 small requests
+for 108 sites (84 answered 304 Not Modified) and under 4 minutes.

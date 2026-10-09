@@ -3859,8 +3859,10 @@ class Runtime:
                     continue
                 seen_set.add(key)
                 seen.append(key)
-                # First poll: undated pages are the baseline, not news.
-                if first and not entry.get("published"):
+                # Undated pages are the baseline, not news: on the first poll from
+                # anywhere, and always from sitemaps (a sitemap lists every page it
+                # has, so an undated page there is old until shown otherwise).
+                if not entry.get("published") and (first or entry["source"] == "sitemap"):
                     continue
                 story = story_key(entry.get("title"))
                 if story and story in stories:
