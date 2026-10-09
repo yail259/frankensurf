@@ -401,6 +401,8 @@ async def test_worker_refuses_changed_binding_after_model_execution(monkeypatch,
     ({"binding_fingerprint":"bad"},"PROVIDER_UNAVAILABLE"),
     ({"status":"failed","failure":"TIMEOUT"},"TIMEOUT"),
     ({"cost_usd":True},"PROVIDER_DOWN"),
+    # An agent that never left its blank tab: the tool is unusable, not the URL.
+    ({"status":"failed","failure":"PROVIDER_DOWN","url":"about:blank"},"PROVIDER_UNAVAILABLE"),
 ])
 async def test_worker_packet_rejection_preserves_valid_spend(monkeypatch, tmp_path, override, expected):
     from frankensurf import browser_use_provider as provider

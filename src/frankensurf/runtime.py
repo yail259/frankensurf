@@ -124,6 +124,8 @@ class WebPolicy:
     # Free ladder tools tried at once while escalating (the first complete page
     # wins, the rest are cancelled). Paid tools always run one at a time.
     completeness_parallel: int = 2
+    # Stop escalating once two tools have read the same page as the first one.
+    completeness_stop_on_agreement: bool = True
     # When an automatic public read is still climbing after this many seconds,
     # one read pinned to the first free tool on completeness_ladder starts too;
     # a complete page from either wins and the other is cancelled. 0 turns it off.
@@ -185,6 +187,19 @@ class WebPolicy:
     # Also return main_text: the article without menus, footers and banners
     # (main_content.py; trafilatura when installed).
     main_content: bool = False
+    # Safe read-only browser actions on browser reads (interactions.py):
+    # dismiss_consent (reject, never accept), load_more, reveal.
+    interactions: tuple[str, ...] = ()
+    # When a page needs a choice or is only a consent notice, try one
+    # local-browser read with those actions first.
+    interact_on_escalation: bool = True
+    # A public read that ends at a wall (BLOCKED, CAPTCHA) gets one more try:
+    # a stealth browser that enters through the site's home page first, as a
+    # person arrives, instead of landing cold on the deep link.
+    warm_up_on_wall: bool = True
+    # The local browser keeps each site's cookies (a challenge it passed, the
+    # consent it rejected) for this many hours; 0 turns it off.
+    site_session_hours: float = 24.0
     # Items from any listing page with no saved module: the page's own data is
     # searched for its item list (module discovery, no extra read) and the
     # draft module comes back too, ready to save.
@@ -319,6 +334,12 @@ class WebPolicy:
         _require(type(self.allow_archive) is bool, "allow_archive must be a boolean")
         _require(type(self.block_private_network) is bool, "block_private_network must be a boolean")
         _require(type(self.main_content) is bool, "main_content must be a boolean")
+        from .interactions import ACTIONS as _ACTIONS
+        _require(isinstance(self.interactions, tuple) and set(self.interactions) <= set(_ACTIONS),
+                 "interactions is a tuple of: " + ", ".join(_ACTIONS))
+        _require(type(self.interact_on_escalation) is bool, "interact_on_escalation must be a boolean")
+        _require(type(self.warm_up_on_wall) is bool, "warm_up_on_wall must be a boolean")
+        _require(_is_number(self.site_session_hours), "site_session_hours must be finite and nonnegative")
         _require(type(self.auto_items) is bool, "auto_items must be a boolean")
         _require(_is_int(self.search_merge_sources, 1) and self.search_merge_sources <= 10,
                  "search_merge_sources must be an integer from 1 to 10")
@@ -353,6 +374,8 @@ class WebPolicy:
                  "completeness_borderline_items must be a nonnegative integer")
         _require(_is_int(self.completeness_max_extra_reads, 0),
                  "completeness_max_extra_reads must be a nonnegative integer")
+        _require(type(self.completeness_stop_on_agreement) is bool,
+                 "completeness_stop_on_agreement must be a boolean")
         _require(_is_int(self.completeness_parallel, 1) and self.completeness_parallel <= 4,
                  "completeness_parallel must be an integer from 1 to 4")
         _require(_is_number(self.hedge_after_seconds), "hedge_after_seconds must be finite and nonnegative")
@@ -895,7 +918,14 @@ _CHALLENGE_TITLES = frozenset({
     "verify you are human", "robot or human?", "pardon our interruption",
     "security check", "access to this page has been denied", "prove your humanity",
     "human verification", "are you a human?", "are you human?", "one more step",
-    "bot verification", "verify you're human", "please wait while we verify your browser"})
+    "bot verification", "verify you're human", "please wait while we verify your browser",
+    # Access denied, as bot walls say it in other languages.
+    "zugriff verweigert", "accès refusé", "acces refuse", "acceso denegado", "accesso negato",
+    "toegang geweigerd", "åtkomst nekad", "adgang nægtet", "tilgang nektet", "pääsy estetty",
+    "dostęp zabroniony", "přístup odepřen", "hozzáférés megtagadva", "доступ ограничен",
+    "доступ запрещён", "доступ запрещен", "アクセスが拒否されました", "访问被拒绝", "拒绝访问",
+    "access blocked", "request blocked", "you have been blocked", "sorry, you have been blocked",
+    "vercel security checkpoint", "ddos protection", "checking your browser"})
 _CHALLENGE_PHRASES = (
     "verify you are human", "checking your browser before accessing",
     "enable javascript and cookies to continue", "please complete the following challenge",
@@ -906,7 +936,10 @@ _CHALLENGE_PHRASES = (
     'thinks you are a "bot"', "thinks you are a bot", "unusual traffic from your computer",
     "please verify you are a human", "confirm you are not a robot", "prove your humanity",
     "but not for bots", "verify you're human", "verify you're not a robot",
-    "complete the security check to access", "help us verify you're a real person")
+    "complete the security check to access", "help us verify you're a real person",
+    "the requested url was rejected", "your support id is", "you don't have permission to access",
+    "aus sicherheitsgründen mussten wir den zugriff", "доступ ограничен: проблема с ip",
+    "vercel security checkpoint", "we have detected unusual activity")
 
 # Short pages that only ask the reader to sign in, in the languages the
 # benchmarks meet. Checked only on pages under _SIGN_IN_TEXT_MAX characters.
@@ -925,8 +958,9 @@ _BOT_PAGE_PATH = re.compile(r"/(captcha|bots?|blocked|block|challenge|access[-_]
 
 def _challenge_text(title: str | None, text: str) -> bool:
     title = (title or "").strip().lower().lstrip("# ").strip()
-    # "Reddit - Prove your humanity": a site name around the challenge title.
-    parts = [title] + [part.strip(" .!") for part in re.split(r"\s+[|\-–—:]\s+", title)]
+    # "Reddit - Prove your humanity", "Zugriff verweigert / Access denied",
+    # "Доступ ограничен: проблема с IP": a site name or a second language around the title.
+    parts = [title] + [part.strip(" .!") for part in re.split(r"\s*[|\-–—:/]\s+|\s+[|\-–—/]\s*", title)]
     if any(part in _CHALLENGE_TITLES for part in parts if part):
         return True
     text = text.lower()
@@ -975,10 +1009,60 @@ def _challenge(html: str) -> bool:
 _SIGN_IN_PATH = re.compile(r"(^|[/._-])(sign-?in|log-?in|auth|ws/ebayisapi\.dll)([/._?-]|$)", re.I)
 
 
+_SHADOW_SCRIPT = r"""() => {
+  // Open shadow roots, recursively: web components keep their content there,
+  // where page.content() does not look.
+  const out = [], seen = new Set();
+  let size = 0;
+  const collect = (root) => {
+    for (const el of root.querySelectorAll('*')) {
+      const shadow = el.shadowRoot;
+      if (shadow && !seen.has(shadow)) {
+        seen.add(shadow);
+        const html = shadow.innerHTML;
+        size += html.length;
+        if (size > 5000000) return;
+        out.push(html);
+        collect(shadow);
+      }
+    }
+  };
+  collect(document);
+  return out.length ? out.join('\n') : null;
+}"""
+
+
+async def _rendered_html(page):
+    """The page's HTML with the content of open shadow roots added at the end of
+    the body, so text, links and items inside web components are read too."""
+    content = await page.content()
+    try:
+        shadow = await page.evaluate(_SHADOW_SCRIPT)
+    except Exception:
+        shadow = None
+    if not shadow:
+        return content
+    block = '<div data-frankensurf-shadow-dom="1">' + shadow + "</div>"
+    index = content.lower().rfind("</body>")
+    return content[:index] + block + content[index:] if index >= 0 else content + block
+
+
+# A browser's own error page ("This site can't be reached") is not the site.
+_BROWSER_ERROR = re.compile(r"\b(ERR_[A-Z0-9_]{4,}|NS_ERROR_[A-Z_]+)\b|this site can.t be reached|"
+                            r"unable to connect|hmm\. we.re having trouble finding that site", re.I)
+# A site down for maintenance answers with a page that is not the page.
+_MAINTENANCE = re.compile(r"(?i)\b(down for maintenance|under maintenance|scheduled maintenance|"
+                          r"we.ll be back (soon|shortly)|we are currently (performing|undergoing) maintenance|"
+                          r"currently working on [a-z0-9.-]+\.[a-z]{2,}|temporarily unavailable|site is temporarily down)\b")
+
+
 def _wall_after_parse(title, text, requested_url, final_url):
     """A provider may hand back a wall as if it were the page. Name it."""
     if _challenge_text(title, text or ""):
         return "CAPTCHA"
+    short = (text or "").strip()
+    if len(short) < 2000 and (_BROWSER_ERROR.search(short) or _MAINTENANCE.search(short)):
+        return "PROVIDER_DOWN"  # Another tool, or a later read, may get the page.
     try:
         requested, final = urlparse(requested_url), urlparse(final_url or requested_url)
     except ValueError:
@@ -1521,6 +1605,50 @@ def _browser_proxy(settings):
     return {key: settings[key] for key in ("server", "username", "password") if key in settings}
 
 
+def _consent_leads(text) -> bool:
+    """The page's text opens with a cookie or consent banner."""
+    from .main_content import _CONSENT
+    return len(_CONSENT.findall((text or "")[:2500])) >= 3
+
+
+# Failures of the tool itself, not of the page.
+_TOOL_OUTAGES = frozenset({"PROVIDER_DOWN", "PROVIDER_UNAVAILABLE", "TIMEOUT"})
+
+WALL_VENDORS = ("cloudflare", "akamai", "datadome", "perimeterx", "imperva", "kasada", "aws_waf",
+                "vercel", "sucuri")
+
+
+def wall_vendor(headers, body: str = "") -> str | None:
+    """Which bot-defence service answered, from the response's own headers,
+    cookies and challenge page. Infrastructure vendors, not sites."""
+    try:
+        items = [(str(key).lower(), str(value).lower()) for key, value in headers.multi_items()]
+    except AttributeError:
+        items = [(str(key).lower(), str(value).lower()) for key, value in dict(headers or {}).items()]
+    names = {key for key, _ in items}
+    values = " ".join(f"{key}={value}" for key, value in items)
+    body = (body or "")[:20000].lower()
+    if "cf-ray" in names or "cf-mitigated" in names or "server=cloudflare" in values or "/cdn-cgi/challenge" in body:
+        return "cloudflare"
+    if "x-datadome" in names or "datadome=" in values or "captcha-delivery.com" in body:
+        return "datadome"
+    if "x-px" in names or "_px" in values and "set-cookie" in names or "perimeterx" in body or "px-captcha" in body:
+        return "perimeterx"
+    if "x-kpsdk-ct" in names or "x-kpsdk-r" in names or "kpsdk" in body:
+        return "kasada"
+    if "incap_ses" in values or "visid_incap" in values or "x-iinfo" in names or "incapsula" in body:
+        return "imperva"
+    if "akamaighost" in values or "akamai-grn" in names or "_abck=" in values or "bm_sz=" in values:
+        return "akamai"
+    if "x-amzn-waf-action" in names or "aws-waf-token" in values or "awswaf" in body:
+        return "aws_waf"
+    if "x-vercel-mitigated" in names or "vercel security checkpoint" in body:
+        return "vercel"
+    if "x-sucuri-id" in names or "sucuri website firewall" in body:
+        return "sucuri"
+    return None
+
+
 def _user_agent() -> str:
     """Plain HTTP reads say who they are, with a contact URL, as polite-bot
     policies ask (Wikimedia refuses agents without one)."""
@@ -1822,7 +1950,11 @@ class Runtime:
                 final_url = str(response.url)
                 _validate_url(final_url)
                 failure = _status_failure(response.status_code)
-                if failure: raise WebFailure(failure, "HTTP response requires stop", response.status_code, response_url=final_url)
+                if failure:
+                    refused = WebFailure(failure, "HTTP response requires stop", response.status_code,
+                                         response_url=final_url)
+                    refused.wall_vendor = wall_vendor(response.headers)
+                    raise refused
                 raw = bytearray()
                 async for chunk in response.aiter_bytes():
                     raw.extend(chunk)
@@ -1832,7 +1964,10 @@ class Runtime:
                     _merge_response_cookies(profile, response)
                 content = data.decode(response.encoding or "utf-8", errors="replace")
                 if "html" in response.headers.get("content-type", "") and _challenge(content):
-                    raise WebFailure("CAPTCHA", "Challenge page observed", response.status_code, response_url=final_url)
+                    challenge = WebFailure("CAPTCHA", "Challenge page observed", response.status_code,
+                                           response_url=final_url)
+                    challenge.wall_vendor = wall_vendor(response.headers, content)
+                    raise challenge
                 return {"url": str(response.url), "content": content, "raw": data,
                         "content_type": response.headers.get("content-type", ""), "http_status": response.status_code,
                         "headers": {k: v for k, v in response.headers.items() if k in _SAFE_HEADERS}}
@@ -1891,7 +2026,7 @@ class Runtime:
             if raw is None: raw = await response.body()
             content = raw.decode("utf-8-sig",errors="replace")
         else:
-            content = await page.content()
+            content = await _rendered_html(page)
             raw = content.encode()
             content_type = "text/html; rendered=1"
         if len(raw) > policy.max_bytes:
@@ -1946,7 +2081,24 @@ class Runtime:
                 capture = _JsonCapture(policy.capture_json_max_items, policy.capture_json_max_bytes)
                 capture_listener = capture.listener()
                 page.on("response", capture_listener)
-            response = await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds * 1000)
+            session_site = None
+            if profile is None and provider == "local" and policy.site_session_hours and not policy.identity:
+                session_site = urlparse(url).netloc
+                cookies = self._site_session(session_site, policy.site_session_hours)
+                if cookies:
+                    try:
+                        await context.add_cookies(cookies)
+                    except PWError:
+                        pass
+            if policy.public_entry_url and provider == "local":
+                from .public_entry import valid_entry
+                if valid_entry(policy.public_entry_url, url):
+                    await page.goto(policy.public_entry_url, wait_until="domcontentloaded",
+                                    timeout=policy.timeout_seconds * 1000)
+                    await page.wait_for_timeout(min(policy.settle_ms or 1500, 4000))
+            response = await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds * 1000,
+                                       **({"referer": policy.public_entry_url}
+                                          if policy.public_entry_url and provider == "local" else {}))
             final_url = page.url
             _validate_url(final_url)
             status = response.status if response else None
@@ -1956,10 +2108,19 @@ class Runtime:
                 await page.locator(policy.wait_selector).first.wait_for(state=policy.wait_state, timeout=policy.timeout_seconds * 1000)
             if policy.settle_ms: await page.wait_for_timeout(policy.settle_ms)
             await _scroll_for_lazy(page, _scroll_screens(policy))
+            performed = None
+            if policy.interactions:
+                from .interactions import run as interact
+                performed = await interact(page, policy.interactions)
             content_readiness = await self._wait_content_readiness(
                 page, policy, deadline, PWTimeout)
             content,raw,content_type = await self._browser_representation(page,response,policy)
             if _challenge(content): raise WebFailure("CAPTCHA", "Browser challenge page observed", status, response_url=page.url)
+            if session_site is not None:
+                try:
+                    self._save_site_session(session_site, await context.cookies())
+                except PWError:
+                    pass
             if profile is not None and profile.merge(await context.storage_state()):
                 profile.changed = True
             screenshot = self._save_bytes(await page.screenshot(full_page=False), ".png")
@@ -1970,6 +2131,7 @@ class Runtime:
                     "content_type": content_type, "http_status": status,
                     "headers": {}, "screenshot": screenshot,
                     **({"captured_json": captured} if captured is not None else {}),
+                    **({"interactions": performed} if performed is not None else {}),
                     **({"content_readiness": content_readiness}
                        if content_readiness is not None else {})}
         except WebFailure: raise
@@ -1991,6 +2153,34 @@ class Runtime:
             if context and (provider not in {"local_cdp", "steel"} or profile is not None):
                 try: await context.close()
                 except PWError: pass
+
+    def _site_session_path(self, site):
+        return self.state_dir / "site-sessions" / (hashlib.sha256(site.encode()).hexdigest() + ".json")
+
+    def _site_session(self, site, hours):
+        """Cookies the local browser kept for this site, if still fresh. Anonymous
+        state only: never a profile's, never an identity's."""
+        try:
+            saved = json.loads(self._site_session_path(site).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        if time.time() - saved.get("at", 0) > hours * 3600:
+            return []
+        now = time.time()
+        return [cookie for cookie in saved.get("cookies") or []
+                if isinstance(cookie, dict) and (cookie.get("expires", -1) in (-1, None) or cookie["expires"] > now)]
+
+    def _save_site_session(self, site, cookies):
+        host = site.split(":")[0].removeprefix("www.")
+        kept = [cookie for cookie in cookies if str(cookie.get("domain", "")).lstrip(".").removeprefix("www.")
+                in (host,) or host.endswith("." + str(cookie.get("domain", "")).lstrip("."))][:200]
+        path = self._site_session_path(site)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".session-", dir=path.parent)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump({"site": site, "at": time.time(), "cookies": kept}, stream)
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
 
     def identity_status(self, identity_id: str | None = None) -> dict:
         return self.identities.status(identity_id)
@@ -3044,6 +3234,23 @@ class Runtime:
         if output.get("next_url"):
             result["next_url"] = output["next_url"]
         receipt["module"] = receipt_record(selected, source, output, validation)
+        from .module_discovery import discover, verify_items
+        check = verify_items(output["items"], result, url) if selected.items else None
+        if check is not None:
+            receipt["module"]["items_quality"] = check
+            if check["grade"] == "poor":
+                # The site changed under the module: draft a replacement from this
+                # same page (no extra read). The owner accepts it with site_modules put.
+                found = discover(result, url, module_id=selected.id, limit=1)
+                if found["drafts"] and found["drafts"][0]["items_quality"]["grade"] != "poor":
+                    repair = dict(found["drafts"][0]["module"])
+                    repair["version"] = f"{selected.version}.repair"
+                    for key in ("templates", "pagination", "invalid", "assertions"):
+                        if getattr(selected, key):
+                            repair[key] = selected.record()[key]
+                    receipt["module"]["repair_draft"] = {
+                        "module": repair, "items_quality": found["drafts"][0]["items_quality"],
+                        "how": "site_modules put this module to accept it; nothing was saved"}
         self._annotate_trace(receipt, "module")
 
     def _auto_items(self, url, result, policy, policy_overrides):
@@ -3068,6 +3275,7 @@ class Runtime:
         result["items"] = output["items"]
         result["auto_module"] = record
         receipt["auto_items"] = {"found": True, "count": output["count"],
+                                 "quality": found["drafts"][0].get("items_quality"),
                                  "source": record["sources"]["listing"]["kind"],
                                  "save": "site_modules put with result.auto_module to reuse it"}
 
@@ -3174,6 +3382,9 @@ class Runtime:
             page = await context.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds * 1000)
             await page.wait_for_timeout(1500)
+            # A consent banner over the search box takes the click: reject it first.
+            from .interactions import dismiss_consent
+            await dismiss_consent(page, [])
             box = None
             for selector in ('input[type="search"]', '[role="searchbox"]', '[role="search"] input[type="text"]',
                              'input[name="q"]', 'input[aria-label*="search" i]',
@@ -3340,6 +3551,13 @@ class Runtime:
                 await asyncio.sleep(min(delay, effective.origin_min_interval_seconds))
         result = await self._hedged(url, policy, provider, adapter, policy_overrides,
                                     workload_assertions, effective)
+        result = await self._warm_up_retry(url, result, policy, provider, adapter, policy_overrides,
+                                           workload_assertions, effective)
+        if not effective.identity and not effective.profile:
+            try:
+                self._learn_wall(result.get("receipt") or {})
+            except OSError:
+                pass
         if _wants_second_opinion(result, effective, provider):
             result = await self._second_opinion(url, result, policy, adapter, policy_overrides,
                                                 workload_assertions, effective)
@@ -3375,6 +3593,82 @@ class Runtime:
             self._pacing_save(data)
         return result
 
+    async def _warm_up_retry(self, url, result, policy, provider, adapter, policy_overrides,
+                             workload_assertions, effective):
+        """One more try at a walled page, entering through the site's home page."""
+        receipt = result.get("receipt") or {}
+        code = (receipt.get("failure") or {}).get("code")
+        if (code not in ("BLOCKED", "CAPTCHA") or not effective.warm_up_on_wall or not isinstance(url, str)
+                or provider or effective.provider or effective.provider_candidates is not None
+                or effective.identity or effective.profile or not effective.allow_local_browser):
+            return result
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or parsed.path in ("", "/"):
+            return result  # The home page itself was walled; entering through it changes nothing.
+        tools = [tool for tool in ("camoufox", "patchright", "local")
+                 if self.providers.is_available(tool) and tool not in effective.exclude_providers]
+        if not tools:
+            return result
+        entry = f"https://{parsed.netloc}/"
+        settle = max(effective.settle_ms, 2500)
+        if policy is not None:
+            second = await self._read_unpaced(url, replace(policy, provider_candidates=tuple(tools),
+                                                           public_entry_url=entry, settle_ms=settle),
+                                              None, adapter, workload_assertions=workload_assertions)
+        else:
+            second = await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                **(policy_overrides or {}), "provider_candidates": tools, "public_entry_url": entry,
+                "settle_ms": settle}, workload_assertions=workload_assertions)
+        second_receipt = second.get("receipt") or {}
+        record = {"entry": entry, "tools": tools, "status": second_receipt.get("status"),
+                  "trace_id": second_receipt.get("trace_id"),
+                  "failure": (second_receipt.get("failure") or {}).get("code")}
+        if second_receipt.get("status") == "observed":
+            second_receipt["warm_up"] = {**record, "after": code}
+            return second
+        receipt["warm_up"] = record
+        return result
+
+    async def _rendered_opinion(self, url, first, policy, adapter, policy_overrides,
+                                workload_assertions, effective, terms):
+        """When a page that didn't run its script looks like the wrong results,
+        read it once in a browser: many sites apply the query client-side. The
+        rendered page wins only if it is complete and on the query."""
+        from .completeness import assess
+        method = (first.get("receipt") or {}).get("method")
+        manifest = next((item for item in self.providers.inspect() if item["id"] == method), None)
+        if manifest is None or manifest.get("rendering") or not effective.allow_local_browser:
+            return None
+        tools = [tool for tool in ("local", "camoufox", "scrapling")
+                 if self.providers.is_available(tool) and tool not in effective.exclude_providers]
+        settle = max(effective.settle_ms, effective.completeness_settle_ms)
+        second, tool = None, None
+        # A browser that reads the page decides; one that meets a wall hands over to a stealthier one.
+        for tool in tools[:2]:
+            if policy is not None:
+                second = await self._read_unpaced(url, replace(policy, provider_candidates=(tool,), settle_ms=settle),
+                                                  None, adapter, workload_assertions=workload_assertions)
+            else:
+                second = await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                    **(policy_overrides or {}), "provider_candidates": [tool], "settle_ms": settle},
+                    workload_assertions=workload_assertions)
+            if (second.get("receipt") or {}).get("status") == "observed":
+                break
+        if second is None:
+            return None
+        receipt = second.get("receipt") or {}
+        if receipt.get("status") != "observed":
+            return None
+        verdict = assess(url, second, expect_terms=terms)
+        if not verdict["complete"] or verdict.get("off_query"):
+            return None
+        receipt["completeness"] = {**{key: verdict.get(key) for key in ("kind", "complete", "item_links", "prices",
+                                                                       "text_chars")},
+                                   "rendered_after_off_query": method, "kept": tool,
+                                   "escalations": [{"provider": tool, "status": "observed", "complete": True,
+                                                    "trace_id": receipt.get("trace_id")}]}
+        return second
+
     def _hedge_tool(self, effective, adapter):
         """The first free, available, allowed tool on the completeness ladder."""
         paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
@@ -3397,8 +3691,8 @@ class Runtime:
         A blocked site can take a dozen tools in turn before one gets through.
         Once the read has run hedge_after_seconds, one read pinned to the first
         free ladder tool starts beside it. Whichever returns a complete page
-        first wins; a hedge page that is incomplete or failed never replaces
-        the main read. Free tools only, so a hedge never costs money.
+        first wins; an incomplete hedge page replaces the main read only when
+        the main read fails. Free tools only, so a hedge never costs money.
         """
         main = asyncio.ensure_future(self._read_unpaced(
             url, policy, provider, adapter, policy_overrides=policy_overrides,
@@ -3438,7 +3732,23 @@ class Runtime:
                     return second
             first = await main
             record.setdefault("won", False)
-            (first.get("receipt") or {})["hedge"] = record
+            failed = first.get("receipt") or {}
+            if failed.get("status") != "observed":
+                # The main read failed: the hedge's page, complete or not, beats none.
+                try:
+                    second = await hedge
+                except Exception:
+                    second = {}
+                receipt = second.get("receipt") or {}
+                record.update(status=receipt.get("status"), trace_id=receipt.get("trace_id"))
+                if receipt.get("status") == "observed":
+                    record.update(won=True, after_failure=(failed.get("failure") or {}).get("code"),
+                                  walled=sorted({item["provider"] for item in failed.get("attempts") or ()
+                                                 if isinstance(item, dict) and item.get("provider")
+                                                 and item.get("failure") in effective.escalation_failures}))
+                    receipt["hedge"] = record
+                    return second
+            failed["hedge"] = record
             return first
         finally:
             for task in (main, hedge):
@@ -3520,6 +3830,11 @@ class Runtime:
             if verdict.get(key):
                 record[key] = verdict[key]
         first["receipt"]["completeness"] = record
+        if verdict.get("off_query") and effective.completeness_escalation:
+            rendered = await self._rendered_opinion(url, first, policy, adapter, policy_overrides,
+                                                    workload_assertions, effective, terms)
+            if rendered is not None:
+                return rendered
         if verdict.get("off_query"):
             # Another tool would read the same wrong page: hand it back, named.
             record["off_query"] = True
@@ -3536,11 +3851,19 @@ class Runtime:
         borderline = (verdict["complete"] and verdict.get("kind") == "search"
                       and verdict.get("item_links", 0) < effective.completeness_borderline_items
                       and verdict.get("prices", 0) < 2 * 4)
-        if verdict["complete"] and not borderline:
+        one_action_away = (effective.interact_on_escalation and effective.allow_local_browser
+                           and self.providers.is_available("local")
+                           # Only pages that name the action they need: a thin search page is
+                           # better served by a stronger tool than by pressing buttons.
+                           and (verdict.get("needs_interaction")
+                                or "consent" in str(verdict.get("reason") or "")
+                                or (not verdict["complete"] and _consent_leads(first.get("text")))))
+        if verdict["complete"] and not borderline and not one_action_away:
             return first
         receipt = first["receipt"]
         tried = {attempt.get("provider") for attempt in receipt.get("attempts") or ()}
         tried.add((receipt.get("second_opinion") or {}).get("other"))
+        tried.update((receipt.get("hedge") or {}).get("walled") or ())
         ladder = []
         from .profiles import ACTIVE
         carriers = ACTIVE.get().carriers() if effective.profile and ACTIVE.get() else None
@@ -3556,6 +3879,11 @@ class Runtime:
             except WebFailure:
                 continue
             ladder.append(identifier)
+        if one_action_away:
+            ladder = ["interact"] + [item for item in ladder if item != "local"]
+            if verdict["complete"]:
+                # A complete page whose prices wait for a choice: only the action can add them.
+                ladder = ["interact"]
         best, best_score, steps = first, verdict["score"], []
         if borderline:
             # A narrow pass gets one opinion from the strongest allowed tool:
@@ -3571,13 +3899,27 @@ class Runtime:
 
         async def run_step(identifier, delay):
             await asyncio.sleep(delay)
+            # "interact": the local browser with the safe actions (interactions.py).
+            pinned = "local" if identifier == "interact" else identifier
+            extra = {"interactions": ("dismiss_consent", "reveal", "load_more")} if identifier == "interact" else {}
             if policy is not None:
                 return identifier, await self._read_unpaced(
-                    url, replace(policy, provider_candidates=(identifier,), settle_ms=settle),
+                    url, replace(policy, provider_candidates=(pinned,), settle_ms=settle, **extra),
                     None, adapter, workload_assertions=workload_assertions)
             return identifier, await self._read_unpaced(url, None, None, adapter, policy_overrides={
-                **(policy_overrides or {}), "provider_candidates": [identifier], "settle_ms": settle},
+                **(policy_overrides or {}), "provider_candidates": [pinned], "settle_ms": settle,
+                **{key: list(value) for key, value in extra.items()}},
                 workload_assertions=workload_assertions)
+
+        agreements = {"count": 0}
+
+        def same_page(step_verdict):
+            """A step that read what the first read did: same item links, similar text."""
+            if not step_verdict:
+                return False
+            first_chars, chars = verdict.get("text_chars") or 0, step_verdict.get("text_chars") or 0
+            return (abs((step_verdict.get("item_links") or 0) - (verdict.get("item_links") or 0)) <= 1
+                    and abs(chars - first_chars) <= 0.2 * max(chars, first_chars, 1))
 
         def judge(identifier, step):
             """Record one step; True when it is a complete page."""
@@ -3594,6 +3936,12 @@ class Runtime:
                           "failure": (step_receipt.get("failure") or {}).get("code"),
                           "complete": step_verdict["complete"] if step_verdict else False,
                           "trace_id": step_receipt.get("trace_id")})
+            # Only browsers count: a plain fetcher agreeing says little about what a
+            # stronger browser would see.
+            renders = next((item.get("rendering") for item in self.providers.inspect() if item["id"] == identifier),
+                           False) or identifier == "interact"
+            if renders and step_verdict and not step_verdict["complete"] and same_page(step_verdict):
+                agreements["count"] += 1
             if step_verdict and step_verdict["score"] > best_score:
                 best, best_score = step, step_verdict["score"]
                 record = {**record, "complete": step_verdict["complete"],
@@ -3621,6 +3969,12 @@ class Runtime:
                 for next_done in asyncio.as_completed(tasks):
                     identifier, step = await next_done
                     if judge(identifier, step):
+                        finished = True
+                        break
+                    if agreements["count"] >= 2 and effective.completeness_stop_on_agreement:
+                        # Two more tools read the page the first one did: it is this
+                        # page, not an unfinished one. Stop climbing.
+                        record["agreed"] = True
                         finished = True
                         break
             finally:
@@ -4179,6 +4533,8 @@ class Runtime:
                 requested_freshness_satisfied=False,semantic_freshness="partial_owner_visible_evidence")
         if response.get("content_readiness"):
             receipt["content_readiness"] = response["content_readiness"]
+        if response.get("interactions") is not None:
+            receipt["interactions"] = response["interactions"]
         if response.get("archived"):
             # A stored copy: say so wherever the agent looks.
             receipt["archived"] = response["archived"]
@@ -4284,13 +4640,20 @@ class Runtime:
         """Decide what follows a failed attempt: "retry", "next" or "stop".
 
         Paid providers and cost-capped reads are never retried, since a retry is
-        a second charge. After enough walls, allowed paid providers move ahead
-        of the remaining free ones.
+        a second charge. After enough failed tries, free tools that fetch from
+        their own network move ahead; after enough walls, allowed paid providers
+        move ahead of those.
         """
+        if exc.code in policy.provider_retry_failures:
+            plan_state.setdefault("failed_alike", set()).add(candidate)
         if (exc.code in policy.provider_retry_failures
                 and exc.code not in policy.terminal_failures
                 and not (candidate_record or {}).get("paid")
                 and policy.max_cost_usd is None
+                # Retries are for a flaky tool. Once two different tools on an
+                # automatic route failed the same way here, the site is the
+                # likelier cause: each remaining tool still gets one try, not two.
+                and not (plan_state.get("automatic") and len(plan_state["failed_alike"]) >= 2)
                 and retry_index + 1 < policy.provider_max_attempts_per_candidate):
             return "retry"
         # Anonymous reads meet fake walls: sites answer bots with a sign-in
@@ -4301,10 +4664,14 @@ class Runtime:
         anonymous = not resolved and not policy.profile
         terminal = exc.code in policy.terminal_failures
         suspect = False
+        if exc.code == "RATE_LIMITED":
+            # A bot checkpoint often answers 429 (Vercel, some CDNs); a 404 after it
+            # is as suspect as one after a wall.
+            plan_state["refused"] = True
         if exc.code == "NOT_FOUND" and anonymous:
             plan_state["not_found"] = plan_state.get("not_found", 0) + 1
-            if plan_state["walls"] or (plan_state["not_found"] == 1
-                                       and candidate in ("http", "scrapling_http")):
+            if plan_state["walls"] or (plan_state.get("refused") and plan_state["not_found"] == 1) or (
+                    plan_state["not_found"] == 1 and candidate in ("http", "scrapling_http")):
                 terminal, suspect = False, True
         if exc.code in ("AUTH_REQUIRED", "AUTH_EXPIRED") and anonymous:
             plan_state["auth_walls"] = plan_state.get("auth_walls", 0) + 1
@@ -4320,18 +4687,84 @@ class Runtime:
             plan_state["reordered"] = True
         if exc.code in policy.escalation_failures:
             plan_state["walls"] += 1
-        if (policy.escalate_after_walls and not resolved
-                and not plan_state["escalated"]
-                and plan_state["walls"] >= policy.escalate_after_walls):
-            remaining = order[plan_state["position"] + 1:]
-            paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
-            ahead = [item for item in remaining if item in paid]
-            if ahead:
+        plan_state["misses"] = plan_state.get("misses", 0) + 1
+        if policy.escalate_after_walls and not resolved:
+            manifests = {item["id"]: item for item in self.providers.inspect()}
+            hopeless = plan_state.get("hopeless") or set()
+
+            def move_ahead(ahead):
+                remaining = order[plan_state["position"] + 1:]
                 order[plan_state["position"] + 1:] = ahead + [
-                    item for item in remaining if item not in paid]
-                plan_state["escalated"] = True
+                    item for item in remaining if item not in ahead]
                 receipt.setdefault("routing", {})["escalated_to"] = ahead[0]
+            if (not plan_state.get("elsewhere")
+                    and plan_state["misses"] >= policy.escalate_after_walls):
+                # This many tries on this machine got no page (a wall that blocks
+                # by address stops them all alike, and some pages none of them
+                # render): a free tool that fetches from elsewhere is the next chance.
+                elsewhere = [item for item in order[plan_state["position"] + 1:]
+                             if item not in hopeless and manifests.get(item, {}).get("remote")
+                             and not manifests[item].get("paid") and not manifests[item].get("archive")]
+                if elsewhere:
+                    move_ahead(elsewhere)
+                    plan_state["elsewhere"] = True
+            if (not plan_state["escalated"]
+                    and plan_state["walls"] >= policy.escalate_after_walls):
+                paid = [item for item in order[plan_state["position"] + 1:]
+                        if manifests.get(item, {}).get("paid") and item not in hopeless]
+                if paid:
+                    move_ahead(paid)
+                    plan_state["escalated"] = True
         return "stop" if (resolved or terminal or candidate == order[-1]) else "next"
+
+    def _wall_stats_path(self):
+        return self.state_dir / "wall-stats.json"
+
+    def _wall_stats(self):
+        try:
+            return json.loads(self._wall_stats_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def _route_by_vendor(self, vendor, order, plan_state, receipt, minimum=3, hopeless=8):
+        """Move the tools that got past this wall vendor most often to the front of
+        what is left, and the ones that never have in `hopeless` tries to the back.
+        Learned from this machine's own reads, never from site names."""
+        stats = self._wall_stats().get(vendor) or {}
+        remaining = order[plan_state["position"] + 1:]
+        rated = sorted(((tool, (stats[tool][0] + 1) / (stats[tool][1] + 2)) for tool in remaining
+                        if tool in stats and stats[tool][1] >= minimum), key=lambda pair: -pair[1])
+        ahead = [tool for tool, rate in rated if rate >= 0.5]
+        last = [tool for tool in remaining if tool in stats and stats[tool][0] == 0
+                and stats[tool][1] >= hopeless]
+        plan_state["hopeless"] = set(last)
+        if ahead or last:
+            order[plan_state["position"] + 1:] = ahead + [
+                tool for tool in remaining if tool not in ahead and tool not in last] + last
+            learned = {"vendor": vendor}
+            if ahead:
+                learned["first"] = ahead[0]
+            if last:
+                learned["last"] = last
+            receipt.setdefault("routing", {})["learned_for"] = learned
+
+    def _learn_wall(self, receipt):
+        """After a read that met a named wall: which tools tried, which got through."""
+        vendor = receipt.get("wall_vendor")
+        if vendor not in WALL_VENDORS:
+            return
+        attempts = [item for item in receipt.get("attempts") or [] if isinstance(item, dict)]
+        winner = receipt.get("method") if receipt.get("status") == "observed" else None
+        stats = self._wall_stats()
+        tools = stats.setdefault(vendor, {})
+        for tool in dict.fromkeys(item.get("provider") for item in attempts[1:] if item.get("provider")):
+            wins, tries = tools.get(tool, [0, 0])
+            tools[tool] = [wins + (1 if tool == winner else 0), tries + 1]
+        path = self._wall_stats_path()
+        fd, temporary = tempfile.mkstemp(prefix=".walls-", dir=self.state_dir)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(stats, stream)
+        os.replace(temporary, path)
 
     def _store_cache(self, result, receipt, url, adapter, policy, resolved, key,
                      _route_scope, route_seed_scope, identity_capture, identity_authority):
@@ -4614,7 +5047,8 @@ class Runtime:
                     return cached
                 candidates = self._read_candidates(url, policy, adapter, resolved, identity_provider)
                 order = list(candidates)
-                plan_state = {"position": 0, "walls": 0, "escalated": False}
+                plan_state = {"position": 0, "walls": 0, "escalated": False,
+                              "automatic": public_route is not None}
 
                 def _ordered_plan():
                     # Reads `order` lazily so escalation can reorder what is left.
@@ -4775,9 +5209,16 @@ class Runtime:
                             candidate, candidate_version, candidate_binding_id,
                             attempt_started, attempt_cost, cost_reported, receipt,
                             attempts, attempt_costs, _recipe, resolved)
+                        vendor = getattr(exc, "wall_vendor", None)
+                        if vendor and not plan_state.get("vendor") and not resolved:
+                            plan_state["vendor"] = vendor
+                            receipt["wall_vendor"] = vendor
+                            self._route_by_vendor(vendor, order, plan_state, receipt)
                         step = self._after_failed_attempt(
                             exc, policy, candidate, candidate_record, retry_index,
                             plan_state, order, resolved, receipt)
+                        if exc.code not in _TOOL_OUTAGES:
+                            plan_state["telling"] = exc
                         if step == "retry":
                             if policy.provider_retry_delay_seconds:
                                 await asyncio.sleep(
@@ -4785,6 +5226,10 @@ class Runtime:
                             continue
                         exhausted_candidates.add(candidate)
                         if step == "stop":
+                            if exc.code in _TOOL_OUTAGES and plan_state.get("telling") is not None:
+                                # The last tool being down says nothing about the page;
+                                # what the last working tool met (a wall, a 404) does.
+                                raise plan_state["telling"]
                             raise
                 receipt["latency_ms"] = round((time.monotonic()-started)*1000)
                 self._store_cache(result, receipt, url, adapter, policy, resolved, key,

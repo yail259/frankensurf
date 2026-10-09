@@ -364,12 +364,24 @@ def _html_source(candidate):
                           or re.search(r"(?i)title|name", " ".join(node.get("class") or ())))
                           and len(node.get_text(" ", strip=True)) >= 3)
     sample = elements[:30]
-    if title:
-        fields["name"] = {"selector": title}
-    elif sum(len(row.select_one("a[href]").get_text(" ", strip=True)) >= 3 for row in sample) >= 0.6 * len(sample):
-        fields["name"] = {"selector": "a[href]"}
-    elif sum(bool((row.find("img") or {}).get("alt")) for row in sample) >= 0.6 * len(sample):
-        fields["name"] = {"selector": "img", "attribute": ["alt"]}
+
+    def distinct(texts):
+        texts = [" ".join(text.split()).lower() for text in texts if text and len(text.strip()) >= 3]
+        return len(texts) >= 0.6 * len(sample) and len(set(texts)) >= 0.7 * len(texts)
+
+    def texts_of(selector, attribute=None):
+        found = []
+        for row in sample:
+            node = row.select_one(selector)
+            found.append((node.get(attribute) if attribute else node.get_text(" ", strip=True)) if node else "")
+        return found
+    # The name is the text that differs from row to row: a heading or title
+    # element, else the link text, else the image's alt text. A label every row
+    # repeats ("Save to favourites") is a button, not a name.
+    for selector, attribute in ((title, None), ("a[href]", None), ("img", "alt")):
+        if selector and distinct([str(text) for text in texts_of(selector, attribute)]):
+            fields["name"] = {"selector": selector, **({"attribute": [attribute]} if attribute else {})}
+            break
     if candidate["priced"]:
         price = _sub_selector(elements, lambda node: re.search(r"(?i)price", " ".join(node.get("class") or ()))
                               and _PRICE_TEXT.search(node.get_text(" ", strip=True)))
@@ -541,6 +553,62 @@ def search_template(url):
     return None
 
 
+_GRADES = {"good": 2, "partial": 1, "poor": 0}
+
+
+def verify_items(items, result, url) -> dict:
+    """How far to trust a list of items, checked against the page it came from:
+    links stay on the site and look like item pages (not this page, not help
+    pages), names appear in the page's text, prices are positive numbers, and
+    the rows are distinct. Returns shares, a score and a grade."""
+    from .completeness import _NOT_ITEM
+    rows = [item for item in items or [] if isinstance(item, dict)]
+    n = len(rows)
+    if not n:
+        return {"grade": "poor", "count": 0, "score": 0.0, "reason": "no items"}
+    # The site is where the page was asked for and where it landed (a redirect
+    # to the shop's own domain counts as the same site).
+    hosts = {(urlparse(address).hostname or "").lower().removeprefix("www.")
+             for address in (url, result.get("url") or url)} - {""}
+    page = (result.get("url") or url).split("#")[0].rstrip("/")
+    own_last = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+    urls = [str(row.get("url") or "") for row in rows]
+    def linked(link):
+        parsed = urlparse(link)
+        other = (parsed.hostname or "").lower().removeprefix("www.")
+        same = any(other == host or other.endswith("." + host) or host.endswith("." + other) for host in hosts)
+        # /jobs/python-jobs-in-london under /jobs/python-jobs is this listing narrowed
+        # (a filter), not an item.
+        refinement = bool(own_last) and parsed.path.rstrip("/").rsplit("/", 1)[-1].startswith(own_last + "-")
+        return (parsed.scheme in ("http", "https") and same and link.split("#")[0].rstrip("/") != page
+                and len(parsed.path.strip("/")) > 0 and not _NOT_ITEM.search(parsed.path) and not refinement)
+    has_urls = any(urls)
+    shares = {"linked": round(sum(map(linked, urls)) / n, 2) if has_urls else None}
+    text = " ".join(str(result.get("text") or "").lower().split())
+    names = [" ".join(str(row.get("name") or "").lower().split())[:30] for row in rows]
+    if any(names) and len(text) > 2000:
+        shares["named"] = round(sum(1 for name in names if len(name) >= 3 and name in text) / n, 2)
+    else:
+        shares["named"] = None  # A rendered or fetched feed: the text may not show the names.
+    prices = [row.get("price") for row in rows if "price" in row]
+    shares["priced"] = (round(sum(1 for price in prices if isinstance(price, (int, float)) and price > 0) / n, 2)
+                        if prices else None)
+    keys = [link or name for link, name in zip(urls, names)]
+    shares["distinct"] = round(len(set(keys)) / n, 2)
+    score = (3 * (shares["linked"] if shares["linked"] is not None else 0.6)
+             + 2 * (shares["named"] if shares["named"] is not None else 0.6)
+             + (shares["priced"] if shares["priced"] is not None else 0.5) + 2 * shares["distinct"])
+    if (shares["linked"] is not None and shares["linked"] < 0.5) or shares["distinct"] < 0.5 \
+            or (shares["named"] is not None and shares["named"] < 0.2):
+        grade = "poor"
+    elif (shares["linked"] is None or shares["linked"] >= 0.8) and shares["distinct"] >= 0.8 \
+            and (shares["named"] is None or shares["named"] >= 0.5):
+        grade = "good"
+    else:
+        grade = "partial"
+    return {"grade": grade, "count": n, "score": round(score, 2), **shares}
+
+
 def discover(result, url, *, module_id=None, limit=3, search=None):
     """Draft site modules from one read result. Each draft is validated and run
     against the same page; drafts that extract nothing are dropped. JSON feeds
@@ -556,6 +624,8 @@ def discover(result, url, *, module_id=None, limit=3, search=None):
     for candidate in pool:
         if candidate["fields"] is None:
             candidate["fields"] = {role: role for role in candidate["source"]["fields"]}
+            if "name" not in candidate["fields"]:
+                continue  # Bare links in HTML are navigation; only a schema.org ItemList may list links alone.
         key = json.dumps(candidate["source"], sort_keys=True)
         if key in seen:
             continue
@@ -581,10 +651,17 @@ def discover(result, url, *, module_id=None, limit=3, search=None):
                 continue
         if _link_farm([item.get("name") for item in output["items"]]):
             continue
-        drafts.append({"module": module.record(), "count": output["count"],
+        check = verify_items(output["items"], result, url)
+        if check["grade"] == "poor":
+            continue
+        drafts.append({"module": module.record(), "count": output["count"], "items_quality": check,
                        "fields": sorted(candidate["fields"]), "sample": output["items"][:3]})
-        if len(drafts) >= limit:
+        if len(drafts) >= 8:
             break
+    # Trust first (verified grade, then how well the rows check out), size second.
+    drafts.sort(key=lambda found: (-_GRADES[found["items_quality"]["grade"]],
+                                   -found["items_quality"]["score"], -min(found["count"], 60)))
+    drafts = drafts[:limit]
     return {"url": url, "drafts": drafts,
             "found": bool(drafts),
             "hint": None if drafts else

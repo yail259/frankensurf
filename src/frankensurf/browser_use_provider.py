@@ -365,6 +365,12 @@ class BrowserUseProvider:
         try:
             _validate_url(final_url)
         except WebFailure as failure:
+            if packet.get("status") != "ok":
+                # A blank or error tab: the agent never reached the page, so the
+                # tool failed, not the URL. Unavailable, not down: a second try
+                # of an agent that never navigated costs the same and fails alike.
+                raise WebFailure("PROVIDER_UNAVAILABLE", "Browser agent never reached the page",
+                                 cost_usd=cost) from None
             failure.cost_usd = cost
             raise
         if config.origin(final_url) not in origins:

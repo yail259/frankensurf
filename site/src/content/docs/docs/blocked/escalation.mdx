@@ -40,7 +40,15 @@ browser never sees. So on a public read:
 A page that is plainly a site's bot page (a final URL such as `/help/bots.html`
 or `/captcha`, or text like "thinks you are a bot") counts as `CAPTCHA`, and a
 short page that only asks you to sign in, in English, Spanish, Portuguese,
-French, German, Italian or Dutch, counts as `AUTH_REQUIRED`.
+French, German, Italian or Dutch, counts as `AUTH_REQUIRED`. An
+"access denied" title counts as a wall in German, French, Spanish, Italian,
+Dutch, the Nordic languages, Polish, Czech, Hungarian, Russian, Japanese and
+Chinese as well as English. A browser's own error page (DNS or
+connection failure) or a site's maintenance page fails as `PROVIDER_DOWN`, so
+it is never kept as the page.
+
+Browsers read content inside open shadow roots too, so pages built from web
+components keep their text.
 
 Signed-in reads (identities and profiles) keep the strict rule: a sign-in wall
 there means the session needs renewing, and the climb stops.
@@ -62,19 +70,29 @@ It looks at the page's shape:
 
 - **Search and category pages** (a query parameter, or a path such as `/search`)
   need at least 10 distinct same-site item links (product, listing or detail
-  URLs; never assets or service and legal pages) or 4 prices.
+  URLs; never assets or service and legal pages) or 4 prices. Results that
+  don't look like product links still count when they look like results: 8 or
+  more links under one path prefix (`/packages/<name>`, `/project/<name>`), at
+  least a third of which mention the query. A menu shares a prefix too, but
+  not the query.
 - **Item pages** need a price or 1,500 characters of text.
 - **Other pages** need 1,500 characters, or 400 without scripts.
 
-An incomplete page is re-read along `completeness_ladder`: Scrapling, Camoufox,
-then Firecrawl, Zyte, Scrapfly and ZenRows when paid tools are allowed, then
-Patchright and Bright Data. Each step is an ordinary read pinned to one tool,
-with the usual checks and receipt. Frankensurf stops at the first complete page
-and keeps the most complete one it saw. A search page that passes only narrowly
-(fewer than `completeness_borderline_items`, 20, item links and few prices) also
-gets one read from the strongest allowed tool, a paid one when allowed. `completeness_max_extra_reads` (default
-4) and `completeness_deadline_seconds` (default 150) bound the extra work, and
+An incomplete page is re-read along `completeness_ladder`: Jina Reader,
+Scrapling, Camoufox, then Firecrawl, Zyte, ZenRows and Scrapfly when paid tools
+are allowed, then Patchright and Bright Data. Each step is an ordinary read
+pinned to one tool, with the usual checks and receipt. Frankensurf stops at the
+first complete page and keeps the most complete one it saw. A search page that
+passes only narrowly (fewer than `completeness_borderline_items`, 20, item
+links and few prices) also gets one read from the strongest allowed tool, a
+paid one when allowed. `completeness_max_extra_reads` (default 5) and
+`completeness_deadline_seconds` (default 150) bound the extra work, and
 `receipt.completeness` lists every step.
+
+Climbing also stops when two browsers read the same page as the first read
+(item links within one, text within 20%): that is the page, not an unfinished
+one, and `completeness.agreed` says so (`completeness_stop_on_agreement`, on by
+default).
 
 Free tools on the ladder race in pairs (`completeness_parallel`, default 2,
 up to 4). The first complete page wins and the other read is cancelled.
@@ -123,26 +141,65 @@ climbing:
   different tool, since some sites serve fake 404s to bots; then the read
   stops.
 
+## One small action
+
+Some pages are one action away from their content: a cookie banner over the
+article, a "load more" button under the first results, or a price that
+appears only after you pick an option. When a page says it needs a choice
+(`completeness.needs_interaction`) or is only a consent notice, the first
+escalation step is `interact`: the local browser with three safe actions.
+
+- **dismiss_consent**: inside a cookie or consent banner, press reject or
+  "necessary only". It never accepts; with no reject button it closes the
+  banner.
+- **reveal**: give a required dropdown that has no value its first real option.
+- **load_more**: press "load more" or "show more" up to three times while the
+  page keeps growing. Never "next page", which leaves the page.
+
+Nothing is bought, booked, signed in to, submitted or typed: a guard refuses
+any button whose words say buy, checkout, add to cart, subscribe, sign in,
+pay, book or accept. `receipt.interactions` lists every press. Ask for the
+actions on any browser read with `interactions` (for example
+`["dismiss_consent", "load_more"]`).
+
+## Walled deep links
+
+A public read that ends at a wall (`BLOCKED`, `CAPTCHA`) gets one more try:
+a stealth browser that opens the site's home page first and then follows to
+the page, as a person arrives, instead of landing cold on a deep link.
+`receipt.warm_up` says what happened (`warm_up_on_wall`, on by default). In
+two runs on the 139-site set, at home and on a server, it recovered the same
+walled sites (Bloomingdale's, OzBargain); it adds time to reads that stay
+walled.
+
+The local browser also keeps each site's cookies for a day
+(`site_session_hours`), so a challenge it passed or a banner it rejected stays
+that way on the next read. Only anonymous state: never a profile's or an
+identity's.
+
 ## Hedging a slow read
 
 A blocked site can take a dozen tools in turn before one gets through. Once an
 automatic read has run for 10 seconds (`hedge_after_seconds`, 0 turns it off),
 one more read starts beside it, pinned to the first free tool on the
 completeness ladder (Jina Reader by default). If that read brings back a
-complete page first, it wins and the climb is cancelled. A hedge page that is
-incomplete or failed never replaces the main read, and a hedge never uses a
-paid tool. When the hedge wins, `receipt.hedge` says so and the site's route
-hint learns it, so the next read starts there. On the 139-site held-out set,
+complete page first, it wins and the climb is cancelled. An incomplete hedge
+page replaces the main read only when the main read fails (a page beats no
+page; `receipt.hedge.after_failure` names the failure and `walled` the tools
+it met), and a hedge never uses a paid tool. When the hedge wins,
+`receipt.hedge` says so and the site's route hint learns it, so the next read
+starts there. On the 139-site held-out set,
 reads that used to take about 50 seconds (Michaels, Naukri, Anthropologie,
 Urban Outfitters) came back in 8 to 17.
 
 ## Skipping ahead
 
-Three things reorder the ladder so repeat visits are fast:
+Four things reorder the ladder so repeat visits are fast:
 
 | | What it does | Setting |
 | --- | --- | --- |
-| **Escalation** | After 4 walls in one read, allowed paid tools move ahead of the free ones left. | `escalate_after_walls` |
+| **Wall vendors** | A wall's response names the bot-defence service behind it (`receipt.wall_vendor`: Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, AWS WAF, Vercel or Sucuri). Frankensurf counts which tools got past each vendor on this machine; once a tool has at least 3 tries and even odds, later reads that meet the same vendor on any site try it next, and a tool that has never got past it in 8 tries goes last (`receipt.routing.learned_for`). Learned from your own reads, never from site names. | `state_dir/wall-stats.json` |
+| **Escalation** | After 4 failed tries in one read, free tools that fetch from their own network (Jina Reader) move ahead: a wall that blocks by address stops every tool on this machine alike, and some pages none of them render. After 4 walls, allowed paid tools move ahead of those. | `escalate_after_walls` |
 | **Site hints** | When a read succeeds only after earlier tools failed, the tool that got through goes first on that site for 24 hours. | `origin_route_hint_ttl_seconds` |
 | **Route memory** | After 3 clean reads in a row on the same path pattern, that tool goes first for that path. | `route_memory_min_samples` |
 

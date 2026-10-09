@@ -96,6 +96,28 @@ as it was. So one saved search page becomes any search:
 page = await web.read_template("auto-example-com", "search", {"query": "desk lamp"})
 ```
 
+## How far to trust the items
+
+Every drafted module, every module read and every `auto_items` result carries
+an `items_quality` check against the page itself:
+
+- `linked`: items whose link stays on the site (or the site it redirected
+  to) and looks like an item page, not this page, a help page or a filter of
+  this listing;
+- `named`: items whose name appears in the page's text;
+- `priced`: items with a positive price;
+- `distinct`: items that are not all the same link.
+
+A `grade` (`good`, `partial`, `poor`) sums it up. Discovery drafts several
+candidates and ranks them by this check before size; poor lists are dropped.
+On 16 unseen listing pages it drafted the right items on 10 (8 before the
+check), the wrong ones on 1, and none on 5 that refused the read.
+
+When a saved module comes back `poor` on a page that read fine, the site
+probably changed. The receipt then carries `module.repair_draft`: a new
+version drafted from that same page, keeping your templates and pagination.
+Nothing is saved until you accept it with `site_modules` `put`.
+
 ## What a module holds
 
 ```json

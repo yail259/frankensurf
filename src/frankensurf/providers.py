@@ -62,6 +62,9 @@ class ProviderManifest:
     diagnosis: bool = False
     # Serves stored copies, not the live page: only with policy.allow_archive.
     archive: bool = False
+    # Fetches from the provider's own network, so the site sees another address
+    # than this machine's: what gets past walls that block by address.
+    remote: bool = False
 
 
 @dataclass(frozen=True)
@@ -1403,6 +1406,9 @@ class ProviderRegistry:
             if expose_cost:
                 kwargs["cost_usd"] = aggregate_cost
             safe = WebFailure(code, message, http_status, **kwargs)
+            from .runtime import WALL_VENDORS
+            if error.__dict__.get("wall_vendor") in WALL_VENDORS:
+                safe.wall_vendor = error.__dict__["wall_vendor"]
             evidence = error.__dict__.get("_public_failure_evidence")
             try:
                 safe_evidence = (_evidence_references(
@@ -1652,6 +1658,15 @@ class ProviderRegistry:
                         or not archived["snapshot_url"].startswith("https://")):
                     raise WebFailure("PROVIDER_DOWN", "Archive provider did not date its copy")
                 filtered["archived"] = dict(archived)
+            performed = result.get("interactions")
+            if performed is not None:
+                # What the safe actions did: short, bounded, plain.
+                if (type(performed) is not list or len(performed) > 20
+                        or any(type(item) is not dict or set(item) - {"action", "label", "ok", "grew"}
+                               or not isinstance(item.get("action"), str)
+                               or len(str(item.get("label") or "")) > 120 for item in performed)):
+                    raise WebFailure("PROVIDER_DOWN", "Invalid interaction record")
+                filtered["interactions"] = [dict(item) for item in performed]
             captured = result.get("captured_json")
             if captured is not None and request.policy.capture_json_responses:
                 # Raw page data is passed through only when the caller opted in,

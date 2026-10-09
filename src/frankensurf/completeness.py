@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import html as html_lib
 import re
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 QUERY_KEYS = frozenset({"q", "query", "k", "s", "st", "ss", "search", "searchterm", "keyword",
                         "keywords", "text", "term", "searchtext", "find_desc", "d", "field-keywords",
@@ -66,10 +66,21 @@ _STOPWORDS = frozenset({"the", "and", "for", "with", "from", "new", "used", "buy
 _ECHO_MENTIONS = 2
 
 
+# Words a search path uses for the kind of page, not for what was searched.
+_PATH_GENERIC = frozenset({"search", "s", "q", "jobs", "job", "results", "result", "shop", "browse", "category",
+                           "categories", "c", "list", "html", "htm", "php", "aspx", "for", "sale", "buy", "rent",
+                           "homes", "products", "product", "items", "all", "new", "used", "in", "near", "w"})
+
+
 def query_terms(url: str, expect_terms=()) -> list[str]:
     """Words the results of this search should mention, lightly stemmed."""
     values = [value for key, items in parse_qs(urlparse(url).query).items()
               if _query_key(key) for value in items]
+    if not values and _SEARCH_PATH.search(urlparse(url).path or "/"):
+        # /jobs/python, /q/fiets, /python-jobs: the last path segment is the query.
+        last = [unquote(segment) for segment in urlparse(url).path.split("/") if segment][-1:]
+        words = [word for word in _WORD.findall(last[0].lower()) if word not in _PATH_GENERIC] if last else []
+        values = [" ".join(words)] if words and not re.search(r"\d{4,}", last[0]) else []
     terms = []
     for value in [*values, *expect_terms]:
         for word in _WORD.findall(str(value).lower()):
@@ -142,6 +153,35 @@ def _item_like(path: str) -> bool:
         return True
     return any(_LONG_ID.search(segment) or (segment.count("-") >= 3 and len(segment) >= 20)
                for segment in path.split("/") if segment)
+
+
+def result_group(html: str, base: str, terms) -> int:
+    """Links that are results by shape: many distinct same-site links under one
+    path prefix (/packages/<name>, /project/<name>), at least a third of whose
+    link texts mention the query. A menu shares a prefix too, but not the query."""
+    if not terms:
+        return 0
+    host = (urlparse(base).hostname or "").removeprefix("www.")
+    base_path = urlparse(base).path.rstrip("/")
+    groups: dict[str, dict[str, str]] = {}
+    for _before, href, _after, inner in _ANCHOR.findall(html[:4_000_000]):
+        parsed = urlparse(urljoin(base, href.replace("&amp;", "&")))
+        if parsed.scheme not in ("http", "https") or (parsed.hostname or "").removeprefix("www.") != host:
+            continue
+        path = parsed.path.rstrip("/")
+        if not path or path == base_path or _NOT_ITEM.search(path) or "/" not in path.strip("/"):
+            continue
+        prefix, leaf = path.rsplit("/", 1)
+        text = html_lib.unescape(_TAG.sub(" ", inner) + " " + leaf).lower()
+        groups.setdefault(prefix, {})[leaf] = text
+    best = 0
+    for leaves in groups.values():
+        if len(leaves) < 8:
+            continue
+        matching = sum(1 for text in leaves.values() if any(term in text for term in terms))
+        if matching >= max(3, len(leaves) / 3):
+            best = max(best, len(leaves))
+    return best
 
 
 def item_links(html: str, base: str) -> int:
@@ -247,6 +287,8 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
     if "html" not in content_type and "markdown" not in content_type:
         return {"kind": kind, "complete": True, "score": len(text), "reason": "not a document page"}
     items = item_links(content, result.get("url") or url)
+    if kind == "search" and items < min_items:
+        items = max(items, result_group(content, result.get("url") or url, query_terms(url, expect_terms)))
     found_prices = _PRICE.findall(text)
     # "$0" and "$ 0.00" are a price that has not loaded yet, not a price.
     prices = sum(1 for price in found_prices if not _ZERO_PRICE.search(price))

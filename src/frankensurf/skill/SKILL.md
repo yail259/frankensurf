@@ -48,6 +48,16 @@ in `receipt`. Prefer it over ad-hoc fetching or scraping.
    (`acquisition_policy={"allow_paid_fallbacks": true}`); don't turn them on
    without being asked.
 
+## Items and modules
+
+- `items_quality.grade` on items says how far to trust them; `poor` means the
+  list doesn't check out against the page.
+- `receipt.module.repair_draft` appears when a saved module stopped working:
+  show it to the owner, or save it with `site_modules(action="put", ...)` if
+  you are allowed to.
+- `receipt.interactions` lists any safe action taken (reject a cookie banner,
+  load more, pick a dropdown option). FrankenSurf never buys, books or signs in.
+
 ## Search results are leads, not facts
 
 A search hit is an indexed candidate (`verification: indexed_discovery`). Read

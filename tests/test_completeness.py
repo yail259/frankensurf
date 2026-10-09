@@ -189,6 +189,46 @@ async def test_slow_read_is_hedged_with_the_first_free_ladder_tool(tmp_path, esc
     assert ("cancelled", "slow_main") in log
 
 
+async def test_a_hedge_page_stands_in_when_the_main_read_fails(tmp_path, escalating):
+    class Walled:
+        def __init__(self, identifier, delay):
+            self.manifest = ProviderManifest(identifier, "1", rendering=True)
+            self.delay = delay
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            await asyncio.sleep(self.delay)
+            raise WebFailure("BLOCKED", "fixture wall")
+
+    class Flaky:
+        """A remote reader that gets the page once, then meets the wall."""
+        manifest = ProviderManifest("flaky_free", "1", remote=True)
+        calls = 0
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            type(self).calls += 1
+            if type(self).calls > 1:
+                raise WebFailure("CAPTCHA", "fixture wall")
+            return {"url": request.url, "content": SHELL, "content_type": "text/html", "http_status": 200}
+
+    escalating(Walled("walled_a", 0.4), Walled("walled_b", 0.4), Flaky())
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "hedge_after_seconds": 0.2, "completeness_ladder": ["flaky_free", "walled_b"],
+            "warm_up_on_wall": False})
+    receipt = result["receipt"]
+    assert receipt["status"] == "observed" and receipt["method"] == "flaky_free"
+    assert receipt["hedge"]["won"] is True and receipt["hedge"]["after_failure"] == "CAPTCHA"
+    assert receipt["hedge"]["walled"] == ["flaky_free", "walled_a", "walled_b"]
+    # The tools the main read was walled on are not tried again while escalating.
+    assert [step["provider"] for step in receipt["completeness"].get("escalations", [])] == []
+
+
 async def test_an_incomplete_hedge_never_replaces_the_main_read(tmp_path, escalating):
     log = []
     escalating(slow_plugin("slow_main", RESULTS, 0.6, log),
@@ -242,6 +282,7 @@ def test_query_keys_are_matched_however_they_are_spelled_and_echo_free_pages_are
     from frankensurf.completeness import query_terms
     assert query_terms("https://x.example/search?search_term=sofa") == ["sofa"]
     assert query_terms("https://x.example/results.html?words=lamp") == ["lamp"]
+    assert query_terms("https://x.example/search/film%20photography") == ["film", "photography"]
     url = "https://x.example/search?search-term=sunscreen"
     links = "".join(f'<a href="/p/item-{n}/SKU{n:06d}">Body lotion {n} $9</a>' for n in range(12))
     links += '<a href="/p/sunscreen-guide/SKU999999">Guide</a>'
@@ -256,3 +297,49 @@ def test_prices_with_the_currency_after_the_amount_count():
     text = " ".join(f"Gitarre {n} {n},99 €" for n in range(1, 6)) + " " + "Menü " * 300
     verdict = assess(url, {"content": "<p>" + text + "</p>", "text": text, "content_type": "text/html"})
     assert verdict["kind"] == "search" and verdict["prices"] == 5 and verdict["complete"]
+
+
+def test_walls_are_named_in_other_languages():
+    from frankensurf.runtime import _challenge_text
+    assert _challenge_text("Zugriff verweigert / Access denied", "Aus Sicherheitsgründen")
+    assert _challenge_text("Доступ ограничен: проблема с IP", "")
+    assert _challenge_text("Vercel Security Checkpoint", "")
+    assert not _challenge_text("Lamps - Shop", "Lamps for every room")
+
+
+async def test_off_query_from_plain_http_gets_one_rendered_read(tmp_path, escalating):
+    default_feed = ("<html><title>Search</title><body>" + CHROME
+                    + "".join(f'<a href="/product/red-wine-{n}/SKU{n:06d}">Red wine {n} $20</a>' for n in range(12))
+                    + "</body></html>")
+    escalating(plugin("http", default_feed), plugin("local", RESULTS, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides=POLICY)
+    receipt = result["receipt"]
+    assert receipt["method"] == "local"
+    assert receipt["completeness"]["rendered_after_off_query"] == "http"
+    assert "Lamp 3" in result["text"]
+
+
+async def test_escalation_stops_when_two_browsers_read_the_same_page(tmp_path, escalating):
+    log = []
+    escalating(plugin("cheap", SHELL),
+               slow_plugin("browser_a", SHELL, 0, log, rendering=True),
+               slow_plugin("browser_b", SHELL, 0, log, rendering=True),
+               slow_plugin("browser_c", RESULTS, 0, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "completeness_ladder": ["browser_a", "browser_b", "browser_c"]})
+    record = result["receipt"]["completeness"]
+    assert record["agreed"] is True and ("start", "browser_c") not in log
+
+
+def test_results_are_recognised_by_shape_when_their_links_mention_the_query():
+    from frankensurf.completeness import result_group
+    url = "https://pkgs.example.org/packages?q=json"
+    links = "".join(f'<a href="/packages/json-tool-{n}">json-tool-{n}</a>' for n in range(10))
+    menu = "".join(f'<a href="/docs/topic{n}">Topic {n}</a>' for n in range(12))
+    assert result_group(links + menu, url, ["json"]) == 10
+    assert result_group(menu, url, ["json"]) == 0
+    verdict = assess(url, {"content": "<html><body>" + links + menu + "</body></html>",
+                           "text": "json tool " * 200, "content_type": "text/html"})
+    assert verdict["complete"] and verdict["item_links"] >= 10

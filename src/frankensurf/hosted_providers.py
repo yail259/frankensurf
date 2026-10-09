@@ -157,6 +157,8 @@ def _page(url, content, content_type, status):
 
 def _manifest(*args, **kwargs):
     from .providers import ProviderManifest
+    # Hosted services fetch from their own network.
+    kwargs.setdefault("remote", True)
     return ProviderManifest(*args, **kwargs)
 
 
