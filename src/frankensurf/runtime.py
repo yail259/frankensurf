@@ -860,7 +860,9 @@ def _redact_result_urls(result):
 _CHALLENGE_TITLES = frozenset({
     "just a moment...", "attention required! | cloudflare", "access denied",
     "verify you are human", "robot or human?", "pardon our interruption",
-    "security check", "access to this page has been denied"})
+    "security check", "access to this page has been denied", "prove your humanity",
+    "human verification", "are you a human?", "are you human?", "one more step",
+    "bot verification", "verify you're human", "please wait while we verify your browser"})
 _CHALLENGE_PHRASES = (
     "verify you are human", "checking your browser before accessing",
     "enable javascript and cookies to continue", "please complete the following challenge",
@@ -869,7 +871,9 @@ _CHALLENGE_PHRASES = (
     "checking if the site connection is secure", "verifying you are human",
     "access to this page has been denied", "request unsuccessful. incapsula",
     'thinks you are a "bot"', "thinks you are a bot", "unusual traffic from your computer",
-    "please verify you are a human", "confirm you are not a robot")
+    "please verify you are a human", "confirm you are not a robot", "prove your humanity",
+    "but not for bots", "verify you're human", "verify you're not a robot",
+    "complete the security check to access", "help us verify you're a real person")
 
 # Short pages that only ask the reader to sign in, in the languages the
 # benchmarks meet. Checked only on pages under _SIGN_IN_TEXT_MAX characters.
@@ -888,10 +892,45 @@ _BOT_PAGE_PATH = re.compile(r"/(captcha|bots?|blocked|block|challenge|access[-_]
 
 def _challenge_text(title: str | None, text: str) -> bool:
     title = (title or "").strip().lower().lstrip("# ").strip()
-    if title in _CHALLENGE_TITLES:
+    # "Reddit - Prove your humanity": a site name around the challenge title.
+    parts = [title] + [part.strip(" .!") for part in re.split(r"\s+[|\-–—:]\s+", title)]
+    if any(part in _CHALLENGE_TITLES for part in parts if part):
         return True
     text = text.lower()
     return len(text) < 3000 and any(phrase in text for phrase in _CHALLENGE_PHRASES)
+
+
+# Login forms: a page that asks for a password instead of showing what was asked for.
+_LOGIN_TITLE = re.compile(r"^(log ?in|sign ?in|login|log into .{1,40}|sign in to .{1,40}|log in to .{1,40}|"
+                          r"log in or sign up.*|sign up or log in.*)$", re.I)
+_LOGIN_WORDS = ("log in", "log into", "sign in", "login")
+_LOGIN_TEXT_MAX = 6000
+
+
+def _login_wall(title, text, requested_url):
+    """True when the page is a site's login form standing in for the page asked for.
+
+    Either the title says so ("Log into Facebook"), or a deep link came back
+    titled with nothing but the site's own name while the page is a short form
+    asking for a password. A real page that merely has a login link in its
+    header is longer, or its title names the thing asked for.
+    """
+    title = (title or "").strip().lstrip("# ").strip()
+    parts = [title] + [part.strip(" .!") for part in re.split(r"\s+[|\-–—:]\s+", title)]
+    if any(_LOGIN_TITLE.match(part) for part in parts if part):
+        return True
+    body = (text or "").strip().lower()
+    if len(body) >= _LOGIN_TEXT_MAX or "password" not in body[:2500]:
+        return False
+    try:
+        parsed = urlparse(requested_url)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").removeprefix("www.").removeprefix("m.")
+    brand = host.split(".")[0] if host else ""
+    deep_link = parsed.path.strip("/") != ""
+    return (deep_link and bool(brand) and title.lower() == brand
+            and any(word in body[:1500] for word in _LOGIN_WORDS))
 
 
 def _challenge(html: str) -> bool:
@@ -919,6 +958,8 @@ def _wall_after_parse(title, text, requested_url, final_url):
         return "AUTH_REQUIRED"
     body = (text or "").strip()
     if len(body) < _SIGN_IN_TEXT_MAX and any(p in body.lower() for p in _SIGN_IN_PHRASES):
+        return "AUTH_REQUIRED"
+    if not _SIGN_IN_PATH.search(requested.path) and _login_wall(title, text, requested_url):
         return "AUTH_REQUIRED"
     return None
 
