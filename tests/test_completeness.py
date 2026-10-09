@@ -282,6 +282,7 @@ def test_query_keys_are_matched_however_they_are_spelled_and_echo_free_pages_are
     from frankensurf.completeness import query_terms
     assert query_terms("https://x.example/search?search_term=sofa") == ["sofa"]
     assert query_terms("https://x.example/results.html?words=lamp") == ["lamp"]
+    assert query_terms("https://x.example/search/film%20photography") == ["film", "photography"]
     url = "https://x.example/search?search-term=sunscreen"
     links = "".join(f'<a href="/p/item-{n}/SKU{n:06d}">Body lotion {n} $9</a>' for n in range(12))
     links += '<a href="/p/sunscreen-guide/SKU999999">Guide</a>'

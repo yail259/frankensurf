@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import html as html_lib
 import re
-from urllib.parse import parse_qs, urljoin, urlparse
+from urllib.parse import parse_qs, unquote, urljoin, urlparse
 
 QUERY_KEYS = frozenset({"q", "query", "k", "s", "st", "ss", "search", "searchterm", "keyword",
                         "keywords", "text", "term", "searchtext", "find_desc", "d", "field-keywords",
@@ -78,7 +78,7 @@ def query_terms(url: str, expect_terms=()) -> list[str]:
               if _query_key(key) for value in items]
     if not values and _SEARCH_PATH.search(urlparse(url).path or "/"):
         # /jobs/python, /q/fiets, /python-jobs: the last path segment is the query.
-        last = [segment for segment in urlparse(url).path.split("/") if segment][-1:]
+        last = [unquote(segment) for segment in urlparse(url).path.split("/") if segment][-1:]
         words = [word for word in _WORD.findall(last[0].lower()) if word not in _PATH_GENERIC] if last else []
         values = [" ".join(words)] if words and not re.search(r"\d{4,}", last[0]) else []
     terms = []
