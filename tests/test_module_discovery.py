@@ -256,3 +256,53 @@ async def test_auto_items_on_any_listing_page_without_a_saved_module(tmp_path, m
     assert "items" not in plain and "auto_items" not in plain["receipt"]
     assert len(shaped["items"]) == 8 and shaped["receipt"]["auto_items"]["count"] == 8
     assert saved["items"][0]["name"] == "Brass lamp 0"
+
+
+def test_verify_items_grades_lists_against_the_page():
+    from frankensurf.module_discovery import verify_items
+    text = " ".join(f"Brass lamp {n} with a long description of the item" for n in range(40)) + " filler" * 300
+    page_result = {"url": URL, "text": text}
+    good = [{"name": f"Brass lamp {n}", "url": f"https://shop.example.com/p/brass-lamp-{n}", "price": 40 + n}
+            for n in range(8)]
+    assert verify_items(good, page_result, URL)["grade"] == "good"
+    offsite = [{**item, "url": f"https://other.example.org/x/{n}"} for n, item in enumerate(good)]
+    assert verify_items(offsite, page_result, URL)["grade"] == "poor"
+    help_links = [{"name": f"Help {n}", "url": "https://shop.example.com/help/contact"} for n in range(8)]
+    assert verify_items(help_links, page_result, URL)["grade"] == "poor"
+    unknown_names = [{**item, "name": f"Mystery {n}"} for n, item in enumerate(good)]
+    assert verify_items(unknown_names, page_result, URL)["grade"] == "poor"
+
+
+async def test_a_module_that_stopped_working_gets_a_repair_draft(tmp_path, monkeypatch):
+    from frankensurf import providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+    from frankensurf.runtime import Runtime
+    renamed = [{**row, "label": row["title"]} for row in PRODUCTS]
+    for row in renamed:
+        del row["title"]
+    content = page([next_data(renamed)])
+
+    class Fixture:
+        manifest = ProviderManifest("fixture", "1")
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            return {"url": request.url, "content": content, "content_type": "text/html", "http_status": 200}
+    registry = ProviderRegistry()
+    registry.register(Fixture())
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    overrides = {"origin_route_hint_ttl_seconds": 0, "origin_min_interval_seconds": 0,
+                 "second_opinion_text_chars": 0, "completeness_escalation": False}
+    old = discover(result_for(page([next_data(PRODUCTS)])), URL)["drafts"][0]["module"]
+    old["sources"]["listing"]["path"] = "props.pageProps.search.oldResults"  # the site moved its data
+    async with Runtime(tmp_path) as web:
+        web.site_modules.put(old)
+        result = await web.read(URL, policy_overrides=overrides)
+    module = result["receipt"]["module"]
+    assert module["items_quality"]["grade"] == "poor"
+    repair = module["repair_draft"]["module"]
+    assert repair["id"] == old["id"] and repair["version"].endswith(".repair")
+    assert repair["sources"]["listing"]["path"] == "props.pageProps.search.results"
+    assert repair["templates"] == old["templates"]

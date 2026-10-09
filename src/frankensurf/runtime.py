@@ -3118,6 +3118,23 @@ class Runtime:
         if output.get("next_url"):
             result["next_url"] = output["next_url"]
         receipt["module"] = receipt_record(selected, source, output, validation)
+        from .module_discovery import discover, verify_items
+        check = verify_items(output["items"], result, url) if selected.items else None
+        if check is not None:
+            receipt["module"]["items_quality"] = check
+            if check["grade"] == "poor":
+                # The site changed under the module: draft a replacement from this
+                # same page (no extra read). The owner accepts it with site_modules put.
+                found = discover(result, url, module_id=selected.id, limit=1)
+                if found["drafts"] and found["drafts"][0]["items_quality"]["grade"] != "poor":
+                    repair = dict(found["drafts"][0]["module"])
+                    repair["version"] = f"{selected.version}.repair"
+                    for key in ("templates", "pagination", "invalid", "assertions"):
+                        if getattr(selected, key):
+                            repair[key] = selected.record()[key]
+                    receipt["module"]["repair_draft"] = {
+                        "module": repair, "items_quality": found["drafts"][0]["items_quality"],
+                        "how": "site_modules put this module to accept it; nothing was saved"}
         self._annotate_trace(receipt, "module")
 
     def _auto_items(self, url, result, policy, policy_overrides):
@@ -3142,6 +3159,7 @@ class Runtime:
         result["items"] = output["items"]
         result["auto_module"] = record
         receipt["auto_items"] = {"found": True, "count": output["count"],
+                                 "quality": found["drafts"][0].get("items_quality"),
                                  "source": record["sources"]["listing"]["kind"],
                                  "save": "site_modules put with result.auto_module to reuse it"}
 
