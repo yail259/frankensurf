@@ -72,12 +72,70 @@ frankensurf search playwright python tutorial --limit 10
 engines were rate-limited. Failures stay visible instead of looking like "no
 results".
 
+## Narrow it down
+
+```python
+results = await web.search("film camera repair", recency="week", region="en-AU",
+                           exclude_domains=["pinterest.com", "youtube.com"])
+```
+
+```bash
+frankensurf search film camera repair --recency week --region en-AU \
+  --exclude-domain pinterest.com --exclude-domain youtube.com
+```
+
+- `site`: only results from one domain (its subdomains too).
+- `exclude_domains`: up to 200 domains that never come back.
+- `recency`: `day`, `week`, `month` or `year`.
+- `region`: language and country, like `en-AU` or `de`.
+
+Each source applies what it can natively: SearXNG `time_range`, DuckDuckGo
+`df` and `kl`, Bing's date filters and `cc`, Exa and Tavily domain and date
+filters, Brave `freshness`, and `site:`/`-site:` operators where an engine
+reads them. Then every result list is filtered again, so an excluded domain
+never comes back from any source, and dated results older than the window are
+dropped. `receipt.search_options.filtered` counts what went, including how
+many results had no date to check.
+
+## Kinds of search
+
+`vertical` picks the kind of source. Automatic fallback stays inside it.
+
+| `vertical` | Source | Notes |
+| --- | --- | --- |
+| `web` (default) | SearXNG, DuckDuckGo, Bing, plus paid sources when allowed | |
+| `news` | Bing News RSS | Publisher in `extra.publisher`, dates on every item |
+| `reference` | Wikipedia API | In the `region` language (`de` searches de.wikipedia.org) |
+| `discussions` | Hacker News (Algolia API) | `extra.points`, `extra.comments`, `extra.discussion_url` |
+| `qa` | Stack Exchange API | Stack Overflow by default; any Stack Exchange site by name via `engine_config={"engines": "superuser"}` |
+| `code` | GitHub API | Repositories; `recency` means pushed recently. `extra.stars` |
+| `papers` | arXiv API | |
+| `books` | Open Library | |
+
+All of these are official, keyless public APIs.
+
+## Merge mode
+
+`mode="merge"` asks every eligible source in the vertical at once (up to
+`search_merge_sources`, default 4) and fuses their lists by reciprocal rank.
+Duplicate pages (`www.`, trailing slashes and tracking parameters aside) merge
+into one result that lists every engine that found it, with `fusion.sources`
+giving each engine's rank. One blocked engine costs nothing, and a page found
+by several engines rises. `receipt.search_merge` reports each source.
+
+```python
+results = await web.search("film camera repair sydney", mode="merge")
+```
+
 ## Options
 
 | Option | Default | Description |
 | --- | --- | --- |
-| `source` | automatic | One source only: `searxng`, `duckduckgo_html`, `bing_rss`, `exa`, `brave`, `tavily`, `parallel`. |
+| `source` | automatic | One source only, by name (see the tables above). |
 | `limit` | `10` | Number of results. |
+| `site`, `exclude_domains`, `recency`, `region` | none | See above. |
+| `vertical` | `web` | The kind of source. |
+| `mode` | `fallback` | `merge` to ask every eligible source at once. |
 | `search_source_prefer` | none | Try these sources first. |
 | `search_source_allow` | all | Only these sources may run. |
 | `search_source_timeout_seconds` | `8` | Time per source. |

@@ -24,6 +24,7 @@ _POLICY_ARGUMENTS = {
     "agent_task": "browser_agent_task",
     "capture_json": "capture_json_responses",
     "markdown": "prefer_markdown",
+    "main": "main_content",
     "handoff": "allow_handoff",
     "profile": "profile",
     "expect": "expect_terms",
@@ -374,6 +375,8 @@ def build_parser():
         help="A word the search results should mention; repeat for more")
     parser.add_argument("--agent-task",
         help="Task for the browser agent, e.g. 'search for sony a7iii'; the agent may finish on any allowed page")
+    parser.add_argument("--main", action="store_true", default=None,
+        help="Also return main_text: the article without menus, footers and banners")
     parser.add_argument("--markdown", action="store_true", default=None,
         help="Ask servers for text/markdown first (content negotiation)")
     parser.add_argument("--profile", help="Read with a stored FrankenSurf profile (see profile-login)")

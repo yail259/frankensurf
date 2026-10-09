@@ -1,0 +1,55 @@
+---
+title: Main content
+description: The article without menus, footers and cookie banners, so the first few thousand characters are the content.
+---
+
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+A page's text includes its menus, footer and banners. When your agent only
+reads the first few thousand characters, the article can be pushed out of
+view. Ask for the main content and the result also gets `main_text`: the
+article, starting with its headline.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(url, policy_overrides={"main_content": True})
+page["main_text"]                    # the article
+page["receipt"]["main_content"]      # {"method", "chars", "of_chars"}
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://news.example.com/story --main
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://news.example.com/story", "main_content": true } }
+```
+
+Over MCP, `text` becomes the main content and `full_text_chars` says how long
+the whole page's text was.
+
+</TabItem>
+</Tabs>
+
+## How it is cut
+
+- **HTML.** [trafilatura](https://trafilatura.readthedocs.io/) when it is
+  installed (`pip install "frankensurf[main]"`, recommended). Otherwise a
+  built-in extractor drops navigation, headers, footers, sidebars and banners
+  by tag, ARIA role and class names, prefers `<article>` and `<main>`, and
+  otherwise keeps the block with the most paragraph text. It is a basic
+  fallback; trafilatura is better on unusual layouts.
+- **Markdown from a hosted reader** (Jina Reader). The link lists before the
+  first real paragraph and after the last one are cut, and the title kept.
+
+A page whose text is only a cookie or consent notice counts as incomplete, so
+the read escalates instead of handing the notice back.
+

@@ -182,6 +182,9 @@ class WebPolicy:
     # that resolve to them, and redirects into them). For servers reading URLs
     # they did not choose; FRANKENSURF_BLOCK_PRIVATE_NETWORK=1 sets it for all reads.
     block_private_network: bool = False
+    # Also return main_text: the article without menus, footers and banners
+    # (main_content.py; trafilatura when installed).
+    main_content: bool = False
     # Items from any listing page with no saved module: the page's own data is
     # searched for its item list (module discovery, no extra read) and the
     # draft module comes back too, ready to save.
@@ -315,6 +318,7 @@ class WebPolicy:
     def _validate_capture_and_pacing(self):
         _require(type(self.allow_archive) is bool, "allow_archive must be a boolean")
         _require(type(self.block_private_network) is bool, "block_private_network must be a boolean")
+        _require(type(self.main_content) is bool, "main_content must be a boolean")
         _require(type(self.auto_items) is bool, "auto_items must be a boolean")
         _require(_is_int(self.search_merge_sources, 1) and self.search_merge_sources <= 10,
                  "search_merge_sources must be an integer from 1 to 10")
@@ -3313,6 +3317,16 @@ class Runtime:
             result = await self._ensure_complete(url, result, policy, adapter, policy_overrides,
                                                  workload_assertions, effective)
         self._offer_try_harder(result, effective)
+        if effective.main_content and (result.get("receipt") or {}).get("status") == "observed":
+            from .main_content import main_content
+            found = main_content(result.get("content") or "", result.get("content_type") or "",
+                                 result.get("url") or url)
+            if found:
+                result["main_text"] = found["text"]
+                result["receipt"]["main_content"] = {
+                    "method": found["method"], "chars": found["chars"],
+                    "of_chars": len(result.get("text") or ""),
+                    **({"cookie_notice": True} if found.get("cookie_notice") else {})}
         if isinstance(url, str) and not effective.profile:
             self._record_origin_hint(url, effective, result.get("receipt") or {})
             _suggest_handoff(result.get("receipt") or {})

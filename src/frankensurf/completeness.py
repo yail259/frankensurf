@@ -207,6 +207,10 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
     prices = sum(1 for price in found_prices if not _ZERO_PRICE.search(price))
     score = items * 100 + prices * 20 + min(len(text), 50_000) / 10
     placeholder = _placeholder(text, len(found_prices) - prices, prices)
+    if not placeholder:
+        from .main_content import consent_only
+        if consent_only(text):
+            placeholder = "only a cookie or consent notice, not the page"
     if placeholder:
         return {"kind": kind, "complete": False, "score": score, "item_links": items, "prices": prices,
                 "text_chars": len(text), "reason": placeholder, "placeholder": True}
