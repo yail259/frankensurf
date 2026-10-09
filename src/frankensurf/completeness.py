@@ -26,7 +26,14 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 QUERY_KEYS = frozenset({"q", "query", "k", "s", "st", "ss", "search", "searchterm", "keyword",
                         "keywords", "text", "term", "searchtext", "find_desc", "d", "field-keywords",
-                        "kw", "_nkw", "search_string", "search_key", "search_query", "searchquery"})
+                        "kw", "_nkw", "search_string", "search_key", "search_query", "searchquery",
+                        "words", "freetext", "sw", "ntt", "qs", "wd", "searchkeyword", "searchkeywords"})
+
+
+def _query_key(key: str) -> bool:
+    """A search-box parameter, however the site spells it (search_term, searchTerm)."""
+    lowered = key.lower()
+    return lowered in QUERY_KEYS or re.sub(r"[^a-z0-9]", "", lowered) in QUERY_KEYS
 _SEARCH_PATH = re.compile(r"/(search|s|shop|catalogsearch|browse|category|categories|c|list|"
                           r"jobs|homes|for_sale|sale|buy|rent|pdsearch|keyword\.php|w|p/pl)(/|$|\.|\?)", re.I)
 # A marker segment followed by the item itself (/p/<slug>, /rooms/<id>).
@@ -59,7 +66,7 @@ _ECHO_MENTIONS = 2
 def query_terms(url: str, expect_terms=()) -> list[str]:
     """Words the results of this search should mention, lightly stemmed."""
     values = [value for key, items in parse_qs(urlparse(url).query).items()
-              if key.lower() in QUERY_KEYS for value in items]
+              if _query_key(key) for value in items]
     terms = []
     for value in [*values, *expect_terms]:
         for word in _WORD.findall(str(value).lower()):
@@ -108,13 +115,15 @@ def relevance(url: str, result: dict, expect_terms=()) -> dict | None:
     relevant = sum(1 for blob in blobs.values() if any(term in blob for term in terms))
     mentions = sum(text.count(term) for term in terms)
     return {"terms": terms, "relevant_items": relevant, "mentions": mentions,
-            "off_query": relevant == 0 and mentions <= _ECHO_MENTIONS}
+            # No mention anywhere in the text and at most one matching link (often
+            # a menu entry) is a default feed too.
+            "off_query": (relevant == 0 and mentions <= _ECHO_MENTIONS) or (mentions == 0 and relevant <= 1)}
 
 
 def page_kind(url: str) -> str:
     parsed = urlparse(url)
     params = {key.lower() for key in parse_qs(parsed.query)}
-    if params & QUERY_KEYS or _SEARCH_PATH.search(parsed.path or "/"):
+    if any(_query_key(key) for key in params) or _SEARCH_PATH.search(parsed.path or "/"):
         return "search"
     if _ITEM_MARKER.search(parsed.path) or any(
             _LONG_ID.search(segment) or segment.count("-") >= 3

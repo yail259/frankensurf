@@ -236,3 +236,16 @@ def test_prices_behind_a_choice_are_named_not_escalated():
     verdict = assess(item, {"content": "<p>" + text + "</p>", "text": text, "content_type": "text/html"})
     assert verdict["complete"] is True
     assert verdict["needs_interaction"].startswith("Select 1-4 guests")
+
+
+def test_query_keys_are_matched_however_they_are_spelled_and_echo_free_pages_are_off_query():
+    from frankensurf.completeness import query_terms
+    assert query_terms("https://x.example/search?search_term=sofa") == ["sofa"]
+    assert query_terms("https://x.example/results.html?words=lamp") == ["lamp"]
+    url = "https://x.example/search?search-term=sunscreen"
+    links = "".join(f'<a href="/p/item-{n}/SKU{n:06d}">Body lotion {n} $9</a>' for n in range(12))
+    links += '<a href="/p/sunscreen-guide/SKU999999">Guide</a>'
+    page = {"content": "<html><body>" + links + "</body></html>",
+            "text": " ".join(f"Body lotion {n} $9" for n in range(12)) + " Guide", "content_type": "text/html"}
+    verdict = assess(url, page)
+    assert verdict["off_query"] and verdict["complete"] is False
