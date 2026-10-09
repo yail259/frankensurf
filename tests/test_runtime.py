@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 from pathlib import Path
@@ -150,3 +151,23 @@ async def test_generic_empty_shell_threshold_is_policy(tmp_path):
 @pytest.mark.parametrize("value",[-1,True,1.5])
 def test_invalid_shell_threshold_rejected(value):
     with pytest.raises(ValueError):WebPolicy(html_shell_min_text_chars=value)
+
+
+async def test_batch_scouts_each_site_before_the_rest_follow(tmp_path):
+    log = []
+
+    async def fake_read(url, policy=None, provider=None, adapter=None, **kwargs):
+        log.append(("start", url))
+        await asyncio.sleep(0.05)
+        log.append(("end", url))
+        return {"url": url, "receipt": {"status": "observed"}}
+    async with Runtime(tmp_path) as web:
+        web._domain_delay = 0
+        web.read = fake_read
+        urls = ["https://a.test/1", "https://b.test/1", "https://a.test/2", "https://a.test/3", "https://a.test/1"]
+        results = await web.batch(urls, WebPolicy())
+    assert [result["url"] for result in results] == urls
+    scout_done = log.index(("end", "https://a.test/1"))
+    assert log.index(("start", "https://a.test/2")) > scout_done
+    assert log.index(("start", "https://a.test/3")) > scout_done
+    assert log.index(("start", "https://b.test/1")) < scout_done

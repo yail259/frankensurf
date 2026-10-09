@@ -18,6 +18,49 @@ named, the next page, and checks that tell you when the site changes.
 A module is **data, never code**, and lives in your own state folder.
 Frankensurf ships none; site knowledge stays with whoever learned it.
 
+## Let Frankensurf draft one
+
+Most listing pages carry their rows as data for their own frontend: JSON-LD,
+JSON in a script tag (`__NEXT_DATA__` and friends), or JSON the page fetches
+while it renders. When none of that holds the rows, they are usually repeated
+HTML cards. `module discover` reads a page, looks in all four places, and
+drafts a module from the best list of items it finds (name, link, price,
+image). Each draft is validated and run against that same page, so you see the
+item count and sample rows before you save anything.
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+found = await web.discover_module("https://www.example.com/search?q=lamp")
+best = found["drafts"][0]          # module, count, fields, sample
+await web.discover_module("https://www.example.com/search?q=lamp", save=True)
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf module discover "https://www.example.com/search?q=lamp" --save
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "discover_site_module", "arguments": { "url": "https://www.example.com/search?q=lamp", "save": true } }
+```
+
+</TabItem>
+</Tabs>
+
+After saving, every read of a matching URL (another query, the same path)
+comes back with `items`. Check the sample first: a draft can pick the wrong
+list on a page with several, and nothing here knows a site. On 16 listing
+pages it had never seen, it drafted the right list on 8, the wrong one on 1,
+and nothing on 7 (mostly pages it could not read). Keep the drafts that are
+right, and edit or write the rest by hand.
+
 ## What a module holds
 
 ```json

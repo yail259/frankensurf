@@ -120,6 +120,9 @@ class WebPolicy:
         "jina_reader", "scrapling", "camoufox", "firecrawl", "zyte", "zenrows",
         "scrapfly", "patchright", "brightdata_unlocker")
     completeness_max_extra_reads: int = 5
+    # Free ladder tools tried at once while escalating (the first complete page
+    # wins, the rest are cancelled). Paid tools always run one at a time.
+    completeness_parallel: int = 2
     # A search page that passes with fewer item links than this (and few
     # prices) also gets one read from the first allowed ladder tool.
     completeness_borderline_items: int = 20
@@ -323,6 +326,8 @@ class WebPolicy:
                  "completeness_borderline_items must be a nonnegative integer")
         _require(_is_int(self.completeness_max_extra_reads, 0),
                  "completeness_max_extra_reads must be a nonnegative integer")
+        _require(_is_int(self.completeness_parallel, 1) and self.completeness_parallel <= 4,
+                 "completeness_parallel must be an integer from 1 to 4")
         _require(_is_number(self.completeness_deadline_seconds, positive=True),
                  "completeness_deadline_seconds must be positive and finite")
         _require(_is_number(self.handoff_timeout_seconds, positive=True),
@@ -860,7 +865,9 @@ def _redact_result_urls(result):
 _CHALLENGE_TITLES = frozenset({
     "just a moment...", "attention required! | cloudflare", "access denied",
     "verify you are human", "robot or human?", "pardon our interruption",
-    "security check", "access to this page has been denied"})
+    "security check", "access to this page has been denied", "prove your humanity",
+    "human verification", "are you a human?", "are you human?", "one more step",
+    "bot verification", "verify you're human", "please wait while we verify your browser"})
 _CHALLENGE_PHRASES = (
     "verify you are human", "checking your browser before accessing",
     "enable javascript and cookies to continue", "please complete the following challenge",
@@ -869,7 +876,9 @@ _CHALLENGE_PHRASES = (
     "checking if the site connection is secure", "verifying you are human",
     "access to this page has been denied", "request unsuccessful. incapsula",
     'thinks you are a "bot"', "thinks you are a bot", "unusual traffic from your computer",
-    "please verify you are a human", "confirm you are not a robot")
+    "please verify you are a human", "confirm you are not a robot", "prove your humanity",
+    "but not for bots", "verify you're human", "verify you're not a robot",
+    "complete the security check to access", "help us verify you're a real person")
 
 # Short pages that only ask the reader to sign in, in the languages the
 # benchmarks meet. Checked only on pages under _SIGN_IN_TEXT_MAX characters.
@@ -888,10 +897,45 @@ _BOT_PAGE_PATH = re.compile(r"/(captcha|bots?|blocked|block|challenge|access[-_]
 
 def _challenge_text(title: str | None, text: str) -> bool:
     title = (title or "").strip().lower().lstrip("# ").strip()
-    if title in _CHALLENGE_TITLES:
+    # "Reddit - Prove your humanity": a site name around the challenge title.
+    parts = [title] + [part.strip(" .!") for part in re.split(r"\s+[|\-–—:]\s+", title)]
+    if any(part in _CHALLENGE_TITLES for part in parts if part):
         return True
     text = text.lower()
     return len(text) < 3000 and any(phrase in text for phrase in _CHALLENGE_PHRASES)
+
+
+# Login forms: a page that asks for a password instead of showing what was asked for.
+_LOGIN_TITLE = re.compile(r"^(log ?in|sign ?in|login|log into .{1,40}|sign in to .{1,40}|log in to .{1,40}|"
+                          r"log in or sign up.*|sign up or log in.*)$", re.I)
+_LOGIN_WORDS = ("log in", "log into", "sign in", "login")
+_LOGIN_TEXT_MAX = 6000
+
+
+def _login_wall(title, text, requested_url):
+    """True when the page is a site's login form standing in for the page asked for.
+
+    Either the title says so ("Log into Facebook"), or a deep link came back
+    titled with nothing but the site's own name while the page is a short form
+    asking for a password. A real page that merely has a login link in its
+    header is longer, or its title names the thing asked for.
+    """
+    title = (title or "").strip().lstrip("# ").strip()
+    parts = [title] + [part.strip(" .!") for part in re.split(r"\s+[|\-–—:]\s+", title)]
+    if any(_LOGIN_TITLE.match(part) for part in parts if part):
+        return True
+    body = (text or "").strip().lower()
+    if len(body) >= _LOGIN_TEXT_MAX or "password" not in body[:2500]:
+        return False
+    try:
+        parsed = urlparse(requested_url)
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").removeprefix("www.").removeprefix("m.")
+    brand = host.split(".")[0] if host else ""
+    deep_link = parsed.path.strip("/") != ""
+    return (deep_link and bool(brand) and title.lower() == brand
+            and any(word in body[:1500] for word in _LOGIN_WORDS))
 
 
 def _challenge(html: str) -> bool:
@@ -919,6 +963,8 @@ def _wall_after_parse(title, text, requested_url, final_url):
         return "AUTH_REQUIRED"
     body = (text or "").strip()
     if len(body) < _SIGN_IN_TEXT_MAX and any(p in body.lower() for p in _SIGN_IN_PHRASES):
+        return "AUTH_REQUIRED"
+    if not _SIGN_IN_PATH.search(requested.path) and _login_wall(title, text, requested_url):
         return "AUTH_REQUIRED"
     return None
 
@@ -2857,6 +2903,29 @@ class Runtime:
         built = self.site_modules.get(module_id).build_url(template, params)
         return await self.read(built, module=module_id, **kwargs)
 
+    async def discover_module(self, url: str, *, module_id: str | None = None, save: bool = False,
+                              policy_overrides: dict | None = None) -> dict:
+        """Draft a site module from the page's own JSON (JSON-LD, script JSON,
+        or the JSON it fetched while rendering). Reads the page once; when that
+        page carries no feed, reads it again in a browser that records the JSON
+        responses. save=True saves the best draft."""
+        from .module_discovery import discover
+        overrides = dict(policy_overrides or {})
+        result = await self.read(url, module=False, policy_overrides=overrides)
+        found = discover(result, url, module_id=module_id)
+        reads = [(result.get("receipt") or {}).get("trace_id")]
+        if not found["drafts"] and (result.get("receipt") or {}).get("status") == "observed":
+            rendered = await self.read(url, module=False, policy_overrides={
+                **overrides, "capture_json_responses": True,
+                "provider_candidates": overrides.get("provider_candidates") or ["local"]})
+            reads.append((rendered.get("receipt") or {}).get("trace_id"))
+            if (rendered.get("receipt") or {}).get("status") == "observed":
+                found = discover(rendered, url, module_id=module_id)
+        found["reads"] = [trace for trace in reads if trace]
+        if save and found["drafts"]:
+            found["saved"] = self.site_modules.put(found["drafts"][0]["module"])
+        return found
+
     async def _read_entry(self, url, policy, provider, adapter, policy_overrides,
                           workload_assertions, retry_of):
         from .routes import request_policy
@@ -3105,20 +3174,23 @@ class Runtime:
             record["borderline"] = True
         costs = [receipt.get("cost_usd")]
         deadline = time.monotonic() + effective.completeness_deadline_seconds
-        for identifier in ladder[:effective.completeness_max_extra_reads]:
-            if time.monotonic() > deadline:
-                break
-            await asyncio.sleep(min(effective.origin_min_interval_seconds, 1.0))
-            settle = max(effective.settle_ms, effective.completeness_settle_ms)
+        settle = max(effective.settle_ms, effective.completeness_settle_ms)
+        paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
+        queue = list(ladder[:effective.completeness_max_extra_reads])
+
+        async def run_step(identifier, delay):
+            await asyncio.sleep(delay)
             if policy is not None:
-                step = await self._read_unpaced(url, replace(policy, provider_candidates=(identifier,),
-                                                             settle_ms=settle),
-                                                None, adapter, workload_assertions=workload_assertions)
-            else:
-                step = await self._read_unpaced(url, None, None, adapter, policy_overrides={
-                    **(policy_overrides or {}), "provider_candidates": [identifier],
-                    "settle_ms": settle},
-                    workload_assertions=workload_assertions)
+                return identifier, await self._read_unpaced(
+                    url, replace(policy, provider_candidates=(identifier,), settle_ms=settle),
+                    None, adapter, workload_assertions=workload_assertions)
+            return identifier, await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                **(policy_overrides or {}), "provider_candidates": [identifier], "settle_ms": settle},
+                workload_assertions=workload_assertions)
+
+        def judge(identifier, step):
+            """Record one step; True when it is a complete page."""
+            nonlocal best, best_score, record
             step_receipt = step.get("receipt") or {}
             costs.append(step_receipt.get("cost_usd"))
             observed = step_receipt.get("status") == "observed"
@@ -3138,8 +3210,35 @@ class Runtime:
                           "prices": step_verdict.get("prices"),
                           "text_chars": step_verdict.get("text_chars"),
                           "reason": step_verdict.get("reason")}
-            if step_verdict and step_verdict["complete"]:
-                break
+            return bool(step_verdict and step_verdict["complete"])
+
+        # Free tools race in small groups and the first complete page wins; the
+        # rest are cancelled. A paid tool always runs alone, so racing never
+        # spends twice. Starts are staggered so a site sees at most a couple of
+        # reads at once.
+        width = effective.completeness_parallel
+        pause = min(effective.origin_min_interval_seconds, 1.0)
+        finished = False
+        while queue and not finished and time.monotonic() <= deadline:
+            group = [queue.pop(0)]
+            if group[0] not in paid:
+                while queue and queue[0] not in paid and len(group) < width:
+                    group.append(queue.pop(0))
+            tasks = [asyncio.create_task(run_step(identifier, pause + index * 0.5))
+                     for index, identifier in enumerate(group)]
+            try:
+                for next_done in asyncio.as_completed(tasks):
+                    identifier, step = await next_done
+                    if judge(identifier, step):
+                        finished = True
+                        break
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+        if len(steps) > 1:
+            record["raced"] = width > 1
         record["escalations"] = steps
         record["kept"] = best["receipt"].get("method")
         best["receipt"]["completeness"] = record
@@ -4494,8 +4593,25 @@ class Runtime:
         if policy and (policy.identity or policy.provider == "local_cdp"):
             # One canonical profile lease per operation; serialize named batch jobs.
             return [await self.read(url,policy,adapter=adapter) for url in urls]
-        async def one(url):
+        # The first URL per site scouts: it climbs the ladder alone, and the rest
+        # of that site wait for it, then start from the route it found (route
+        # hints and clearance) instead of each climbing from the bottom at once.
+        scouts = {}
+        for index, url in enumerate(urls):
+            scouts.setdefault(urlparse(url).netloc, (index, asyncio.Event()))
+
+        async def one(index, url):
             domain = urlparse(url).netloc
+            scout, scouted = scouts[domain]
+            if index != scout:
+                await scouted.wait()
+            try:
+                return await paced(url, domain)
+            finally:
+                if index == scout:
+                    scouted.set()
+
+        async def paced(url, domain):
             sem = self._domain_sems.setdefault(domain, asyncio.Semaphore(self._per_domain_count))
             async with self._global, sem:
                 delay = self._domain_next.get(domain, 0) - time.monotonic()
@@ -4507,7 +4623,7 @@ class Runtime:
                 self._save_trace(result)
             return result
         # Preserve input attribution and order, including duplicate URLs and individual failures.
-        return await asyncio.gather(*(one(url) for url in urls))
+        return await asyncio.gather(*(one(index, url) for index, url in enumerate(urls)))
 
     def capabilities(self, domain: str | None = None) -> list[dict]:
         """Empirical observation outcomes. These are not calibrated task-success probabilities."""

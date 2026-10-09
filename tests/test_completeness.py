@@ -1,4 +1,5 @@
 """Structural completeness: a page without its content escalates to a stronger provider."""
+import asyncio
 import pytest
 
 from frankensurf import providers
@@ -124,3 +125,53 @@ async def test_explicit_provider_and_complete_pages_are_left_alone(tmp_path, esc
     assert type(strong).calls == 0
     with pytest.raises(ValueError):
         WebPolicy(completeness_max_extra_reads=-1)
+
+
+def slow_plugin(identifier, content, delay, log, **manifest):
+    class Slow:
+        def __init__(self):
+            self.manifest = ProviderManifest(identifier, "1", **manifest)
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            log.append(("start", identifier))
+            try:
+                await asyncio.sleep(delay)
+            except asyncio.CancelledError:
+                log.append(("cancelled", identifier))
+                raise
+            log.append(("done", identifier))
+            return {"url": request.url, "content": content, "content_type": "text/html", "http_status": 200}
+    return Slow()
+
+
+async def test_free_tools_race_and_the_first_complete_page_wins(tmp_path, escalating):
+    log = []
+    escalating(plugin("cheap", SHELL),
+               slow_plugin("slow_free", RESULTS, 30, log, rendering=True),
+               slow_plugin("fast_free", RESULTS, 0, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "completeness_ladder": ["slow_free", "fast_free"]})
+    record = result["receipt"]["completeness"]
+    assert result["receipt"]["method"] == "fast_free" and record["complete"] is True
+    assert ("start", "slow_free") in log and ("cancelled", "slow_free") in log
+    assert ("done", "slow_free") not in log
+
+
+async def test_paid_tools_never_race(tmp_path, escalating):
+    log = []
+    escalating(plugin("cheap", SHELL),
+               slow_plugin("free_shell", SHELL, 0, log, rendering=True),
+               slow_plugin("paid_one", RESULTS, 0, log, rendering=True, paid=True),
+               slow_plugin("paid_two", RESULTS, 0, log, rendering=True, paid=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "allow_paid_fallbacks": True,
+            "completeness_ladder": ["free_shell", "paid_one", "paid_two"]})
+    assert result["receipt"]["method"] == "paid_one"
+    assert ("start", "paid_two") not in log
+    with pytest.raises(ValueError):
+        WebPolicy(completeness_parallel=0)
