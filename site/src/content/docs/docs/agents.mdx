@@ -82,6 +82,21 @@ Any client that launches stdio MCP servers works. Use:
 </TabItem>
 </Tabs>
 
+## Teach your agent the tools
+
+FrankenSurf ships a skill: a short guide to which tool and option fits, how
+to read a receipt, and what to do when a page isn't right. The MCP server
+already sends it to every client as its instructions; for agents that load
+skills from a folder (Claude Code), install it too:
+
+```bash
+frankensurf skill install            # ~/.claude/skills/frankensurf/SKILL.md
+frankensurf skill install --skill-dir ./my-agent/skills
+frankensurf skill show
+```
+
+`frankensurf setup` installs it automatically when `~/.claude` exists.
+
 ## When a page isn't what you needed
 
 Frankensurf guarantees the page is the one a real browser sees: not a block

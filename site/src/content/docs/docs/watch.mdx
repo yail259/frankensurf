@@ -15,6 +15,37 @@ means.
 - Each poll is one ordinary read: paced, receipted, and able to climb past
   walls.
 
+## Many sites: `watch_sites`
+
+To keep up with many sites at once, `watch_sites` uses what each site
+publishes about its own new pages instead of reading its front page:
+
+- the feeds it advertises (`<link rel="alternate">`: RSS, Atom, JSON Feed);
+- the sitemaps `robots.txt` names (news sitemaps first, then the most recently
+  changed);
+- a few conventional feed paths (`/feed`, `/rss.xml`, …) when it advertises none.
+
+They are found once per site and remembered for a week. Every poll fetches
+them with conditional requests (`If-None-Match`, `If-Modified-Since`), so an
+unchanged feed costs one small 304. Pages already reported are remembered,
+and the same story under two URLs (syndication) is reported once.
+
+```python
+new = await web.watch_sites(["https://news.example.com/", "https://blog.example.org/"],
+                            since="2026-10-07", read_new=True)
+for page in new["pages"]:
+    print(page["published"], page["url"], page["quality"])
+```
+
+```bash
+frankensurf watch-sites https://news.example.com/ https://blog.example.org/ --since 2026-10-07
+```
+
+`read_new` reads the new pages too, with main content, as one paced batch.
+`requests` and `unchanged_feeds` in the answer say what a poll cost.
+
+## One page: `watch`
+
 ## Usage
 
 <Tabs syncKey="lang">

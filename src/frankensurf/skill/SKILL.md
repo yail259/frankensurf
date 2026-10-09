@@ -21,14 +21,16 @@ in `receipt`. Prefer it over ad-hoc fetching or scraping.
 | News, Wikipedia, Hacker News, Stack Overflow, GitHub, arXiv, books | `search(query, vertical="news" \| "reference" \| "discussions" \| "qa" \| "code" \| "papers" \| "books")` |
 | The best recall across engines | `search(query, mode="merge")` |
 | Many URLs | `batch(urls)` (one site's first URL scouts, the rest follow) |
+| What's new on many sites (news, company blogs) | `watch_sites(sites, since="2026-10-07")`: feeds and sitemaps, polled cheaply; much cheaper than searching |
 | Many searches on one site | `discover_site_module(home_url, query=..., save=True)` once, then `batch_template(module, "search", [{"query": ...}, ...])` |
 
 ## Read the receipt before you trust the page
 
 - `receipt.status`: `observed` or `failed`. A failure has `receipt.failure.code`.
 - `receipt.quality.grade`: `good`, `partial` or `poor`, with `flags`
-  (`placeholder`, `menus`, `off_query`, `cookie_notice`, `needs_interaction`,
-  `archived`) and a `reason`. Treat `poor` as not read.
+  (`placeholder`, `menus`, `off_query`, `cookie_notice`, `paywall`,
+  `needs_interaction`, `archived`) and a `reason`. Treat `poor` as not read; a
+  `paywall` page won't improve with a stronger tool.
 - `receipt.completeness.off_query`: the site ignored the search terms; fix the
   search URL instead of retrying.
 - `receipt.completeness.needs_interaction`: the price or detail appears only

@@ -59,6 +59,28 @@ read planned, after skipping anything unavailable.
   (terms, matching items, text mentions) and `off_query`.
 - Cookies, keys and credential URL parameters never appear.
 
+## Quality
+
+Every observed page read carries `receipt.quality`: a grade your agent can
+route on.
+
+```json
+{ "grade": "poor", "kind": "article", "flags": ["paywall"],
+  "reason": "paywalled: only 433 characters of the article are free",
+  "article": { "chars": 433, "paragraphs": 2, "method": "trafilatura", "paywall": true } }
+```
+
+- `good`: the content is there.
+- `partial`: it is there, with a warning (`needs_interaction`, `archived`).
+- `poor`: a placeholder (`$0` prices, template values), menus only, a cookie
+  notice, results that ignore the query (`off_query`), or a paywall teaser.
+
+Article pages (schema.org `Article`/`NewsArticle`, Open Graph `article`, or
+publisher-style paths) are judged on their extracted article: 600+ characters
+and two or more prose paragraphs, however long the menus around them. A thin
+article escalates to a stronger tool first. On 108 fresh news and company
+articles the grade matched whether the article was there on 107.
+
 ## Freshness
 
 | `freshness` | What happens |

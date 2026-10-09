@@ -18,7 +18,7 @@ import tempfile
 import time
 import uuid
 from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
@@ -3667,6 +3667,190 @@ class Runtime:
         os.replace(temporary, path)
         return {"url": url, "status": "observed", "new": new, "first_poll": state is None,
                 "links_on_page": len(order), "seen_count": len(merged), "receipt": receipt}
+
+    async def watch_sites(self, sites: list[str], *, since: str | None = None, read_new: bool = False,
+                          max_new_per_site: int = 50, max_reads: int = 100,
+                          policy_overrides: dict | None = None) -> dict:
+        """New pages on many sites, from what each site publishes about itself.
+
+        For each site (a home page or any URL on it): the feeds it advertises
+        (<link rel="alternate">), the sitemaps robots.txt names, and, when it
+        advertises no feed, a few conventional feed paths. These are found once
+        and remembered for a week. Every poll fetches them with conditional
+        requests (ETag / Last-Modified), so an unchanged feed is one small 304.
+        Pages already reported are remembered per site, and the same story under
+        two URLs (syndication) is reported once.
+
+        since (ISO 8601) limits the first poll; later polls report what is new
+        since the last one. read_new=True also reads up to max_reads new pages
+        with main_content as one paced batch.
+        """
+        from .site_feeds import (CONVENTIONAL_FEEDS, find_feeds, newer_than, page_key, parse_feed,
+                                 parse_sitemap, pick_child_sitemaps, robots_sitemaps, story_key)
+        from .search import parse_date
+        if not isinstance(sites, list) or not 1 <= len(sites) <= 500:
+            raise ValueError("sites is a list of 1 to 500 URLs")
+        floor = parse_date(since) if since else None
+        if since and floor is None:
+            raise ValueError("since must be an ISO 8601 date or time")
+        overrides = dict(policy_overrides or {})
+        folder = self.state_dir / "site-watches"
+        folder.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc)
+        stories, everything, reports = set(), [], []
+        counters = {"requests": 0, "unchanged": 0}
+
+        async def fetch(url, validators):
+            """(status, text) with a conditional GET; falls back to a full read when refused."""
+            _validate_url(url)
+            if overrides.get("block_private_network") or self.block_private_network:
+                await _refuse_private(url)
+            headers = {}
+            known = validators.get(url) or {}
+            if known.get("etag"):
+                headers["If-None-Match"] = known["etag"]
+            if known.get("last_modified"):
+                headers["If-Modified-Since"] = known["last_modified"]
+            host = urlparse(url).netloc
+            delay = self._domain_next.get(host, 0) - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._domain_next[host] = time.monotonic() + max(self._domain_delay, 0.5)
+            counters["requests"] += 1
+            try:
+                response = await self._http.get(url, headers=headers, timeout=20)
+            except httpx.HTTPError:
+                response = None
+            if response is not None and response.status_code == 304:
+                counters["unchanged"] += 1
+                return 304, None
+            if response is not None and response.status_code == 200 and len(response.content) <= 20_000_000:
+                validators[url] = {key: value for key, value in (
+                    ("etag", response.headers.get("etag")),
+                    ("last_modified", response.headers.get("last-modified"))) if value}
+                return 200, response.text
+            if response is not None and response.status_code in (404, 410):
+                return response.status_code, None
+            # Refused or walled: the read ladder can still get through (no validators then).
+            read = await self.read(url, adapter="rss" if url.endswith(".xml") else None,
+                                   policy_overrides={**overrides, "completeness_escalation": False})
+            receipt = read.get("receipt") or {}
+            if receipt.get("status") == "observed":
+                return 200, read.get("content") or ""
+            return (receipt.get("http_status") or 0), None
+
+        async def poll(site):
+            parsed = urlparse(site)
+            origin = f"{parsed.scheme}://{parsed.netloc}"
+            path = folder / (hashlib.sha256(origin.encode()).hexdigest() + ".json")
+            try:
+                state = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                state = {}
+            first = not state
+            validators = state.get("validators") or {}
+            seen = list(state.get("seen") or [])
+            seen_set = set(seen)
+            discovered_at = parse_date(state.get("discovered_at"))
+            report = {"site": origin, "first_poll": first}
+            if discovered_at is None or (now - discovered_at).days >= 7:
+                feeds, sitemaps = [], []
+                home = await self.read(site, policy_overrides={**overrides, "completeness_escalation": False})
+                counters["requests"] += 1
+                if (home.get("receipt") or {}).get("status") == "observed":
+                    feeds = find_feeds(home.get("content") or "", home.get("url") or site)
+                status, robots = await fetch(origin + "/robots.txt", {})
+                if status == 200 and robots:
+                    sitemaps = robots_sitemaps(robots, origin)
+                if not feeds:
+                    for candidate in CONVENTIONAL_FEEDS:
+                        status, body = await fetch(origin + candidate, validators)
+                        if status == 200 and body and parse_feed(body):
+                            feeds.append(origin + candidate)
+                            break
+                if not sitemaps:
+                    sitemaps = [origin + "/sitemap.xml"]
+                state.update(feeds=feeds, sitemaps=sitemaps, discovered_at=now.isoformat())
+            report.update(feeds=state.get("feeds") or [], sitemaps=state.get("sitemaps") or [])
+            entries = []
+            for feed in state.get("feeds") or []:
+                status, body = await fetch(feed, validators)
+                if status == 200 and body:
+                    for entry in parse_feed(body) or []:
+                        entries.append({**entry, "source": "feed"})
+            # Sitemaps when feeds are absent or thin: they list everything with dates.
+            if len(entries) < 5:
+                queue, visited = list(state.get("sitemaps") or [])[:3], 0
+                while queue and visited < 6:
+                    sitemap = queue.pop(0)
+                    visited += 1
+                    status, body = await fetch(sitemap, validators)
+                    parsed_map = parse_sitemap(body) if status == 200 and body else None
+                    if not parsed_map:
+                        continue
+                    queue += pick_child_sitemaps(parsed_map["sitemaps"])
+                    entries += [{**page, "source": "sitemap"} for page in parsed_map["pages"]]
+            since_here = floor if first else parse_date(state.get("last_polled_at"))
+            if first and since_here is None:
+                since_here = now - timedelta(days=2)
+            new = []
+            entries.sort(key=lambda entry: entry.get("published") or "", reverse=True)
+            for entry in entries:
+                url = entry.get("url") or ""
+                try:
+                    _validate_url(url)
+                except WebFailure:
+                    continue
+                if urlparse(url).netloc.removeprefix("www.") != parsed.netloc.removeprefix("www.") \
+                        and entry["source"] == "sitemap":
+                    continue
+                key = page_key(url)
+                if key in seen_set or not newer_than(entry, since_here):
+                    continue
+                seen_set.add(key)
+                seen.append(key)
+                story = story_key(entry.get("title"))
+                if story and story in stories:
+                    continue
+                if story:
+                    stories.add(story)
+                new.append({**entry, "site": origin})
+                if len(new) >= max_new_per_site:
+                    break
+            state.update(validators=validators, seen=seen[-20000:], last_polled_at=now.isoformat())
+            fd, temporary = tempfile.mkstemp(prefix=".watch-", dir=folder)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(state, stream)
+            os.replace(temporary, path)
+            report.update(new=len(new), entries_seen=len(entries))
+            return report, new
+
+        results = await asyncio.gather(*(poll(site) for site in sites), return_exceptions=True)
+        for site, outcome in zip(sites, results):
+            if isinstance(outcome, BaseException):
+                reports.append({"site": site, "error": type(outcome).__name__, "new": 0})
+                continue
+            reports.append(outcome[0])
+            everything += outcome[1]
+        everything.sort(key=lambda entry: entry.get("published") or "", reverse=True)
+        answer = {"new": everything, "sites": reports, "polled_at": now.isoformat(),
+                  "requests": counters["requests"], "unchanged_feeds": counters["unchanged"]}
+        if read_new and everything:
+            pages = await self.batch([entry["url"] for entry in everything[:max_reads]],
+                                     policy_overrides={**overrides, "main_content": True})
+            fingerprints, kept = set(), []
+            for entry, page in zip(everything, pages):
+                text = page.get("main_text") or page.get("text") or ""
+                fingerprint = hashlib.sha256(" ".join(text.split())[:3000].lower().encode()).hexdigest()
+                duplicate = bool(text) and fingerprint in fingerprints
+                fingerprints.add(fingerprint)
+                kept.append({**entry, "status": (page.get("receipt") or {}).get("status"),
+                             "quality": ((page.get("receipt") or {}).get("quality") or {}).get("grade"),
+                             "main_text": None if duplicate else page.get("main_text"),
+                             "duplicate_of_earlier": duplicate,
+                             "trace_id": (page.get("receipt") or {}).get("trace_id")})
+            answer["pages"] = kept
+        return answer
 
     async def _read_unpaced(self, url: str, policy: WebPolicy | None = None, provider: str | None = None,
                    adapter: str | None = None, *, policy_overrides: dict | None = None,

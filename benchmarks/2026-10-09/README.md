@@ -47,3 +47,15 @@ one stronger tool after another. v0.26.0 races free tools in pairs instead (see
   13 s, Anthropologie 49 s to 16 s.
 - This set has now been used three times, so these runs measure speed, not
   fresh-site accuracy.
+
+## Articles: main content and the quality grade
+
+- `articles-108.json`: 108 news and company-news article URLs, one per site,
+  taken from Bing News results for 40 business queries (`scripts/article_eval.py
+  collect`). Read with free tools and `main_content` on.
+- `articles-108-v0.28.jsonl` (v0.28.0) and `articles-108-quality.jsonl` (the
+  article check, quality grade and paywall flag): article present (600+
+  characters and 2+ prose paragraphs of main text) on 103 and 105 pages; none
+  lost; the grade agreed with article presence on 107 of 108 (the exception
+  is a winery directory page, which is not an article). Median read 3.3 s
+  against 4.0 s: thin article pages now escalate.

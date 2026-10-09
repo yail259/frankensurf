@@ -306,6 +306,8 @@ async def run(args):
             elif args.operation == "repair-disable":
                 result = web.disable_repair(
                     args.urls[0], args.disable_reason)
+            elif args.operation == "watch-sites":
+                result = await web.watch_sites(list(args.urls), since=args.since, read_new=args.read_new)
             elif args.operation == "watch":
                 result = await web.watch(args.urls[0], link_pattern=args.link_pattern,
                                          policy_overrides=policy_kwargs)
@@ -337,7 +339,7 @@ def build_parser():
     provider_ids = [item["id"] for item in DEFAULT_PROVIDERS.inspect()]
     parser = argparse.ArgumentParser(description="Free local evidence-first web runtime")
     parser.add_argument("operation", choices=["read", "extract", "paginate", "batch", "trace",
-        "search", "images", "do", "import", "repair", "repair-promote", "watch",
+        "search", "images", "do", "import", "repair", "repair-promote", "watch", "watch-sites",
         "repair-disable", "executor-enroll", "identity-enroll",
         "identity-status", "identity-revoke", "bot-auth-init", "bot-auth-directory",
         "profile-login", "profile-list", "profile-delete", "module", "read-template", "setup", "skill"])
@@ -347,6 +349,8 @@ def build_parser():
     parser.add_argument("--no-stealth", action="store_true",
         help="setup: skip the free stealth providers (Camoufox, Scrapling, Patchright)")
     parser.add_argument("--query", help="module discover: from a home page, search this and draft from the results")
+    parser.add_argument("--since", help="watch-sites: only pages published since this ISO date (first poll)")
+    parser.add_argument("--read-new", action="store_true", help="watch-sites: also read the new pages' main text")
     parser.add_argument("--skill-dir", help="skill install: the skills folder (default ~/.claude/skills)")
     parser.add_argument("--save", action="store_true",
         help="module discover: save the best drafted module")
@@ -524,7 +528,7 @@ def parse_args(argv=None):
     elif args.operation == "identity-status":
         if len(args.urls) > 1:
             parser.error("identity-status accepts at most one identity ID")
-    elif args.operation in {"batch", "images", "search"}:
+    elif args.operation in {"batch", "images", "search", "watch-sites"}:
         if not args.urls:
             parser.error(f"{args.operation} requires at least one URL or query token")
     elif args.operation == "do":
