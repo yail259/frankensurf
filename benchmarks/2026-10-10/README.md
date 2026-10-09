@@ -44,3 +44,46 @@ maintenance pages no longer counted as pages. 125/150 (83.3%) against
 120/150: Wotif, Rays Outdoors, Bass Pro, Sierra and OpenTable gained, none
 lost. Median 7.1 s against 4.9 s (escalations picked different winners; the
 plain-HTTP fast path was unchanged at 53 reads).
+
+## Iteration 2 (in-sample)
+
+`toolbench-heldout5-free-iter2.jsonl`: escalation stops once two more tools read
+the same page as the first (`completeness_stop_on_agreement`), and search
+results are recognised by shape (many links under one path prefix whose text
+mentions the query) when they do not look like product links.
+
+| Free arm | Sites read | Median (read) | p75 | p90 | p90 (all reads) |
+|---|---|---|---|---|---|
+| Blind, v0.30.0 | 120/150 | 4.9 s | 10.6 s | 24.1 s | 29.4 s |
+| Iteration 1 | 125/150 | 7.1 s | 16.6 s | 28.5 s | 40.6 s |
+| Iteration 2 | 127/150 | 4.5 s | 12.0 s | 26.1 s | 44.6 s |
+
+Against the blind run: Wotif, Rays Outdoors, Dubizzle, JobServe, B&Q, Sierra
+and OpenTable gained, none lost (Bass Pro passed in iteration 1 and was walled
+again here). Of the 23 misses, 8 are URLs that answered 404 to every arm in
+the blind run, 7 are hard walls (CAPTCHA or BLOCKED), 1 needs a sign-in, and 7
+loaded without the expected content (every arm missed 6 of those 7; only
+archive.org was read by another arm). Reads that fail now climb further before
+giving up, which is where the all-reads p90 went.
+
+## Learned wall routing (out of sample)
+
+`toolbench-heldout5-free-learned.jsonl`: the free arm read held-out set 4 first
+(training), which left `wall-stats-trained-on-heldout4.json`: for each wall
+vendor named by response headers, which tools got past it. Then it read
+held-out set 5 with that state. No site is on both sets, so only the vendor
+statistics carry over.
+
+- Training settled on two moves: Steel first behind Akamai, Camoufox first
+  behind DataDome. Behind Cloudflare no tool reached even odds (Steel 8 of 22,
+  Camoufox 4 of 14); the local browser was 0 of 20, and four other tools 0 of 8.
+  Learning carried on through the test run, and by its end Steel was through
+  Cloudflare 21 times in 41, the local browser 0 in 36, and five tools 0 in 12.
+- On set 5 the learned order fired on 10 of the 150 reads: 7 came through
+  (Kickstarter, EB Games and RedBook on the second attempt), and 3 stayed
+  walled (mobile.de, Immobiliare, Mighty Ape).
+- Overall 124/150 against 127/150 for iteration 2, median 6.4 s against 4.5 s.
+  The three sites lost (Dubizzle and JobServe missing content, B&Q failing at
+  Jina Reader) never met a learned move, so this is run-to-run variation, not a
+  gain or a loss from learning. Learned routing stays: it only reorders after
+  at least 3 tries at even odds, and it needs more reads than one set gives.
