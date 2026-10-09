@@ -59,3 +59,21 @@ one stronger tool after another. v0.26.0 races free tools in pairs instead (see
   lost; the grade agreed with article presence on 107 of 108 (the exception
   is a winery directory page, which is not an article). Median read 3.3 s
   against 4.0 s: thin article pages now escalate.
+
+## From a server (Azure VM, GitHub Actions)
+
+`.github/workflows/server-bench.yml` runs the free arm and the article sample on a
+fresh GitHub-hosted Ubuntu VM in Azure: a data-centre address, which sites
+refuse more often than a home connection.
+
+- `toolbench-heldout4-free-azure.jsonl`: 98/139 (70.5%), against 112/139 at home
+  (same code, free tools). Lost on the server: retailers and marketplaces behind
+  bot walls, and image and social sites; plain HTTP that worked at home was
+  refused.
+- `toolbench-heldout4-free-azure-steel.jsonl`: with the self-hosted Steel
+  browser running beside it (as docker-compose.yml does), 104/139 (74.8%).
+- `articles-108-azure-steel.jsonl`: articles read 103/108, article present
+  100/108, against 105 at home.
+
+The rest of the gap is the data-centre address; FRANKENSURF_PROXY routes the
+local tools through a proxy the owner brings (not measured here).
