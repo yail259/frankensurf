@@ -87,6 +87,17 @@ async def test_a_read_that_ends_on_a_down_tool_reports_the_wall_it_met(tmp_path,
     assert result["receipt"]["failure"]["code"] == "CAPTCHA"
 
 
+async def test_a_site_every_tool_finds_down_is_not_retried_tool_by_tool(tmp_path, registry):
+    registry(provider("down1", "PROVIDER_DOWN"), provider("down2", "PROVIDER_DOWN"),
+             provider("down3", "PROVIDER_DOWN"))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(URL, WebPolicy(origin_route_hint_ttl_seconds=0,
+                                               provider_retry_delay_seconds=0))
+    # The first tool is retried (it may be flaky); once a second tool is down
+    # too, the rest get one try each.
+    assert tried(result) == ["down1", "down1", "down2", "down3"]
+
+
 async def test_outages_do_not_count_as_walls(tmp_path, registry):
     registry(provider("down1", "PROVIDER_DOWN"), provider("down2", "PROVIDER_DOWN"),
              provider("free_ok", "ok"), provider("paid_ok", "ok", paid=True))

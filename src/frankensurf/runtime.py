@@ -4644,10 +4644,16 @@ class Runtime:
         their own network move ahead; after enough walls, allowed paid providers
         move ahead of those.
         """
+        if exc.code in policy.provider_retry_failures:
+            plan_state.setdefault("failed_alike", set()).add(candidate)
         if (exc.code in policy.provider_retry_failures
                 and exc.code not in policy.terminal_failures
                 and not (candidate_record or {}).get("paid")
                 and policy.max_cost_usd is None
+                # Retries are for a flaky tool. Once two different tools on an
+                # automatic route failed the same way here, the site is the
+                # likelier cause: each remaining tool still gets one try, not two.
+                and not (plan_state.get("automatic") and len(plan_state["failed_alike"]) >= 2)
                 and retry_index + 1 < policy.provider_max_attempts_per_candidate):
             return "retry"
         # Anonymous reads meet fake walls: sites answer bots with a sign-in
@@ -5041,7 +5047,8 @@ class Runtime:
                     return cached
                 candidates = self._read_candidates(url, policy, adapter, resolved, identity_provider)
                 order = list(candidates)
-                plan_state = {"position": 0, "walls": 0, "escalated": False}
+                plan_state = {"position": 0, "walls": 0, "escalated": False,
+                              "automatic": public_route is not None}
 
                 def _ordered_plan():
                     # Reads `order` lazily so escalation can reorder what is left.
