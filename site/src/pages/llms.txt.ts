@@ -5,7 +5,7 @@ export async function GET() {
   const pages = (await getCollection("docs")).sort((a, b) => a.id.localeCompare(b.id));
   const lines = pages.map((page) => {
     const path = page.id === "docs" ? "/docs/" : `/${page.id}/`;
-    return `- [${page.data.title}](https://frankensurf.pages.dev${path})${page.data.description ? ": " + page.data.description : ""}`;
+    return `- [${page.data.title}](https://frankensurf.dev${path})${page.data.description ? ": " + page.data.description : ""}`;
   });
   const body = [
     "# Frankensurf",

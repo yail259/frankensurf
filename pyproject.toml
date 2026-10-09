@@ -1,17 +1,40 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "frankensurf"
-version = "0.24.0"
-description = "Evidence-first web substrate: one call to read any site, for any agent on any model"
+version = "0.25.0"
+description = "One read() call for AI agents, stitched from 28 web tools: cheapest first, every page checked, a receipt for every attempt"
+readme = "README.rst"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "yail259" }]
 requires-python = ">=3.12"
+keywords = ["web scraping", "ai agents", "mcp", "browser automation", "crawler", "playwright", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Topic :: Software Development :: Libraries",
+]
 dependencies = ["httpx>=0.28,<1", "beautifulsoup4>=4.13,<5", "playwright>=1.63,<2", "Pillow>=12,<13", "tiktoken>=0.14,<1", "jsonschema>=4.23,<5", "pypdf>=6,<7", "cryptography>=44"]
 
 [project.optional-dependencies]
 test = ["pytest>=9,<10", "pytest-asyncio>=1,<2"]
 mcp = ["mcp>=1.2,<2"]
+
+[project.urls]
+Homepage = "https://frankensurf.dev"
+Documentation = "https://frankensurf.dev/docs/"
+Repository = "https://github.com/yail259/frankensurf"
+Issues = "https://github.com/yail259/frankensurf/issues"
+Changelog = "https://github.com/yail259/frankensurf/releases"
 
 [project.scripts]
 frankensurf = "frankensurf.cli:main"
@@ -21,7 +44,7 @@ frankensurf-mcp = "frankensurf.mcp_server:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-frankensurf = ["bundled_routes.json", "bundled_route_seeds.json"]
+frankensurf = ["bundled_routes.json", "bundled_route_seeds.json", "provider_requirements.txt"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

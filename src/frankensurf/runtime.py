@@ -1341,6 +1341,12 @@ def _navigation_failure(message):
     return None
 
 
+def default_state_dir() -> str:
+    """Where the CLI and MCP server keep state: $FRANKENSURF_STATE, else one
+    per-user folder, so state doesn't land in whatever directory a client starts in."""
+    return os.environ.get("FRANKENSURF_STATE") or str(Path.home() / ".local" / "share" / "frankensurf" / "state")
+
+
 class Runtime:
     """Local-first async web runtime. Observation receipts do not certify listing availability.
 

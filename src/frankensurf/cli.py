@@ -1,7 +1,7 @@
 import argparse
 import asyncio
 import json
-from .runtime import Runtime, WebPolicy
+from .runtime import Runtime, WebPolicy, default_state_dir
 
 _WEB_OPERATIONS = {"read", "extract", "paginate", "batch", "search", "images", "do"}
 _OPERATOR_OPERATIONS = {"executor-enroll", "identity-enroll", "identity-status", "identity-revoke"}
@@ -144,6 +144,61 @@ def _module_op(args):
     return {"deleted": rest[0]}
 
 
+def _setup(args):
+    """frankensurf setup: Chromium for JavaScript pages, plus the free stealth providers."""
+    import subprocess
+    import sys
+    say = lambda message: print(message, file=sys.stderr, flush=True)
+    say("Downloading Chromium for JavaScript pages")
+    chromium = subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"]).returncode == 0
+    stealth = "skipped (--no-stealth)"
+    if not args.no_stealth:
+        from .experimental import install_free_providers
+        try:
+            stealth = install_free_providers(log=say)
+        except (OSError, subprocess.CalledProcessError) as error:
+            stealth = {"error": str(error)[:300]}
+    result = {"chromium": chromium, "stealth_providers": stealth,
+              "next": "frankensurf read https://news.ycombinator.com --explain"}
+    if sys.platform.startswith("linux"):
+        result["if_chromium_will_not_start"] = "sudo $(which python) -m playwright install-deps chromium"
+    return result
+
+
+def _explain(result):
+    """A short human trail of one read: each tool tried, what happened, and the page."""
+    receipt = result.get("receipt") or {}
+    lines = [receipt.get("requested_url") or result.get("url") or ""]
+    steps = list(receipt.get("attempts") or [])
+    steps += [{"provider": step.get("provider"), "status": step.get("status"), "failure": step.get("failure"),
+               "escalation": True} for step in (receipt.get("completeness") or {}).get("escalations") or ()]
+    for step in steps:
+        ok = step.get("status") == "observed"
+        seconds = f"{step['latency_ms'] / 1000:.1f}s" if isinstance(step.get("latency_ms"), (int, float)) else ""
+        what = "got the page" if ok else (step.get("failure") or "failed")
+        tag = "  (completeness check)" if step.get("escalation") else ""
+        lines.append(f"  {'✓' if ok else '✗'} {step.get('provider') or '?':<22} {what:<22} {seconds}{tag}")
+    if receipt.get("status") == "observed":
+        done = receipt.get("completeness") or {}
+        text = " ".join((result.get("text") or "").split())
+        cost = receipt.get("cost_usd")
+        links = done.get("item_links") or 0
+        lines += ["", f"{result.get('title') or '(no title)'}",
+                  f"{len(text):,} characters via {receipt.get('method')}"
+                  + ((f", complete ({links} results)" if links >= 10 else ", complete") if done.get("complete") else "")
+                  + (", free" if cost == 0 else f", cost ${cost:.4f}" if isinstance(cost, (int, float)) else ""),
+                  "", text[:400] + ("…" if len(text) > 400 else "")]
+        if done.get("off_query"):
+            lines.append("\n! These results don't mention the query: the search URL may be wrong.")
+    else:
+        failure = receipt.get("failure") or {}
+        lines += ["", f"Failed: {failure.get('code')} {failure.get('message') or ''}".rstrip()]
+        if receipt.get("next_step"):
+            lines.append(f"Next step: {receipt['next_step'].get('how') or receipt['next_step']}")
+    lines += ["", f"trace {receipt.get('trace_id')}  (frankensurf trace <id> for the full receipt)"]
+    return "\n".join(lines)
+
+
 def _template_params(pairs):
     params = {}
     for pair in pairs or ():
@@ -157,6 +212,8 @@ def _template_params(pairs):
 async def run(args):
     if args.operation in _PROFILE_OPERATIONS:
         result = await _profile_op(args)
+    elif args.operation == "setup":
+        result = _setup(args)
     elif args.operation == "module" and args.urls[0] == "repair":
         async with Runtime(state_dir=args.state) as web:
             result = await web.propose_module_repair(args.urls[1], _load_json(args.urls[2], "site module file"))
@@ -243,7 +300,10 @@ async def run(args):
             for page in entry.get("pages", []) if isinstance(entry, dict) else []:
                 if isinstance(page, dict):
                     page.pop("content", None)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if getattr(args, "explain", False) and isinstance(result, dict) and "receipt" in result:
+        print(_explain(result))
+    else:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
     return result
 
 
@@ -256,15 +316,20 @@ def build_parser():
         "search", "images", "do", "import", "repair", "repair-promote", "watch",
         "repair-disable", "executor-enroll", "identity-enroll",
         "identity-status", "identity-revoke", "bot-auth-init", "bot-auth-directory",
-        "profile-login", "profile-list", "profile-delete", "module", "read-template"])
+        "profile-login", "profile-list", "profile-delete", "module", "read-template", "setup"])
     parser.add_argument("urls", nargs="*")
+    parser.add_argument("--explain", action="store_true",
+        help="read: print each tool tried and what happened, then the page, instead of JSON")
+    parser.add_argument("--no-stealth", action="store_true",
+        help="setup: skip the free stealth providers (Camoufox, Scrapling, Patchright)")
     parser.add_argument("--module", metavar="ID",
         help="read: shape the read with this saved site module, or 'none' to turn modules off")
     parser.add_argument("--param", action="append", metavar="NAME=VALUE",
         help="read-template: a template parameter; repeat for each")
     parser.add_argument("--link-pattern",
         help="watch: regular expression a link URL must match to count as an item")
-    parser.add_argument("--state", default="state")
+    parser.add_argument("--state", default=default_state_dir(),
+        help="state directory (default: $FRANKENSURF_STATE or ~/.local/share/frankensurf/state)")
     parser.add_argument("--provider", choices=provider_ids)
     parser.add_argument("--provider-candidate", dest="provider_candidates", action="append",
         choices=provider_ids, help="Ordered acquisition provider candidate; repeat to set the route")
@@ -404,6 +469,9 @@ def parse_args(argv=None):
         elif action not in {"show", "add", "enable", "disable", "rm"} or len(args.urls) != 2:
             parser.error("module takes: list | show ID | add FILE | enable ID | disable ID | rm ID"
                          " | repair TRACE_ID FILE")
+    elif args.operation == "setup":
+        if args.urls:
+            parser.error("setup takes no arguments (add --no-stealth to skip the stealth providers)")
     elif args.operation == "read-template":
         if len(args.urls) != 2:
             parser.error("read-template takes MODULE_ID TEMPLATE (and --param NAME=VALUE)")

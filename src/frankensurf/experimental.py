@@ -20,6 +20,34 @@ def worker_python():
         Path.home()/".local/share/frankensurf/provider-venv/bin/python"))).expanduser()
 
 
+# The Camoufox browser build the pinned camoufox package is tested with.
+CAMOUFOX_BROWSER = "official/152.0.4-beta.31"
+
+
+def install_free_providers(log=print):
+    """Create the isolated environment for the free stealth providers (Camoufox,
+    Scrapling, Patchright) and download their browsers. Safe to run again.
+
+    They live apart from the core because Camoufox pins an older Playwright.
+    """
+    import subprocess
+    import venv
+    target = worker_python()
+    root = target.parent.parent
+    if not target.is_file():
+        log(f"Creating the stealth provider environment in {root}")
+        venv.EnvBuilder(with_pip=True).create(root)
+    requirements = Path(__file__).with_name("provider_requirements.txt")
+    steps = [("Installing Camoufox, Scrapling and Patchright",
+              [str(target), "-m", "pip", "install", "--quiet", "-r", str(requirements)]),
+             ("Downloading the Camoufox browser", [str(target), "-m", "camoufox", "fetch", CAMOUFOX_BROWSER]),
+             ("Downloading the Patchright browser", [str(target), "-m", "patchright", "install", "chromium"])]
+    for label, command in steps:
+        log(label)
+        subprocess.run(command, check=True)
+    return {provider: installed(provider) for provider in ("camoufox", "scrapling", "patchright")}
+
+
 def installed(provider):
     executable = worker_python()
     if not executable.is_absolute() or not executable.is_file(): return False

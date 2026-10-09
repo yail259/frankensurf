@@ -30,9 +30,9 @@ mobile home-screen bookmarks.
 
 ## Publish to Cloudflare
 
-Production: https://frankensurf.pages.dev/
+Production: https://frankensurf.dev/
 
-Documentation: https://frankensurf.pages.dev/docs/
+Documentation: https://frankensurf.dev/docs/
 
 Deploy only from an up-to-date `main` (owner rule, 2026-10-06). Merge the change
 first, then deploy; deploying a feature branch publishes a site that the next

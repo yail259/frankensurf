@@ -1,0 +1,48 @@
+name: A site it can't read
+description: Frankensurf failed on a page, or handed back the wrong page.
+title: "Can't read: <site>"
+labels: ["site report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Every report becomes a test case. Please don't include anything private: no cookies, tokens, or pages behind your own login.
+  - type: input
+    id: url
+    attributes:
+      label: URL
+      description: The public page you tried to read.
+      placeholder: https://www.example.com/search?q=camera
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: What should have been on the page, e.g. "search results for camera" or "the product price".
+    validations:
+      required: true
+  - type: textarea
+    id: receipt
+    attributes:
+      label: The receipt
+      description: |
+        The `receipt` from the result (CLI: the JSON printed by `frankensurf read <url>`). It lists every tool tried and why each failed.
+      render: json
+    validations:
+      required: true
+  - type: dropdown
+    id: keys
+    attributes:
+      label: Paid tools
+      description: Were paid fallbacks (Firecrawl, Zyte, ...) allowed?
+      options:
+        - No, free tools only
+        - Yes, with my own keys
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "Output of `pip show frankensurf` (Version line) or the git commit."

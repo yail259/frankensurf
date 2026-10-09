@@ -4,7 +4,7 @@ import starlight from "@astrojs/starlight";
 // The landing page lives in src/pages; Starlight serves the docs under /docs
 // (its content sits in src/content/docs/docs/ so every slug starts with docs/).
 export default defineConfig({
-  site: "https://frankensurf.pages.dev",
+  site: "https://frankensurf.dev",
   prefetch: { prefetchAll: false, defaultStrategy: "hover" },
   server: { host: true, port: 4322 },
   // Polling sees edits made from Windows through the \\wsl share, which inotify misses.

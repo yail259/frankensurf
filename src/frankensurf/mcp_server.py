@@ -1,12 +1,12 @@
 import os
 from mcp.server.fastmcp import FastMCP
-from .runtime import Runtime, WebPolicy
+from .runtime import Runtime, WebPolicy, default_state_dir
 
 server = FastMCP("FrankenSurf")
 
 
 def runtime():
-    return Runtime(state_dir=os.getenv("FRANKENSURF_STATE", "state"),
+    return Runtime(state_dir=default_state_dir(),
                    identity_registry=os.getenv("FRANKENSURF_IDENTITIES"))
 
 

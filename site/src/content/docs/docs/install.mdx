@@ -13,20 +13,25 @@ system:
 
 <Steps>
 
-1. Install the package with the MCP extra, and a browser for JavaScript pages.
+1. Install the package with the MCP extra.
 
    ```bash
-   git clone https://github.com/yail259/frankensurf.git
-   cd frankensurf
-   python3 -m venv .venv
-   .venv/bin/pip install -e '.[mcp]'
-   .venv/bin/playwright install --with-deps chromium
+   python3 -m venv ~/.venvs/frankensurf && source ~/.venvs/frankensurf/bin/activate
+   pip install "frankensurf[mcp]"
    ```
 
-2. Read a page.
+2. Download Chromium and the free stealth browsers (Camoufox, Scrapling, Patchright). This takes a few minutes.
 
    ```bash
-   .venv/bin/frankensurf read https://example.com
+   frankensurf setup
+   ```
+
+   If Chromium won't start, install its system libraries: `sudo $(which python) -m playwright install-deps chromium`.
+
+3. Read a page, and see each tool it tried.
+
+   ```bash
+   frankensurf read "https://www.walmart.com/search?q=air+fryer" --explain
    ```
 
 </Steps>
@@ -39,20 +44,18 @@ system:
 1. Install Python 3.12 or newer if you don't have it, for example with
    [Homebrew](https://brew.sh/): `brew install python@3.12`.
 
-2. Install the package with the MCP extra, and a browser for JavaScript pages.
+2. Install the package, then Chromium and the free stealth browsers.
 
    ```bash
-   git clone https://github.com/yail259/frankensurf.git
-   cd frankensurf
-   python3 -m venv .venv
-   .venv/bin/pip install -e '.[mcp]'
-   .venv/bin/playwright install chromium
+   python3 -m venv ~/.venvs/frankensurf && source ~/.venvs/frankensurf/bin/activate
+   pip install "frankensurf[mcp]"
+   frankensurf setup
    ```
 
-3. Read a page.
+3. Read a page, and see each tool it tried.
 
    ```bash
-   .venv/bin/frankensurf read https://example.com
+   frankensurf read "https://www.walmart.com/search?q=air+fryer" --explain
    ```
 
 </Steps>
@@ -79,12 +82,12 @@ Frankensurf runs inside WSL (Windows Subsystem for Linux).
 2. Open **Ubuntu** from the Start menu and follow the Linux steps there:
 
    ```bash
-   git clone https://github.com/yail259/frankensurf.git
-   cd frankensurf
-   python3 -m venv .venv
-   .venv/bin/pip install -e '.[mcp]'
-   .venv/bin/playwright install --with-deps chromium
-   .venv/bin/frankensurf read https://example.com
+   sudo apt install -y python3-venv
+   python3 -m venv ~/.venvs/frankensurf && source ~/.venvs/frankensurf/bin/activate
+   pip install "frankensurf[mcp]"
+   frankensurf setup
+   sudo $(which python) -m playwright install-deps chromium
+   frankensurf read "https://www.walmart.com/search?q=air+fryer" --explain
    ```
 
 </Steps>
@@ -95,8 +98,14 @@ Your agent on Windows starts the server through WSL; see
 </TabItem>
 </Tabs>
 
-That is the free stack: plain HTTP, markdown negotiation, a local Chromium and
-Jina Reader. No account or key.
+That is the free stack: plain HTTP, markdown negotiation, Jina Reader, a local
+Chromium and the stealth browsers. No account or key. On the 152-site benchmark
+it reads 73.7% of sites; adding the [paid tools](/docs/blocked/paid-tools/)
+takes it to 89.5%. Skip the stealth browsers with `frankensurf setup --no-stealth`.
+
+Working on Frankensurf itself? Install from a clone instead:
+`git clone https://github.com/yail259/frankensurf.git`, then
+`pip install -e '.[test,mcp]'` and `frankensurf setup`.
 
 ## Optional extras
 
@@ -108,7 +117,7 @@ scripts run in a shell (on Windows, inside WSL); SearXNG and Steel need
 | --- | --- |
 | Local search ([SearXNG](/docs/integrations/searxng/)) | `bash scripts/start-search.sh` |
 | Self-hosted browser ([Steel](/docs/integrations/steel/)) | `bash scripts/start-steel.sh` |
-| Stealth browsers ([Camoufox](/docs/integrations/camoufox/), [Scrapling](/docs/integrations/scrapling/)) | `bash scripts/install-public-providers.sh` |
+| Stealth browsers ([Camoufox](/docs/integrations/camoufox/), [Scrapling](/docs/integrations/scrapling/), [Patchright](/docs/integrations/patchright/)) | `frankensurf setup` (included above) |
 | [Crawl4AI](/docs/integrations/crawl4ai/) | `bash scripts/install-crawl4ai-provider.sh` |
 | Paid services | [Add keys](/docs/blocked/paid-tools/) |
 
