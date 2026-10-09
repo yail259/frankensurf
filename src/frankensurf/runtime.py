@@ -914,7 +914,14 @@ _CHALLENGE_TITLES = frozenset({
     "verify you are human", "robot or human?", "pardon our interruption",
     "security check", "access to this page has been denied", "prove your humanity",
     "human verification", "are you a human?", "are you human?", "one more step",
-    "bot verification", "verify you're human", "please wait while we verify your browser"})
+    "bot verification", "verify you're human", "please wait while we verify your browser",
+    # Access denied, as bot walls say it in other languages.
+    "zugriff verweigert", "accès refusé", "acces refuse", "acceso denegado", "accesso negato",
+    "toegang geweigerd", "åtkomst nekad", "adgang nægtet", "tilgang nektet", "pääsy estetty",
+    "dostęp zabroniony", "přístup odepřen", "hozzáférés megtagadva", "доступ ограничен",
+    "доступ запрещён", "доступ запрещен", "アクセスが拒否されました", "访问被拒绝", "拒绝访问",
+    "access blocked", "request blocked", "you have been blocked", "sorry, you have been blocked",
+    "vercel security checkpoint", "ddos protection", "checking your browser"})
 _CHALLENGE_PHRASES = (
     "verify you are human", "checking your browser before accessing",
     "enable javascript and cookies to continue", "please complete the following challenge",
@@ -925,7 +932,10 @@ _CHALLENGE_PHRASES = (
     'thinks you are a "bot"', "thinks you are a bot", "unusual traffic from your computer",
     "please verify you are a human", "confirm you are not a robot", "prove your humanity",
     "but not for bots", "verify you're human", "verify you're not a robot",
-    "complete the security check to access", "help us verify you're a real person")
+    "complete the security check to access", "help us verify you're a real person",
+    "the requested url was rejected", "your support id is", "you don't have permission to access",
+    "aus sicherheitsgründen mussten wir den zugriff", "доступ ограничен: проблема с ip",
+    "vercel security checkpoint", "we have detected unusual activity")
 
 # Short pages that only ask the reader to sign in, in the languages the
 # benchmarks meet. Checked only on pages under _SIGN_IN_TEXT_MAX characters.
@@ -944,8 +954,9 @@ _BOT_PAGE_PATH = re.compile(r"/(captcha|bots?|blocked|block|challenge|access[-_]
 
 def _challenge_text(title: str | None, text: str) -> bool:
     title = (title or "").strip().lower().lstrip("# ").strip()
-    # "Reddit - Prove your humanity": a site name around the challenge title.
-    parts = [title] + [part.strip(" .!") for part in re.split(r"\s+[|\-–—:]\s+", title)]
+    # "Reddit - Prove your humanity", "Zugriff verweigert / Access denied",
+    # "Доступ ограничен: проблема с IP": a site name or a second language around the title.
+    parts = [title] + [part.strip(" .!") for part in re.split(r"\s*[|\-–—:/]\s+|\s+[|\-–—/]\s*", title)]
     if any(part in _CHALLENGE_TITLES for part in parts if part):
         return True
     text = text.lower()
@@ -1538,6 +1549,12 @@ _PROXIED = frozenset({"http", "local", "steel", "camoufox", "scrapling", "scrapl
 def _browser_proxy(settings):
     """Playwright's proxy argument (server plus optional credentials)."""
     return {key: settings[key] for key in ("server", "username", "password") if key in settings}
+
+
+def _consent_leads(text) -> bool:
+    """The page's text opens with a cookie or consent banner."""
+    from .main_content import _CONSENT
+    return len(_CONSENT.findall((text or "")[:2500])) >= 3
 
 
 def _user_agent() -> str:
@@ -3508,6 +3525,41 @@ class Runtime:
         receipt["warm_up"] = record
         return result
 
+    async def _rendered_opinion(self, url, first, policy, adapter, policy_overrides,
+                                workload_assertions, effective, terms):
+        """When a page that didn't run its script looks like the wrong results,
+        read it once in a browser: many sites apply the query client-side. The
+        rendered page wins only if it is complete and on the query."""
+        from .completeness import assess
+        method = (first.get("receipt") or {}).get("method")
+        manifest = next((item for item in self.providers.inspect() if item["id"] == method), None)
+        if manifest is None or manifest.get("rendering") or not effective.allow_local_browser:
+            return None
+        tool = next((tool for tool in ("local", "scrapling", "camoufox")
+                     if self.providers.is_available(tool) and tool not in effective.exclude_providers), None)
+        if tool is None:
+            return None
+        settle = max(effective.settle_ms, effective.completeness_settle_ms)
+        if policy is not None:
+            second = await self._read_unpaced(url, replace(policy, provider_candidates=(tool,), settle_ms=settle),
+                                              None, adapter, workload_assertions=workload_assertions)
+        else:
+            second = await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                **(policy_overrides or {}), "provider_candidates": [tool], "settle_ms": settle},
+                workload_assertions=workload_assertions)
+        receipt = second.get("receipt") or {}
+        if receipt.get("status") != "observed":
+            return None
+        verdict = assess(url, second, expect_terms=terms)
+        if not verdict["complete"] or verdict.get("off_query"):
+            return None
+        receipt["completeness"] = {**{key: verdict.get(key) for key in ("kind", "complete", "item_links", "prices",
+                                                                       "text_chars")},
+                                   "rendered_after_off_query": method, "kept": tool,
+                                   "escalations": [{"provider": tool, "status": "observed", "complete": True,
+                                                    "trace_id": receipt.get("trace_id")}]}
+        return second
+
     def _hedge_tool(self, effective, adapter):
         """The first free, available, allowed tool on the completeness ladder."""
         paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
@@ -3653,6 +3705,11 @@ class Runtime:
             if verdict.get(key):
                 record[key] = verdict[key]
         first["receipt"]["completeness"] = record
+        if verdict.get("off_query") and effective.completeness_escalation:
+            rendered = await self._rendered_opinion(url, first, policy, adapter, policy_overrides,
+                                                    workload_assertions, effective, terms)
+            if rendered is not None:
+                return rendered
         if verdict.get("off_query"):
             # Another tool would read the same wrong page: hand it back, named.
             record["off_query"] = True
@@ -3674,7 +3731,8 @@ class Runtime:
                            # Only pages that name the action they need: a thin search page is
                            # better served by a stronger tool than by pressing buttons.
                            and (verdict.get("needs_interaction")
-                                or "consent" in str(verdict.get("reason") or "")))
+                                or "consent" in str(verdict.get("reason") or "")
+                                or (not verdict["complete"] and _consent_leads(first.get("text")))))
         if verdict["complete"] and not borderline and not one_action_away:
             return first
         receipt = first["receipt"]

@@ -28,7 +28,8 @@ def page(content, text=None):
 def test_query_terms_come_from_the_url_and_the_caller():
     assert query_terms(SEARCH) == ["camera"]
     assert query_terms("https://x.example/AuctionLots.aspx?kw=Desk+Lamps&page=2") == ["desk", "lamp"]
-    assert query_terms("https://x.example/s/cameras", ["boxes", "the", "42"]) == ["box"]
+    # The path names the search when the query string does not (/s/cameras).
+    assert query_terms("https://x.example/s/cameras", ["boxes", "the", "42"]) == ["camera", "box"]
     assert query_terms("https://x.example/") == []
 
 

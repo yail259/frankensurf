@@ -66,10 +66,21 @@ _STOPWORDS = frozenset({"the", "and", "for", "with", "from", "new", "used", "buy
 _ECHO_MENTIONS = 2
 
 
+# Words a search path uses for the kind of page, not for what was searched.
+_PATH_GENERIC = frozenset({"search", "s", "q", "jobs", "job", "results", "result", "shop", "browse", "category",
+                           "categories", "c", "list", "html", "htm", "php", "aspx", "for", "sale", "buy", "rent",
+                           "homes", "products", "product", "items", "all", "new", "used", "in", "near", "w"})
+
+
 def query_terms(url: str, expect_terms=()) -> list[str]:
     """Words the results of this search should mention, lightly stemmed."""
     values = [value for key, items in parse_qs(urlparse(url).query).items()
               if _query_key(key) for value in items]
+    if not values and _SEARCH_PATH.search(urlparse(url).path or "/"):
+        # /jobs/python, /q/fiets, /python-jobs: the last path segment is the query.
+        last = [segment for segment in urlparse(url).path.split("/") if segment][-1:]
+        words = [word for word in _WORD.findall(last[0].lower()) if word not in _PATH_GENERIC] if last else []
+        values = [" ".join(words)] if words and not re.search(r"\d{4,}", last[0]) else []
     terms = []
     for value in [*values, *expect_terms]:
         for word in _WORD.findall(str(value).lower()):

@@ -256,3 +256,24 @@ def test_prices_with_the_currency_after_the_amount_count():
     text = " ".join(f"Gitarre {n} {n},99 €" for n in range(1, 6)) + " " + "Menü " * 300
     verdict = assess(url, {"content": "<p>" + text + "</p>", "text": text, "content_type": "text/html"})
     assert verdict["kind"] == "search" and verdict["prices"] == 5 and verdict["complete"]
+
+
+def test_walls_are_named_in_other_languages():
+    from frankensurf.runtime import _challenge_text
+    assert _challenge_text("Zugriff verweigert / Access denied", "Aus Sicherheitsgründen")
+    assert _challenge_text("Доступ ограничен: проблема с IP", "")
+    assert _challenge_text("Vercel Security Checkpoint", "")
+    assert not _challenge_text("Lamps - Shop", "Lamps for every room")
+
+
+async def test_off_query_from_plain_http_gets_one_rendered_read(tmp_path, escalating):
+    default_feed = ("<html><title>Search</title><body>" + CHROME
+                    + "".join(f'<a href="/product/red-wine-{n}/SKU{n:06d}">Red wine {n} $20</a>' for n in range(12))
+                    + "</body></html>")
+    escalating(plugin("http", default_feed), plugin("local", RESULTS, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides=POLICY)
+    receipt = result["receipt"]
+    assert receipt["method"] == "local"
+    assert receipt["completeness"]["rendered_after_off_query"] == "http"
+    assert "Lamp 3" in result["text"]
