@@ -1611,6 +1611,9 @@ def _consent_leads(text) -> bool:
     return len(_CONSENT.findall((text or "")[:2500])) >= 3
 
 
+# Failures of the tool itself, not of the page.
+_TOOL_OUTAGES = frozenset({"PROVIDER_DOWN", "PROVIDER_UNAVAILABLE", "TIMEOUT"})
+
 WALL_VENDORS = ("cloudflare", "akamai", "datadome", "perimeterx", "imperva", "kasada", "aws_waf",
                 "vercel", "sucuri")
 
@@ -4637,9 +4640,9 @@ class Runtime:
         """Decide what follows a failed attempt: "retry", "next" or "stop".
 
         Paid providers and cost-capped reads are never retried, since a retry is
-        a second charge. After enough walls, allowed paid providers move ahead
-        of the remaining free ones, then free tools that fetch from their own
-        network.
+        a second charge. After enough failed tries, free tools that fetch from
+        their own network move ahead; after enough walls, allowed paid providers
+        move ahead of those.
         """
         if (exc.code in policy.provider_retry_failures
                 and exc.code not in policy.terminal_failures
@@ -4678,23 +4681,34 @@ class Runtime:
             plan_state["reordered"] = True
         if exc.code in policy.escalation_failures:
             plan_state["walls"] += 1
-        if (policy.escalate_after_walls and not resolved
-                and not plan_state["escalated"]
-                and plan_state["walls"] >= policy.escalate_after_walls):
-            remaining = order[plan_state["position"] + 1:]
+        plan_state["misses"] = plan_state.get("misses", 0) + 1
+        if policy.escalate_after_walls and not resolved:
             manifests = {item["id"]: item for item in self.providers.inspect()}
-            paid = [item for item in remaining if manifests.get(item, {}).get("paid")]
-            # A wall that blocks by address stops every tool on this machine
-            # alike; a tool that fetches from elsewhere is the next real chance.
-            elsewhere = [item for item in remaining if item not in paid
-                         and manifests.get(item, {}).get("remote")
-                         and not manifests[item].get("archive")]
-            ahead = paid + elsewhere
-            if ahead:
+            hopeless = plan_state.get("hopeless") or set()
+
+            def move_ahead(ahead):
+                remaining = order[plan_state["position"] + 1:]
                 order[plan_state["position"] + 1:] = ahead + [
                     item for item in remaining if item not in ahead]
-                plan_state["escalated"] = True
                 receipt.setdefault("routing", {})["escalated_to"] = ahead[0]
+            if (not plan_state.get("elsewhere")
+                    and plan_state["misses"] >= policy.escalate_after_walls):
+                # This many tries on this machine got no page (a wall that blocks
+                # by address stops them all alike, and some pages none of them
+                # render): a free tool that fetches from elsewhere is the next chance.
+                elsewhere = [item for item in order[plan_state["position"] + 1:]
+                             if item not in hopeless and manifests.get(item, {}).get("remote")
+                             and not manifests[item].get("paid") and not manifests[item].get("archive")]
+                if elsewhere:
+                    move_ahead(elsewhere)
+                    plan_state["elsewhere"] = True
+            if (not plan_state["escalated"]
+                    and plan_state["walls"] >= policy.escalate_after_walls):
+                paid = [item for item in order[plan_state["position"] + 1:]
+                        if manifests.get(item, {}).get("paid") and item not in hopeless]
+                if paid:
+                    move_ahead(paid)
+                    plan_state["escalated"] = True
         return "stop" if (resolved or terminal or candidate == order[-1]) else "next"
 
     def _wall_stats_path(self):
@@ -4706,17 +4720,27 @@ class Runtime:
         except (OSError, ValueError):
             return {}
 
-    def _route_by_vendor(self, vendor, order, plan_state, receipt, minimum=3):
+    def _route_by_vendor(self, vendor, order, plan_state, receipt, minimum=3, hopeless=8):
         """Move the tools that got past this wall vendor most often to the front of
-        what is left. Learned from this machine's own reads, never from site names."""
+        what is left, and the ones that never have in `hopeless` tries to the back.
+        Learned from this machine's own reads, never from site names."""
         stats = self._wall_stats().get(vendor) or {}
         remaining = order[plan_state["position"] + 1:]
         rated = sorted(((tool, (stats[tool][0] + 1) / (stats[tool][1] + 2)) for tool in remaining
                         if tool in stats and stats[tool][1] >= minimum), key=lambda pair: -pair[1])
         ahead = [tool for tool, rate in rated if rate >= 0.5]
-        if ahead:
-            order[plan_state["position"] + 1:] = ahead + [tool for tool in remaining if tool not in ahead]
-            receipt.setdefault("routing", {})["learned_for"] = {"vendor": vendor, "first": ahead[0]}
+        last = [tool for tool in remaining if tool in stats and stats[tool][0] == 0
+                and stats[tool][1] >= hopeless]
+        plan_state["hopeless"] = set(last)
+        if ahead or last:
+            order[plan_state["position"] + 1:] = ahead + [
+                tool for tool in remaining if tool not in ahead and tool not in last] + last
+            learned = {"vendor": vendor}
+            if ahead:
+                learned["first"] = ahead[0]
+            if last:
+                learned["last"] = last
+            receipt.setdefault("routing", {})["learned_for"] = learned
 
     def _learn_wall(self, receipt):
         """After a read that met a named wall: which tools tried, which got through."""
@@ -5186,6 +5210,8 @@ class Runtime:
                         step = self._after_failed_attempt(
                             exc, policy, candidate, candidate_record, retry_index,
                             plan_state, order, resolved, receipt)
+                        if exc.code not in _TOOL_OUTAGES:
+                            plan_state["telling"] = exc
                         if step == "retry":
                             if policy.provider_retry_delay_seconds:
                                 await asyncio.sleep(
@@ -5193,6 +5219,10 @@ class Runtime:
                             continue
                         exhausted_candidates.add(candidate)
                         if step == "stop":
+                            if exc.code in _TOOL_OUTAGES and plan_state.get("telling") is not None:
+                                # The last tool being down says nothing about the page;
+                                # what the last working tool met (a wall, a 404) does.
+                                raise plan_state["telling"]
                             raise
                 receipt["latency_ms"] = round((time.monotonic()-started)*1000)
                 self._store_cache(result, receipt, url, adapter, policy, resolved, key,

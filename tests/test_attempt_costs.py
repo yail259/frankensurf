@@ -79,7 +79,8 @@ async def test_paid_exhaustion_retains_measured_cost_in_failed_receipt(tmp_path,
     ])
     receipt = (await observe(tmp_path, policy))["receipt"]
     assert receipt["status"] == "failed" and receipt["cost_usd"] == 0.5
-    assert receipt["failure"]["code"] == "PROVIDER_DOWN"
+    # The second provider being down says nothing about the page: the wall stands.
+    assert receipt["failure"]["code"] == "BLOCKED"
 
 
 async def test_finite_reports_that_overflow_aggregate_remain_unknown(tmp_path, monkeypatch):

@@ -69,7 +69,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `context_stop_failures` | `AUTH_REQUIRED`, `AUTH_EXPIRED` | Failures that stop later reads of the same domain in this Runtime. |
 | `auth_wall_confirmations` | `5` | Providers in a row that must hit a sign-in wall before a public read stops. |
 | `fake_wall_confirmers` | `jina_reader`, `camoufox`, `firecrawl`, `zyte`, `scrapling`, `zenrows` | Providers that go next after a suspected fake wall, in this order. |
-| `escalate_after_walls` | `4` | Walls in one read before paid providers, then free tools that fetch from their own network, move ahead; 0 turns it off. |
+| `escalate_after_walls` | `4` | Walls in one read before paid providers move ahead, and failed tries of any kind before free tools that fetch from their own network do; 0 turns both off. |
 | `escalation_failures` | `BLOCKED`, `CAPTCHA` | Failures that count as walls. |
 | `use_route_memory` | `True` | Let route memory reorder providers. |
 | `route_memory_ttl_seconds` | `3600` | How far back route memory looks. |

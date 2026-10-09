@@ -62,11 +62,29 @@ async def test_walls_move_tools_that_fetch_from_elsewhere_ahead(tmp_path, regist
     assert tried(paid) == ["w1", "w2", "paid_ok"]
 
 
+async def test_pages_this_machine_cannot_get_move_remote_tools_ahead_too(tmp_path, registry):
+    registry(provider("timed_out", "TIMEOUT"), provider("unrendered", "VISUAL_REQUIRED"),
+             provider("empty", "EMPTY_PAGE"), provider("remote_ok", "ok", remote=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(URL, WebPolicy(escalate_after_walls=2, origin_route_hint_ttl_seconds=0,
+                                               provider_max_attempts_per_candidate=1))
+    assert tried(result) == ["timed_out", "unrendered", "remote_ok"]
+
+
 def test_hosted_providers_fetch_from_elsewhere():
     from frankensurf.providers import DEFAULT_PROVIDERS
     remote = {item["id"] for item in DEFAULT_PROVIDERS.inspect() if item["remote"]}
     assert {"jina_reader", "firecrawl"} <= remote
     assert not remote & {"http", "local", "camoufox", "scrapling"}
+
+
+async def test_a_read_that_ends_on_a_down_tool_reports_the_wall_it_met(tmp_path, registry):
+    registry(provider("walled", "CAPTCHA"), provider("broken", "PROVIDER_DOWN"))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(URL, WebPolicy(origin_route_hint_ttl_seconds=0,
+                                               provider_max_attempts_per_candidate=1))
+    assert tried(result) == ["walled", "broken"]
+    assert result["receipt"]["failure"]["code"] == "CAPTCHA"
 
 
 async def test_outages_do_not_count_as_walls(tmp_path, registry):

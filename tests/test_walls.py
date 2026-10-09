@@ -117,3 +117,33 @@ async def test_the_router_learns_which_tool_gets_past_a_wall_vendor(tmp_path, re
         learned = await web.read("https://shop9.example.com/p/item-9", policy_overrides=policy)
     assert learned["receipt"]["routing"]["learned_for"] == {"vendor": "datadome", "first": "stealthy"}
     assert calls == ["http", "stealthy"]
+
+
+async def test_tools_that_never_got_past_a_vendor_go_last(tmp_path, registry):
+    import json
+    calls = []
+
+    def tool(identifier, wins=False):
+        class Plugin:
+            def __init__(self):
+                self.manifest = ProviderManifest(identifier, "1", rendering=identifier != "http")
+
+            def available(self, configured):
+                return True
+
+            async def acquire(self, request, services):
+                calls.append(identifier)
+                if wins:
+                    return {"url": request.url, "content": PAGE, "content_type": "text/html", "http_status": 200}
+                failure = WebFailure("BLOCKED", "fixture wall")
+                failure.wall_vendor = "cloudflare"
+                raise failure
+        return Plugin()
+    registry(tool("http"), tool("never_a"), tool("never_b"), tool("untried"), tool("sometimes", wins=True))
+    policy = {**POLICY, "warm_up_on_wall": False}
+    async with Runtime(tmp_path) as web:
+        (web.state_dir / "wall-stats.json").write_text(json.dumps({"cloudflare": {
+            "never_a": [0, 9], "never_b": [0, 12], "sometimes": [1, 4]}}))
+        result = await web.read("https://shop.example.com/p/item-1", policy_overrides=policy)
+    assert calls == ["http", "untried", "sometimes"]
+    assert result["receipt"]["routing"]["learned_for"] == {"vendor": "cloudflare", "last": ["never_a", "never_b"]}

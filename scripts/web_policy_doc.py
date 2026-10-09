@@ -50,7 +50,7 @@ D = {
  "handoff_timeout_seconds": "How long a handoff waits for a person.",
  "terminal_failures": "Failures that stop the climb.",
  "context_stop_failures": "Failures that stop later reads of the same domain in this Runtime.",
- "escalate_after_walls": "Walls in one read before paid providers, then free tools that fetch from their own network, move ahead; 0 turns it off.",
+ "escalate_after_walls": "Walls in one read before paid providers move ahead, and failed tries of any kind before free tools that fetch from their own network do; 0 turns both off.",
  "escalation_failures": "Failures that count as walls.",
  "use_route_memory": "Let route memory reorder providers.",
  "route_memory_ttl_seconds": "How far back route memory looks.",
