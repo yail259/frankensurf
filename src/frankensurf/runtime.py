@@ -1496,6 +1496,31 @@ async def _guard_hop(request) -> None:
         await _refuse_private(str(request.url))
 
 
+def proxy_settings(url: str | None) -> dict | None:
+    """{"url", "server", "username", "password"} from a proxy URL such as
+    http://user:pass@host:8080 or socks5://host:1080, or None."""
+    if not url:
+        return None
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https", "socks5", "socks5h") or not parsed.hostname or not parsed.port:
+        raise ValueError("FRANKENSURF_PROXY must look like http://user:pass@host:port or socks5://host:port")
+    server = f"{parsed.scheme}://{parsed.hostname}:{parsed.port}"
+    settings = {"url": url, "server": server}
+    if parsed.username:
+        from urllib.parse import unquote
+        settings.update(username=unquote(parsed.username), password=unquote(parsed.password or ""))
+    return settings
+
+
+# Tools that reach the site from this machine, so the owner's proxy applies.
+_PROXIED = frozenset({"http", "local", "steel", "camoufox", "scrapling", "scrapling_http", "patchright", "nodriver"})
+
+
+def _browser_proxy(settings):
+    """Playwright's proxy argument (server plus optional credentials)."""
+    return {key: settings[key] for key in ("server", "username", "password") if key in settings}
+
+
 def _user_agent() -> str:
     """Plain HTTP reads say who they are, with a contact URL, as polite-bot
     policies ask (Wikimedia refuses agents without one)."""
@@ -1548,6 +1573,10 @@ class Runtime:
         # every read then refuses private network addresses.
         self.block_private_network = os.getenv("FRANKENSURF_BLOCK_PRIVATE_NETWORK", "").lower() in (
             "1", "true", "yes")
+        # A proxy the owner brings (a residential or mobile pool for servers whose
+        # data-centre address sites refuse). From the environment only: it never
+        # appears in policies, receipts or traces (receipts say via_proxy).
+        self.proxy = proxy_settings(os.getenv("FRANKENSURF_PROXY"))
         self.local_cdp_url = local_cdp_url or os.getenv("FRANKENSURF_LOCAL_CDP")
         if self.steel_api_url:
             p = urlparse(self.steel_api_url)
@@ -1617,6 +1646,7 @@ class Runtime:
         (self.state_dir / "cache").mkdir(exist_ok=True)
         from .bot_auth import sign_hop
         self._http = httpx.AsyncClient(follow_redirects=True, transport=self._transport,
+                                       **({"proxy": self.proxy["url"]} if self.proxy and self._transport is None else {}),
                                        headers={"User-Agent": _user_agent()},
                                        event_hooks={"request": [sign_hop, _guard_hop]})
         try:
@@ -1822,14 +1852,15 @@ class Runtime:
             if provider == "local":
                 if not policy.allow_local_browser: raise WebFailure("POLICY_DENIED", "Local browser disabled")
                 if not self._local_browser:
-                    self._local_browser = await self._pw.chromium.launch(headless=True)
+                    self._local_browser = await self._pw.chromium.launch(
+                        headless=True, **({"proxy": _browser_proxy(self.proxy)} if self.proxy else {}))
                 return self._local_browser
             if provider == "local_cdp":
                 raise WebFailure("IDENTITY_REQUIRED", "Local CDP requires an enrolled named identity")
             if not self.steel_api_url:
                 raise WebFailure("PROVIDER_DOWN", "Self-hosted Steel endpoint is not configured")
             if not self._steel_browser:
-                response = await self._http.post(self.steel_api_url.rstrip("/") + "/v1/sessions", json={"blockAds": True}, timeout=30)
+                response = await self._http.post(self.steel_api_url.rstrip("/") + "/v1/sessions", json={"blockAds": True, **({"proxyUrl": self.proxy["url"]} if self.proxy else {})}, timeout=30)
                 if response.status_code >= 400: raise WebFailure("PROVIDER_DOWN", "Steel session creation failed", response.status_code)
                 session = response.json()
                 self._steel_session = session["id"]
@@ -3779,21 +3810,40 @@ class Runtime:
                     for entry in parse_feed(body) or []:
                         entries.append({**entry, "source": "feed"})
             # Sitemaps when feeds are absent or thin: they list everything with dates.
+            since_here = floor if first else parse_date(state.get("last_polled_at"))
+            if first and since_here is None:
+                since_here = now - timedelta(days=2)
             if len(entries) < 5:
-                queue, visited = list(state.get("sitemaps") or [])[:3], 0
-                while queue and visited < 6:
+                # The first poll walks the index to its newest children. Later polls
+                # fetch the index conditionally (304 when unchanged), any child that
+                # is new since last time, and the "hot" children that held recent
+                # pages: a few small requests, not a crawl.
+                known = set(state.get("known_children") or [])
+                hot = list(state.get("hot_sitemaps") or [])
+                queue = list(state.get("sitemaps") or [])[:3]
+                visited, new_hot = 0, []
+                while queue and visited < 8:
                     sitemap = queue.pop(0)
                     visited += 1
                     status, body = await fetch(sitemap, validators)
                     parsed_map = parse_sitemap(body) if status == 200 and body else None
                     if not parsed_map:
                         continue
-                    queue += pick_child_sitemaps(parsed_map["sitemaps"])
-                    entries += [{**page, "source": "sitemap"} for page in parsed_map["pages"]]
-            since_here = floor if first else parse_date(state.get("last_polled_at"))
-            if first and since_here is None:
-                since_here = now - timedelta(days=2)
-            new = []
+                    children = [child for child in parsed_map["sitemaps"] if child.get("url")]
+                    if first or not hot:
+                        queue += pick_child_sitemaps(children)
+                    else:
+                        queue += [child["url"] for child in children if child["url"] not in known][:3]
+                    known.update(child["url"] for child in children)
+                    pages = [{**page, "source": "sitemap"} for page in parsed_map["pages"]]
+                    if any(page.get("published") and newer_than(page, since_here) for page in pages):
+                        new_hot.append(sitemap)
+                    entries += pages
+                    if not queue and hot:
+                        queue, hot = [url for url in hot if url != sitemap], []
+                state.update(known_children=sorted(known)[-500:],
+                             hot_sitemaps=new_hot[:3] or list(state.get("hot_sitemaps") or [])[:3])
+            new, more = [], 0
             entries.sort(key=lambda entry: entry.get("published") or "", reverse=True)
             for entry in entries:
                 url = entry.get("url") or ""
@@ -3809,20 +3859,24 @@ class Runtime:
                     continue
                 seen_set.add(key)
                 seen.append(key)
+                # First poll: undated pages are the baseline, not news.
+                if first and not entry.get("published"):
+                    continue
                 story = story_key(entry.get("title"))
                 if story and story in stories:
                     continue
                 if story:
                     stories.add(story)
-                new.append({**entry, "site": origin})
                 if len(new) >= max_new_per_site:
-                    break
-            state.update(validators=validators, seen=seen[-20000:], last_polled_at=now.isoformat())
+                    more += 1  # Remembered as seen, counted, not listed.
+                    continue
+                new.append({**entry, "site": origin})
+            state.update(validators=validators, seen=seen[-50000:], last_polled_at=now.isoformat())
             fd, temporary = tempfile.mkstemp(prefix=".watch-", dir=folder)
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 json.dump(state, stream)
             os.replace(temporary, path)
-            report.update(new=len(new), entries_seen=len(entries))
+            report.update(new=len(new), more=more, entries_seen=len(entries))
             return report, new
 
         results = await asyncio.gather(*(poll(site) for site in sites), return_exceptions=True)
@@ -4690,6 +4744,8 @@ class Runtime:
                             response, policy, candidate, candidate_version,
                             candidate_binding_id, attempt_started, _recipe,
                             attempt_cost, cost_reported)
+                        if self.proxy and candidate in _PROXIED:
+                            receipt["via_proxy"] = True
                         receipt.update(
                             status="observed", observed_at=utcnow(),
                             **({"freshness_seconds": 0}

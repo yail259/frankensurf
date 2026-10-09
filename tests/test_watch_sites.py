@@ -101,3 +101,21 @@ async def test_the_same_story_on_two_sites_is_reported_once(tmp_path):
         result = await web.watch_sites(["https://a.example/", "https://b.example/"],
                                        policy_overrides={"origin_min_interval_seconds": 0})
     assert len(result["new"]) == 1
+
+
+async def test_the_first_poll_is_a_baseline_even_past_the_cap(tmp_path):
+    def handle(request):
+        url = str(request.url)
+        if url == "https://news.example.com/":
+            return httpx.Response(200, text=HOME, headers={"content-type": "text/html"})
+        if url == "https://news.example.com/feed.xml":
+            return httpx.Response(200, text=RSS, headers={"content-type": "application/rss+xml"})
+        return httpx.Response(404)
+    overrides = {"origin_min_interval_seconds": 0, "origin_route_hint_ttl_seconds": 0}
+    async with Runtime(tmp_path, transport=httpx.MockTransport(handle)) as web:
+        web._domain_delay = 0
+        first = await web.watch_sites(["https://news.example.com/"], since=iso(2.5), max_new_per_site=2,
+                                      policy_overrides=overrides)
+        again = await web.watch_sites(["https://news.example.com/"], policy_overrides=overrides)
+    assert len(first["new"]) == 2 and first["sites"][0]["more"] == 1
+    assert again["new"] == []
