@@ -106,6 +106,19 @@ climbing:
   different tool, since some sites serve fake 404s to bots; then the read
   stops.
 
+## Hedging a slow read
+
+A blocked site can take a dozen tools in turn before one gets through. Once an
+automatic read has run for 10 seconds (`hedge_after_seconds`, 0 turns it off),
+one more read starts beside it, pinned to the first free tool on the
+completeness ladder (Jina Reader by default). If that read brings back a
+complete page first, it wins and the climb is cancelled. A hedge page that is
+incomplete or failed never replaces the main read, and a hedge never uses a
+paid tool. When the hedge wins, `receipt.hedge` says so and the site's route
+hint learns it, so the next read starts there. On the 139-site held-out set,
+reads that used to take about 50 seconds (Michaels, Naukri, Anthropologie,
+Urban Outfitters) came back in 8 to 17.
+
 ## Skipping ahead
 
 Three things reorder the ladder so repeat visits are fast:

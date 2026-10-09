@@ -15,6 +15,22 @@ read resumes in that same tab.
   automatic.
 - Runs only when a call asks for it.
 
+## Or an older copy
+
+When a page is walled and an older copy will do (an article, a spec sheet,
+documentation), allow the archive instead. Frankensurf asks the Internet
+Archive for its latest stored copy, as the very last rung:
+
+```python
+page = await web.read(url, policy_overrides={"allow_archive": True})
+page["receipt"]["archived"]   # {"source", "archived_at", "snapshot_url"}
+```
+
+It is never on by default: an archived price or stock level is not today's.
+An archived read says so in `receipt.archived`, sets
+`receipt.source_freshness` to `archived`, and never becomes the site's route
+hint. A walled read's `receipt.next_step` mentions both options.
+
 ## Usage
 
 <Tabs syncKey="lang">

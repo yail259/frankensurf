@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import parse_qsl, urljoin, urlparse
+from urllib.parse import parse_qsl, quote_plus, urljoin, urlparse
 
 from .site_modules import SiteModule, _jsonld_blocks, _types
 
@@ -383,7 +383,58 @@ def draft(url, candidate, *, module_id=None, notes=None):
                                                 if re.fullmatch(r"[A-Za-z0-9_.\-\[\]]{1,128}", key)})
         if not record["match"]["query_keys"]:
             del record["match"]["query_keys"]
+    search = search_template(url)
+    if search:
+        template, encoding, path_pattern = search
+        record["templates"] = {"search": {"url": template,
+                                          "params": {"query": {"required": True, "encoding": encoding}}}}
+        if path_pattern:
+            record["match"]["path_pattern"] = path_pattern
     return record
+
+
+# Parameter names sites commonly use for the search box: a web convention, not a site list.
+_QUERY_KEYS = re.compile(r"(?i)^(q|qs|query|search|searchterm|search_term|searchtext|search_query|keyword|"
+                         r"keywords|kw|k|term|terms|text|words|freetext|sw|s|tr|st|ntt|w|p)$")
+
+
+# A path segment that introduces a search word: /q/lamp, /search/lamp, /tag/lamp.
+_PATH_SEARCH = re.compile(r"(?i)^(q|s|k|search|suche|zoeken|buscar|busca|recherche|cerca|haku|sok|soeg|szukaj|"
+                          r"tag|tags|topic|topics|keyword|keywords)$")
+
+
+def search_template(url):
+    """(template URL with {query}, encoding, widened path pattern or None) for a
+    search URL, or None. The query is a parameter (?q=lamp) or one path segment
+    (/q/lamp/); every other part of the URL is kept as it was."""
+    parsed = urlparse(url)
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    texty = [(index, key) for index, (key, value) in enumerate(pairs)
+             if re.search(r"[^\W\d_]", value) and value.lower() not in ("true", "false", "on", "off")]
+    chosen = next((index for index, key in texty if _QUERY_KEYS.match(key)), None)
+    if chosen is None and len(texty) == 1:
+        chosen = texty[0][0]
+    if chosen is not None:
+        parts = [f"{quote_plus(key)}={'{query}' if index == chosen else quote_plus(value)}"
+                 for index, (key, value) in enumerate(pairs)]
+        base = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        return base + "?" + "&".join(parts), "query", None
+    if parsed.query:
+        return None
+    segments = parsed.path.split("/")
+    for index in range(len(segments) - 1, -1, -1):
+        segment = segments[index]
+        # One plain word only: a slug like python-jobs cannot be rebuilt from a query.
+        previous = next((part for part in reversed(segments[:index]) if part), "")
+        if (re.fullmatch(r"[^\W\d_]{2,64}", segment) and segment.lower() not in _GENERIC
+                and _PATH_SEARCH.match(previous)):
+            before, after = "/".join(segments[:index]) + "/", "/".join(segments[index + 1:])
+            after = ("/" + after) if index + 1 < len(segments) else ""
+            template = f"{parsed.scheme}://{parsed.netloc}{before}{{query}}{after}"
+            return template, "path", re.escape(before) + r"[^/]+" + re.escape(after)
+        if segment:
+            break
+    return None
 
 
 def discover(result, url, *, module_id=None, limit=3):

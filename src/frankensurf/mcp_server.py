@@ -86,6 +86,23 @@ async def read_template(module: str, template: str, params: dict | None = None,
 
 
 @server.tool()
+async def batch_template(module: str, template: str, params_list: list[dict],
+                         acquisition_policy: dict | None = None) -> list[dict]:
+    """Read one saved site module template for many parameter sets at once,
+    e.g. its search template for ten queries. Reads are paced per site (the
+    first goes alone, the rest follow its route). Returns, in order, each
+    read's params, items, next_url and receipt status, without page text."""
+    options = _acquisition_overrides(acquisition_policy, {})
+    async with runtime() as web:
+        results = await web.batch_template(module, template, params_list, policy_overrides=options)
+    keep = ("url", "params", "items", "next_url")
+    return [{**{key: result[key] for key in keep if key in result},
+             "receipt": {key: (result.get("receipt") or {}).get(key)
+                         for key in ("status", "method", "trace_id", "failure", "module", "latency_ms")}}
+            for result in results]
+
+
+@server.tool()
 async def repair_site_module(trace_id: str, module: dict) -> dict:
     """Propose a fixed site module after a read reported receipt.module.status
     failed or invalid. module is the full next version (same id and origin, new

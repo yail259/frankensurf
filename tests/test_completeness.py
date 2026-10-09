@@ -175,3 +175,31 @@ async def test_paid_tools_never_race(tmp_path, escalating):
     assert ("start", "paid_two") not in log
     with pytest.raises(ValueError):
         WebPolicy(completeness_parallel=0)
+
+
+async def test_slow_read_is_hedged_with_the_first_free_ladder_tool(tmp_path, escalating):
+    log = []
+    escalating(slow_plugin("slow_main", RESULTS, 30, log),
+               slow_plugin("fast_free", RESULTS, 0, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "hedge_after_seconds": 0.2, "completeness_ladder": ["fast_free"]})
+    receipt = result["receipt"]
+    assert receipt["method"] == "fast_free" and receipt["hedge"]["won"] is True
+    assert ("cancelled", "slow_main") in log
+
+
+async def test_an_incomplete_hedge_never_replaces_the_main_read(tmp_path, escalating):
+    log = []
+    escalating(slow_plugin("slow_main", RESULTS, 0.6, log),
+               slow_plugin("shell_free", SHELL, 0, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "hedge_after_seconds": 0.2, "completeness_ladder": ["shell_free"]})
+        quick = await web.read(SEARCH + "&page=2", policy_overrides={
+            **POLICY, "hedge_after_seconds": 0, "completeness_ladder": ["shell_free"]})
+    assert result["receipt"]["method"] == "slow_main"
+    assert result["receipt"]["hedge"] == {**result["receipt"]["hedge"], "provider": "shell_free", "won": False}
+    assert "hedge" not in quick["receipt"]
+    with pytest.raises(ValueError):
+        WebPolicy(hedge_after_seconds=-1)

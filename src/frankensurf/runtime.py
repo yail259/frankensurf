@@ -123,6 +123,10 @@ class WebPolicy:
     # Free ladder tools tried at once while escalating (the first complete page
     # wins, the rest are cancelled). Paid tools always run one at a time.
     completeness_parallel: int = 2
+    # When an automatic public read is still climbing after this many seconds,
+    # one read pinned to the first free tool on completeness_ladder starts too;
+    # a complete page from either wins and the other is cancelled. 0 turns it off.
+    hedge_after_seconds: float = 10.0
     # A search page that passes with fewer item links than this (and few
     # prices) also gets one read from the first allowed ladder tool.
     completeness_borderline_items: int = 20
@@ -170,6 +174,9 @@ class WebPolicy:
     image_retry_failures: tuple[str, ...] = ("PROVIDER_DOWN", "TIMEOUT")
     allow_local_browser: bool = True
     allow_paid_fallbacks: bool = False
+    # A stored copy (Internet Archive) as the very last resort. The result is
+    # not live: result.archived and receipt.archived say when it was taken.
+    allow_archive: bool = False
     max_cost_usd: float | None = None
     search_source_candidates: tuple[str, ...] | None = None
     search_source_allow: tuple[str, ...] | None = None
@@ -295,6 +302,7 @@ class WebPolicy:
         self._validate_budgets()
 
     def _validate_capture_and_pacing(self):
+        _require(type(self.allow_archive) is bool, "allow_archive must be a boolean")
         _require(type(self.capture_json_responses) is bool,
                  "capture_json_responses must be a boolean")
         _require(type(self.prefer_markdown) is bool, "prefer_markdown must be a boolean")
@@ -328,6 +336,7 @@ class WebPolicy:
                  "completeness_max_extra_reads must be a nonnegative integer")
         _require(_is_int(self.completeness_parallel, 1) and self.completeness_parallel <= 4,
                  "completeness_parallel must be an integer from 1 to 4")
+        _require(_is_number(self.hedge_after_seconds), "hedge_after_seconds must be finite and nonnegative")
         _require(_is_number(self.completeness_deadline_seconds, positive=True),
                  "completeness_deadline_seconds must be positive and finite")
         _require(_is_number(self.handoff_timeout_seconds, positive=True),
@@ -1076,6 +1085,36 @@ def parse_content(content: str, content_type: str, url: str, adapter: str | None
         requested_url, acquisition_attestation))
 
 
+def _rows_in(value, depth=0):
+    """The longest list of objects inside a JSON value: how much a captured
+    response looks like a feed of items rather than config or telemetry."""
+    if depth > 8:
+        return 0
+    if isinstance(value, list):
+        here = sum(1 for item in value[:500] if isinstance(item, dict))
+        return max([here] + [_rows_in(item, depth + 1) for item in value[:5]])
+    if isinstance(value, dict):
+        return max([0] + [_rows_in(item, depth + 1) for item in list(value.values())[:200]
+                          if isinstance(item, (dict, list))])
+    return 0
+
+
+def _keep_capture(items, entry, limit):
+    """Add entry to a bounded capture. When full, a response carrying a list of
+    objects replaces the kept response with the fewest; True when kept."""
+    if len(items) < limit:
+        items.append(entry)
+        return True
+    rows = _rows_in(entry["data"])
+    if rows < 3:
+        return False
+    weakest = min(range(len(items)), key=lambda index: _rows_in(items[index]["data"]))
+    if _rows_in(items[weakest]["data"]) >= rows:
+        return False
+    items[weakest] = entry
+    return True
+
+
 class _JsonCapture:
     """Collects JSON bodies a rendered page fetched for itself (XHR/fetch only)."""
 
@@ -1092,7 +1131,7 @@ class _JsonCapture:
                 and not any(skip in kind for skip in ("image/", "font/", "video/", "audio/", "text/css")))
 
     def add(self, url, status, content_type, body):
-        if len(self.items) >= self.max_items or body is None or len(body) > self.max_bytes:
+        if body is None or len(body) > self.max_bytes:
             self.skipped += 1
             return
         try:
@@ -1114,8 +1153,9 @@ class _JsonCapture:
         except WebFailure:
             self.skipped += 1
             return
-        self.items.append({"url": url, "http_status": status, "content_type": content_type,
-                           "format": shape, "data": data})
+        if not _keep_capture(self.items, {"url": url, "http_status": status, "content_type": content_type,
+                                          "format": shape, "data": data}, self.max_items):
+            self.skipped += 1
 
     def listener(self):
         def on_response(response):
@@ -1371,7 +1411,9 @@ def _suggest_handoff(receipt):
     if failure.get("code") in _HANDOFF_WALLS and "handoff" not in tried:
         receipt["next_step"] = {"provider": "handoff", "reason": failure["code"],
             "how": "retry with provider='handoff' (or allow_handoff=True) to open the page "
-                   "for a person to clear; the read resumes once the wall is gone"}
+                   "for a person to clear; the read resumes once the wall is gone",
+            "or": "if an older copy will do, retry with allow_archive=True for the Internet "
+                  "Archive's latest stored copy (receipt.archived says when it was taken)"}
 
 
 def _navigation_failure(message):
@@ -2797,10 +2839,13 @@ class Runtime:
             key = self._pacing_key(url, policy)
         except (ValueError, TypeError):
             return
+        if receipt.get("archived"):
+            return
         data = self._hints_load()
         last = attempts[-1]
         if receipt.get("status") == "observed" and last.get("status") == "observed":
-            if any(item.get("status") == "failed" for item in attempts[:-1]):
+            if (any(item.get("status") == "failed" for item in attempts[:-1])
+                    or (receipt.get("hedge") or {}).get("won")):
                 data[key] = {"provider": last.get("provider"), "at": time.time()}
             elif data.get(key, {}).get("provider") != last.get("provider"):
                 return
@@ -2902,6 +2947,18 @@ class Runtime:
         """Read a URL built from a saved module's template, shaped by that module."""
         built = self.site_modules.get(module_id).build_url(template, params)
         return await self.read(built, module=module_id, **kwargs)
+
+    async def batch_template(self, module_id: str, template: str, params_list: list[dict],
+                             policy: WebPolicy | None = None, **kwargs) -> list[dict]:
+        """One saved template, many parameter sets (for example many searches),
+        read as one paced batch and shaped by the module. Results keep the
+        order of params_list; each carries the params it was built from."""
+        module = self.site_modules.get(module_id)
+        urls = [module.build_url(template, params) for params in params_list]
+        results = await self.batch(urls, policy, module=module_id, **kwargs)
+        for params, result in zip(params_list, results):
+            result["params"] = dict(params or {})
+        return results
 
     async def discover_module(self, url: str, *, module_id: str | None = None, save: bool = False,
                               policy_overrides: dict | None = None) -> dict:
@@ -3054,8 +3111,8 @@ class Runtime:
             delay = entry.get("next_at", 0) - now
             if delay > 0:
                 await asyncio.sleep(min(delay, effective.origin_min_interval_seconds))
-        result = await self._read_unpaced(url, policy, provider, adapter, policy_overrides=policy_overrides,
-                                          workload_assertions=workload_assertions)
+        result = await self._hedged(url, policy, provider, adapter, policy_overrides,
+                                    workload_assertions, effective)
         if _wants_second_opinion(result, effective, provider):
             result = await self._second_opinion(url, result, policy, adapter, policy_overrides,
                                                 workload_assertions, effective)
@@ -3078,6 +3135,77 @@ class Runtime:
             data[key] = entry
             self._pacing_save(data)
         return result
+
+    def _hedge_tool(self, effective, adapter):
+        """The first free, available, allowed tool on the completeness ladder."""
+        paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
+        for identifier in effective.completeness_ladder:
+            if (identifier in paid or identifier in effective.exclude_providers
+                    or not self.providers.is_available(identifier)):
+                continue
+            try:
+                self.providers.require_enabled(identifier, effective,
+                                               operation="extract" if adapter else "read")
+            except WebFailure:
+                continue
+            return identifier
+        return None
+
+    async def _hedged(self, url, policy, provider, adapter, policy_overrides,
+                      workload_assertions, effective):
+        """The read, with a hedge when it is slow.
+
+        A blocked site can take a dozen tools in turn before one gets through.
+        Once the read has run hedge_after_seconds, one read pinned to the first
+        free ladder tool starts beside it. Whichever returns a complete page
+        first wins; a hedge page that is incomplete or failed never replaces
+        the main read. Free tools only, so a hedge never costs money.
+        """
+        main = asyncio.ensure_future(self._read_unpaced(
+            url, policy, provider, adapter, policy_overrides=policy_overrides,
+            workload_assertions=workload_assertions))
+        hedge_tool = None
+        if (effective.hedge_after_seconds and isinstance(url, str) and self.completeness_enabled
+                and not (provider or effective.provider or effective.provider_candidates is not None
+                         or effective.identity or effective.profile)):
+            hedge_tool = self._hedge_tool(effective, adapter)
+        if hedge_tool is None:
+            return await main
+        done, _ = await asyncio.wait({main}, timeout=effective.hedge_after_seconds)
+        if done:
+            return main.result()
+        from .completeness import assess
+        if policy is not None:
+            hedge = asyncio.ensure_future(self._read_unpaced(
+                url, replace(policy, provider_candidates=(hedge_tool,)), None, adapter,
+                workload_assertions=workload_assertions))
+        else:
+            hedge = asyncio.ensure_future(self._read_unpaced(
+                url, None, None, adapter,
+                policy_overrides={**(policy_overrides or {}), "provider_candidates": [hedge_tool]},
+                workload_assertions=workload_assertions))
+        record = {"provider": hedge_tool, "after_seconds": effective.hedge_after_seconds}
+        try:
+            done, _ = await asyncio.wait({main, hedge}, return_when=asyncio.FIRST_COMPLETED)
+            if hedge in done and not main.done():
+                second = hedge.result()
+                receipt = second.get("receipt") or {}
+                record.update(status=receipt.get("status"), trace_id=receipt.get("trace_id"))
+                if (receipt.get("status") == "observed"
+                        and assess(url, second, expect_terms=effective.expect_terms).get("complete")):
+                    main.cancel()
+                    record["won"] = True
+                    receipt["hedge"] = record
+                    return second
+            first = await main
+            record.setdefault("won", False)
+            (first.get("receipt") or {})["hedge"] = record
+            return first
+        finally:
+            for task in (main, hedge):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(main, hedge, return_exceptions=True)
 
     async def _second_opinion(self, url, first, policy, adapter, policy_overrides,
                               workload_assertions, effective):
@@ -3579,6 +3707,10 @@ class Runtime:
                 requested_freshness_satisfied=False,semantic_freshness="partial_owner_visible_evidence")
         if response.get("content_readiness"):
             receipt["content_readiness"] = response["content_readiness"]
+        if response.get("archived"):
+            # A stored copy: say so wherever the agent looks.
+            receipt["archived"] = response["archived"]
+            receipt["source_freshness"] = "archived"
         if response.get("navigation"):
             receipt["navigation"] = response["navigation"]
         if response.get("navigation_data"):
@@ -4589,10 +4721,11 @@ class Runtime:
             async with self._global: return await one(url)
         return await asyncio.gather(*(limited(url) for url in urls[:policy.max_images]))
 
-    async def batch(self, urls: list[str], policy: WebPolicy | None = None, adapter: str | None = None) -> list[dict]:
+    async def batch(self, urls: list[str], policy: WebPolicy | None = None, adapter: str | None = None,
+                    **read_options) -> list[dict]:
         if policy and (policy.identity or policy.provider == "local_cdp"):
             # One canonical profile lease per operation; serialize named batch jobs.
-            return [await self.read(url,policy,adapter=adapter) for url in urls]
+            return [await self.read(url,policy,adapter=adapter,**read_options) for url in urls]
         # The first URL per site scouts: it climbs the ladder alone, and the rest
         # of that site wait for it, then start from the route it found (route
         # hints and clearance) instead of each climbing from the bottom at once.
@@ -4617,7 +4750,7 @@ class Runtime:
                 delay = self._domain_next.get(domain, 0) - time.monotonic()
                 if delay > 0: await asyncio.sleep(delay)
                 self._domain_next[domain] = time.monotonic() + self._domain_delay
-                result = await self.read(url, replace(policy, include_images=False) if policy and policy.include_images else policy, adapter=adapter)
+                result = await self.read(url, replace(policy, include_images=False) if policy and policy.include_images else policy, adapter=adapter, **read_options)
             if policy and policy.include_images and result["receipt"]["status"] == "observed":
                 result["images"] = await self.download_images(result["image_urls"], policy)
                 self._save_trace(result)

@@ -35,3 +35,15 @@ one stronger tool after another. v0.26.0 races free tools in pairs instead (see
   2). 114/139 (82.0%) against 113/139; median 4.5 s against 5.6 s; p90 37.2 s
   against 50.2 s. One run each, so a one-site difference is noise; the latency
   drop is not.
+
+## Hedging slow reads
+
+- `toolbench-heldout4-hedge-free.jsonl`: the free arm on the same 139 sites with
+  racing plus the hedge (`hedge_after_seconds` 10: a slow read gets one extra
+  read pinned to the first free ladder tool). 112/139 against 114/139 (noise
+  at this size: Bloomingdale's and MediaWorld were walled this run, Bax-shop
+  read). On successful reads: median 4.5 s (unchanged), p90 24.5 s against
+  37.2 s, mean 8.9 s against 11.6 s. Michaels 50 s to 17 s, Naukri 57 s to
+  13 s, Anthropologie 49 s to 16 s.
+- This set has now been used three times, so these runs measure speed, not
+  fresh-site accuracy.

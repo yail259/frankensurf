@@ -61,6 +61,15 @@ pages it had never seen, it drafted the right list on 8, the wrong one on 1,
 and nothing on 7 (mostly pages it could not read). Keep the drafts that are
 right, and edit or write the rest by hand.
 
+When the page was a search, the draft also gets a `search` template built from
+its URL: the parameter that held the search words (`?q=lamp`), or the path
+segment after `/q/`, `/search/` or `/tag/`. Everything else in the URL stays
+as it was. So one saved search page becomes any search:
+
+```python
+page = await web.read_template("auto-example-com", "search", {"query": "desk lamp"})
+```
+
 ## What a module holds
 
 ```json

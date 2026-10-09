@@ -121,3 +121,48 @@ def test_server_rendered_rows_become_an_html_module():
     assert module["sources"]["listing"]["item_selector"] == "div.product-tile"
     assert found["drafts"][0]["sample"][0] == {"url": "https://shop.example.com/p/1", "name": "Steel lamp 1",
                                                "price": 19, "image": "https://shop.example.com/img/1.jpg"}
+
+
+def test_drafts_carry_a_search_template_built_from_the_url():
+    from frankensurf.module_discovery import search_template
+    assert search_template("https://x.example/s?cat=5&searchTerm=red+boots&page=2") == (
+        "https://x.example/s?cat=5&searchTerm={query}&page=2", "query", None)
+    assert search_template("https://x.example/q/fiets/") == ("https://x.example/q/{query}/", "path", "/q/[^/]+/")
+    assert search_template("https://x.example/about/team") is None
+    assert search_template("https://x.example/item/123") is None
+    module = SiteModule.from_record(discover(result_for(page([next_data(PRODUCTS)])), URL)["drafts"][0]["module"])
+    assert module.build_url("search", {"query": "desk lamp"}) == "https://shop.example.com/search?q=desk+lamp"
+
+
+async def test_batch_template_reads_many_searches_with_the_saved_module(tmp_path, monkeypatch):
+    from frankensurf import providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+    from frankensurf.runtime import Runtime
+    seen = []
+
+    class Fixture:
+        manifest = ProviderManifest("fixture", "1")
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            seen.append(request.url)
+            word = request.url.rsplit("=", 1)[-1]
+            products = [{**row, "title": f"{word} {row['title']}"} for row in PRODUCTS]
+            return {"url": request.url, "content": page([next_data(products)]), "content_type": "text/html",
+                    "http_status": 200}
+    registry = ProviderRegistry()
+    registry.register(Fixture())
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    overrides = {"origin_route_hint_ttl_seconds": 0, "origin_min_interval_seconds": 0,
+                 "second_opinion_text_chars": 0, "completeness_escalation": False}
+    async with Runtime(tmp_path) as web:
+        web._domain_delay = 0
+        await web.discover_module(URL, save=True, policy_overrides=overrides)
+        results = await web.batch_template("auto-shop-example-com", "search",
+                                           [{"query": "desk"}, {"query": "floor lamp"}],
+                                           policy_overrides=overrides)
+    assert [result["params"]["query"] for result in results] == ["desk", "floor lamp"]
+    assert results[1]["url"] == "https://shop.example.com/search?q=floor+lamp"
+    assert results[1]["items"][0]["name"] == "floor+lamp Brass lamp 0" and len(results[0]["items"]) == 8
