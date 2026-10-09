@@ -109,3 +109,82 @@ tries without one wall (timeouts, unrendered pages) before Jina Reader read
 it in 0.4 s, so the wall-only trigger never fired. Browser Use, configured on
 this machine, failed every try in 18 s with `INVALID_URL`: the address its
 agent ended on was not a web page.
+
+## Iteration 4 (in-sample)
+
+`toolbench-heldout5-free-iter4.jsonl`: failed tries of any kind (not only
+walls) move remote tools ahead; tools that never got past a wall vendor in 8
+tries go last; a read whose last tool was down reports what the last working
+tool met; Browser Use reports `PROVIDER_DOWN` when its agent never reached the
+page. Fresh state.
+
+| Free arm | Sites read | Median (read) | p75 | p90 | p90 (all reads) | Total time |
+|---|---|---|---|---|---|---|
+| Iteration 3 | 126/150 | 4.3 s | 10.4 s | 23.4 s | 34.4 s | 1,790 s |
+| Iteration 4 | 125/150 | 5.3 s | 11.5 s | 22.9 s | 41.1 s | 2,162 s |
+
+Immobiliare gained: every tool on the ladder met DataDome, then the home-page
+warm-up (Camoufox entering through the home page) read it in 12 s. Croma (read
+in iterations 2 and 3; its results did not render this time) and Bass Pro (it
+passes in some runs and not others) lost. Against the blind run: 6 gained, 1
+lost.
+
+Walled reads now end with the wall's own code (`CAPTCHA`, `BLOCKED`), which
+also gives them the warm-up they were meant to get. The run was slower for
+another reason: Browser Use's new `PROVIDER_DOWN` is a code the ladder retries,
+so its 18-second failure ran twice on every walled read (40 tries, about 340 s
+more than iteration 3). It now reports `PROVIDER_UNAVAILABLE`, which is not
+retried.
+
+## Iteration 5 (in-sample)
+
+`toolbench-heldout5-free-iter5.jsonl`: Browser Use's never-reached failure is
+not retried. Fresh state.
+
+| Free arm | Sites read | Median (read) | p75 | p90 | p90 (all reads) | Total time |
+|---|---|---|---|---|---|---|
+| Blind, v0.30.0 | 120/150 | 4.9 s | 10.6 s | 24.1 s | 29.4 s | 1,730 s |
+| Iteration 2 | 127/150 | 4.5 s | 12.0 s | 26.1 s | 44.6 s | 1,999 s |
+| Iteration 3 | 126/150 | 4.3 s | 10.4 s | 23.4 s | 34.4 s | 1,790 s |
+| Iteration 4 | 125/150 | 5.3 s | 11.5 s | 22.9 s | 41.1 s | 2,162 s |
+| Iteration 5 | 124/150 | 4.0 s | 11.4 s | 24.3 s | 39.2 s | 1,958 s |
+
+Against iteration 4, Immobiliare was lost (the warm-up that read it there met
+DataDome this time). Against the blind run: Wotif, Rays Outdoors, Dubizzle,
+Sierra and OpenTable gained; Croma lost.
+
+B&Q failed with `PROVIDER_DOWN` from every tool, plain HTTP and Jina Reader
+included, in runs 3, 4 and 5: the site refused connections from here, after
+six runs of about 20 tries each. Each tool's outage was retried, 21 tries over
+110 s. Now, once two different tools on an automatic route fail the same
+retryable way, the rest get one try each: a read of B&Q afterwards failed in
+54 s over 12 tries.
+
+## Where this leaves the free tier
+
+Since iteration 2 the free arm has read 124 to 127 of 150 on every run; the
+differences are single sites that pass in some runs and not others (Bass Pro,
+Croma, Immobiliare, JobServe, B&Q). The 26 misses in iteration 5:
+
+- 8 URLs that answered 404 to every arm in the blind run (7 still do; Food52
+  now answers a page without the expected items);
+- 8 walls: Mighty Ape, Carousell, PrimeLocation and Jiji, which only paid tools
+  have read; Immobiliare and B&Q, which paid tools and one free run each read;
+  Bass Pro, read by two free runs and no paid one; and Avito, which no arm has
+  read (a rate limit this time);
+- 1 sign-in wall (Strava);
+- 9 pages read without the expected content: CareerOne, Mecca, mobile.de,
+  Superdrug, Welcome to the Jungle and Bukalapak, which every arm missed in
+  the blind run; archive.org, which paid tools read; Croma, read in six runs
+  and missed in the last two; and JobServe, read only in iteration 2.
+
+The paid arm read 130 of the 131 pages any arm read on the blind run. What is
+left for the free tier is hard walls, which paid unblockers or a person clear
+(`allow_paid_fallbacks`, handoff), and pages whose results never load for any
+tool.
+
+The slowest successful reads are search pages that every tool reads without
+result links (Bandcamp, Substack, Twitch, Croma: their results load from
+scripts; pub.dev: 10 package links, but only 2 names contain the query, too
+few to tell them from a menu). The climb tries four tools and keeps the best,
+20 to 50 s, bounded by `completeness_deadline_seconds`.
