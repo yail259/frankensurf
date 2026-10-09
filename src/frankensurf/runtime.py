@@ -3002,10 +3002,10 @@ class Runtime:
         template = ((search["template"], search["encoding"], search["path_pattern"])
                     if search and search["template"] else None)
         found = discover(result, url, module_id=module_id, search=template)
-        if not found["drafts"] and (result.get("receipt") or {}).get("status") == "observed":
+        if not found["drafts"]:
             rendered = await self.read(url, module=False, policy_overrides={
                 **overrides, "capture_json_responses": True,
-                "provider_candidates": overrides.get("provider_candidates") or ["local"]})
+                "provider_candidates": overrides.get("provider_candidates") or ["local", "scrapling"]})
             reads.append((rendered.get("receipt") or {}).get("trace_id"))
             if (rendered.get("receipt") or {}).get("status") == "observed":
                 found = discover(rendered, url, module_id=module_id, search=template)

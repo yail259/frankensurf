@@ -215,3 +215,14 @@ async def test_discover_from_a_home_page_with_a_query(tmp_path, monkeypatch):
     module = found["drafts"][0]["module"]
     assert module["templates"]["search"]["url"] == "https://shop.example.com/search?q={query}"
     assert found["drafts"][0]["count"] == 8
+
+
+def test_navigation_and_seo_link_farms_are_not_items():
+    from frankensurf.module_discovery import _link_farm
+    assert _link_farm([f"Python jobs in {city}" for city in ("London", "Leeds", "Bath", "York", "Hull")])
+    assert not _link_farm([f"Apple iPhone 15 {size}GB" for size in (128, 256, 512, 1024)])
+    nav = {"@context": "https://schema.org", "@type": "SiteNavigationElement", "hasPart": [
+        {"@type": "WebPage", "name": f"Watches {n}", "url": f"https://shop.example.com/c/{n}"}
+        for n in range(8)]}
+    content = page([f'<script type="application/ld+json">{json.dumps(nav)}</script>'])
+    assert discover(result_for(content), "https://shop.example.com/search?q=watch")["drafts"] == []

@@ -184,7 +184,31 @@ def _fields(sample):
         names = {str(_walk_value(row, fields["name"])).strip().lower() for row in sample}
         if len(names) < 0.7 * len(sample):
             return None
+    # schema.org navigation (menus, breadcrumbs) is site structure, not items.
+    nav = sum(1 for row in sample if _types(row) & _NAV_TYPES or _types(row.get("item") or {}) & _NAV_TYPES)
+    if nav > 0.5 * len(sample):
+        return None
     return fields
+
+
+_NAV_TYPES = {"SiteNavigationElement", "BreadcrumbList", "WPHeader", "WPFooter", "WPSideBar"}
+
+
+def _link_farm(names):
+    """Rows whose names mostly open with the same two or more words ("Python
+    jobs in London", "Python jobs in Leeds") are SEO links, not items."""
+    words = [str(name).lower().split()[:3] for name in names if isinstance(name, str) and name.strip()]
+    if len(words) < 4:
+        return False
+    openings = {}
+    # "<same two words> in|near|at <place>": product names may share a brand and
+    # model ("Apple iPhone 15 ..."), but not a place word in third position.
+    for opening in (tuple(parts[:2]) for parts in words if len(parts) >= 3 and parts[2] in _PLACE_WORDS):
+        openings[opening] = openings.get(opening, 0) + 1
+    return bool(openings) and max(openings.values()) >= 0.7 * len(words)
+
+
+_PLACE_WORDS = {"in", "near", "at", "around", "en", "à", "a", "i", "im", "bei", "nära", "nær", "na", "w", "di"}
 
 
 def _lists(value, path="", depth=0, found=None):
@@ -238,7 +262,7 @@ def candidates(result, url=None):
     host, terms = urlparse(url).hostname, _terms(url)
     for spec, root in _sources(result):
         for path, rows in _lists(root):
-            if spec["kind"] == "jsonld" and not path:
+            if spec["kind"] == "jsonld" and (not path or spec.get("type") in _NAV_TYPES):
                 continue
             scored = _score_list(rows, path, host, terms)
             if scored is None:
@@ -555,6 +579,8 @@ def discover(result, url, *, module_id=None, limit=3, search=None):
             linked = sum(1 for item in output["items"] if item.get("url"))
             if linked < 0.6 * output["count"]:
                 continue
+        if _link_farm([item.get("name") for item in output["items"]]):
+            continue
         drafts.append({"module": module.record(), "count": output["count"],
                        "fields": sorted(candidate["fields"]), "sample": output["items"][:3]})
         if len(drafts) >= limit:
