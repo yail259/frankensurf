@@ -32,3 +32,15 @@ were wrong URLs (above), bot walls (mobile.de, Avito, Bass Pro, Strava's
 sign-in), and search pages that came back without their results.
 
 After this run the set is no longer blind; later runs on it measure changes.
+
+## Iteration 1 (in-sample)
+
+`toolbench-heldout5-free-iter1.jsonl`: the free arm after fixes found on this set:
+walls named in more languages (mobile.de, Avito), off-query pages from plain
+HTTP getting one rendered read, consent-led pages getting the interact step,
+search words in the path, a 404 after a rate-limit checkpoint getting a
+confirming read, content inside open shadow roots, and browser error and
+maintenance pages no longer counted as pages. 125/150 (83.3%) against
+120/150: Wotif, Rays Outdoors, Bass Pro, Sierra and OpenTable gained, none
+lost. Median 7.1 s against 4.9 s (escalations picked different winners; the
+plain-HTTP fast path was unchanged at 53 reads).
