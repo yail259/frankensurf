@@ -1,0 +1,22 @@
+---
+import BlogLayout from "../../layouts/BlogLayout.astro";
+
+// Every markdown post in this folder, newest first.
+const posts = Object.values(import.meta.glob("./*.md", { eager: true }))
+  .map((post: any) => ({ url: post.url, ...post.frontmatter, when: new Date(post.frontmatter.date) }))
+  .sort((a, b) => b.when.getTime() - a.when.getTime());
+const day = (when: Date) =>
+  when.toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+---
+<BlogLayout title="Blog" description="Notes from building Frankensurf.">
+  <h1>Blog</h1>
+  <ul class="post-list">
+    {posts.map((post) => (
+      <li>
+        <p class="post-date">{day(post.when)}</p>
+        <a href={post.url}>{post.title}</a>
+        <p>{post.description}</p>
+      </li>
+    ))}
+  </ul>
+</BlogLayout>
