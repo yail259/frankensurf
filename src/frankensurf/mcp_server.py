@@ -2,7 +2,11 @@ import os
 from mcp.server.fastmcp import FastMCP
 from .runtime import Runtime, WebPolicy, default_state_dir
 
-server = FastMCP("FrankenSurf")
+from . import skill as _skill
+
+# The agent skill doubles as the server's instructions, so every MCP client
+# learns which tool and option fits, and how to read a receipt.
+server = FastMCP("FrankenSurf", instructions=_skill.body())
 
 
 def runtime():
@@ -177,6 +181,22 @@ async def site_modules(action: str = "list", module_id: str | None = None,
             registry.delete(module_id)
             return {"deleted": module_id}
         raise ValueError("action must be list, get, put, enable, disable or delete")
+
+
+@server.tool()
+async def watch_sites(sites: list[str], since: str | None = None, read_new: bool = False,
+                      max_new_per_site: int = 50, acquisition_policy: dict | None = None) -> dict:
+    """New pages on many sites since the last poll, from the feeds and sitemaps
+    each site publishes (found once, then polled with conditional requests, so
+    an unchanged site costs almost nothing). The same story on two URLs is
+    reported once. since (ISO date) bounds the first poll. read_new=True also
+    reads the new pages' main text. Cheaper than searching or re-reading front
+    pages to find what is new."""
+    options = _acquisition_overrides(acquisition_policy, {})
+    async with runtime() as web:
+        result = await web.watch_sites(sites, since=since, read_new=read_new,
+                                       max_new_per_site=max_new_per_site, policy_overrides=options)
+    return result
 
 
 @server.tool()

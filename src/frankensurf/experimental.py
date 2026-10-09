@@ -16,8 +16,9 @@ _FAILURES = {"PROVIDER_UNAVAILABLE", "PROVIDER_DOWN", "TIMEOUT", "LIMIT_EXCEEDED
 
 def worker_python():
     # Operator configuration selects code, never an agent URL or site response.
-    return Path(os.environ.get("FRANKENSURF_PROVIDER_PYTHON", str(
-        Path.home()/".local/share/frankensurf/provider-venv/bin/python"))).expanduser()
+    venv = Path.home()/".local/share/frankensurf/provider-venv"
+    default = venv/"Scripts"/"python.exe" if os.name == "nt" else venv/"bin"/"python"
+    return Path(os.environ.get("FRANKENSURF_PROVIDER_PYTHON", str(default))).expanduser()
 
 
 # The Camoufox browser build the pinned camoufox package is tested with.
@@ -42,10 +43,20 @@ def install_free_providers(log=print):
               [str(target), "-m", "pip", "install", "--quiet", "-r", str(requirements)]),
              ("Downloading the Camoufox browser", [str(target), "-m", "camoufox", "fetch", CAMOUFOX_BROWSER]),
              ("Downloading the Patchright browser", [str(target), "-m", "patchright", "install", "chromium"])]
+    errors = {}
     for label, command in steps:
         log(label)
-        subprocess.run(command, check=True)
-    return {provider: installed(provider) for provider in ("camoufox", "scrapling", "patchright")}
+        # Each step on its own: a browser that won't download on this platform
+        # leaves the others working.
+        done = subprocess.run(command, capture_output=True, text=True)
+        if done.returncode != 0:
+            tail = (done.stderr or done.stdout or "").strip().splitlines()[-3:]
+            errors[label] = " | ".join(tail)[:400] or f"exit {done.returncode}"
+            log(f"  failed: {errors[label]}")
+    result = {provider: installed(provider) for provider in ("camoufox", "scrapling", "patchright")}
+    if errors:
+        result["errors"] = errors
+    return result
 
 
 def installed(provider):
@@ -70,6 +81,14 @@ def _consume_progress(raw, previous_stage=None):
     return bytearray(raw), previous_stage
 
 
+class _RuntimeProxy:
+    value = None
+
+
+# Set by read_public for the duration of one worker call.
+runtime_proxy = _RuntimeProxy()
+
+
 async def _packet(url, policy, provider):
     executable = worker_python()
     if not executable.is_absolute() or not executable.is_file():
@@ -89,6 +108,10 @@ async def _packet(url, policy, provider):
     if profile is not None:
         # Through the worker's stdin only; the worker never writes it to disk.
         request["profile_context"] = profile.context_options()
+    # The owner's proxy, through stdin like profile material; the worker never stores it.
+    proxy = getattr(runtime_proxy, "value", None)
+    if proxy:
+        request["proxy"] = proxy
     # Do not inherit provider keys, proxies, account/profile overrides or Python hooks.
     permitted = {"HOME", "PATH", "LANG", "LC_ALL", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XAUTHORITY", "TMPDIR"}
     env = {key: value for key, value in os.environ.items() if key in permitted}
@@ -172,7 +195,11 @@ async def read_public(runtime, url, policy, provider):
         raise WebFailure("IDENTITY_PROVIDER_DENIED", "Experimental providers cannot execute named identities")
     if not policy.allow_local_browser and provider != "scrapling_http":
         raise WebFailure("POLICY_DENIED", "Local browser disabled")
-    packet = await _packet(url, policy, provider)
+    runtime_proxy.value = getattr(runtime, "proxy", None)
+    try:
+        packet = await _packet(url, policy, provider)
+    finally:
+        runtime_proxy.value = None
     from .profiles import ACTIVE
     profile = ACTIVE.get() if getattr(policy, "profile", None) else None
     state = packet.pop("storage_state", None)

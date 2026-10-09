@@ -47,3 +47,43 @@ one stronger tool after another. v0.26.0 races free tools in pairs instead (see
   13 s, Anthropologie 49 s to 16 s.
 - This set has now been used three times, so these runs measure speed, not
   fresh-site accuracy.
+
+## Articles: main content and the quality grade
+
+- `articles-108.json`: 108 news and company-news article URLs, one per site,
+  taken from Bing News results for 40 business queries (`scripts/article_eval.py
+  collect`). Read with free tools and `main_content` on.
+- `articles-108-v0.28.jsonl` (v0.28.0) and `articles-108-quality.jsonl` (the
+  article check, quality grade and paywall flag): article present (600+
+  characters and 2+ prose paragraphs of main text) on 103 and 105 pages; none
+  lost; the grade agreed with article presence on 107 of 108 (the exception
+  is a winery directory page, which is not an article). Median read 3.3 s
+  against 4.0 s: thin article pages now escalate.
+
+## From a server (Azure VM, GitHub Actions)
+
+`.github/workflows/server-bench.yml` runs the free arm and the article sample on a
+fresh GitHub-hosted Ubuntu VM in Azure: a data-centre address, which sites
+refuse more often than a home connection.
+
+- `toolbench-heldout4-free-azure.jsonl`: 98/139 (70.5%), against 112/139 at home
+  (same code, free tools). Lost on the server: retailers and marketplaces behind
+  bot walls, and image and social sites; plain HTTP that worked at home was
+  refused.
+- `toolbench-heldout4-free-azure-steel.jsonl`: with the self-hosted Steel
+  browser running beside it (as docker-compose.yml does), 104/139 (74.8%).
+- `articles-108-azure-steel.jsonl`: articles read 103/108, article present
+  100/108, against 105 at home.
+
+The rest of the gap is the data-centre address; FRANKENSURF_PROXY routes the
+local tools through a proxy the owner brings (not measured here).
+
+## Watching many sites (watch_sites)
+
+The 108 sites behind `articles-108.json`, watched from a home connection
+with `watch_sites` (see the Watch docs). First poll, 2-day window: 1,004 requests, 14
+minutes, 2,301 new pages on 77 sites; 51 sites had feeds, 43 only sitemaps,
+14 neither. A poll straight after reported 247 (undated sitemap pages, now
+treated as baseline), and the next one 43, all dated within minutes of the
+poll: real new or changed pages. A repeat poll costs about 370 small requests
+for 108 sites (84 answered 304 Not Modified) and under 4 minutes.

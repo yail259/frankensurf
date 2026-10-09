@@ -167,6 +167,11 @@ def _setup(args):
             stealth = {"error": str(error)[:300]}
     result = {"chromium": chromium, "stealth_providers": stealth,
               "next": "frankensurf read https://news.ycombinator.com --explain"}
+    from pathlib import Path
+    if (Path.home() / ".claude").is_dir():
+        # Claude Code is here: teach its agents the tools (frankensurf skill install for other folders).
+        from . import skill
+        result["skill"] = str(skill.install())
     if sys.platform.startswith("linux"):
         result["if_chromium_will_not_start"] = "sudo $(which python) -m playwright install-deps chromium"
     return result
@@ -221,6 +226,13 @@ async def run(args):
         result = await _profile_op(args)
     elif args.operation == "setup":
         result = _setup(args)
+    elif args.operation == "skill":
+        from . import skill
+        if args.urls and args.urls[0] == "show":
+            print(skill.text())
+            return
+        result = {"installed": str(skill.install(args.skill_dir)),
+                  "note": "Agents that load skills from this folder now know how to use FrankenSurf"}
     elif args.operation == "module" and args.urls[0] == "discover":
         async with Runtime(state_dir=args.state) as web:
             result = await web.discover_module(args.urls[1], save=args.save, query=args.query)
@@ -294,6 +306,8 @@ async def run(args):
             elif args.operation == "repair-disable":
                 result = web.disable_repair(
                     args.urls[0], args.disable_reason)
+            elif args.operation == "watch-sites":
+                result = await web.watch_sites(list(args.urls), since=args.since, read_new=args.read_new)
             elif args.operation == "watch":
                 result = await web.watch(args.urls[0], link_pattern=args.link_pattern,
                                          policy_overrides=policy_kwargs)
@@ -325,16 +339,19 @@ def build_parser():
     provider_ids = [item["id"] for item in DEFAULT_PROVIDERS.inspect()]
     parser = argparse.ArgumentParser(description="Free local evidence-first web runtime")
     parser.add_argument("operation", choices=["read", "extract", "paginate", "batch", "trace",
-        "search", "images", "do", "import", "repair", "repair-promote", "watch",
+        "search", "images", "do", "import", "repair", "repair-promote", "watch", "watch-sites",
         "repair-disable", "executor-enroll", "identity-enroll",
         "identity-status", "identity-revoke", "bot-auth-init", "bot-auth-directory",
-        "profile-login", "profile-list", "profile-delete", "module", "read-template", "setup"])
+        "profile-login", "profile-list", "profile-delete", "module", "read-template", "setup", "skill"])
     parser.add_argument("urls", nargs="*")
     parser.add_argument("--explain", action="store_true",
         help="read: print each tool tried and what happened, then the page, instead of JSON")
     parser.add_argument("--no-stealth", action="store_true",
         help="setup: skip the free stealth providers (Camoufox, Scrapling, Patchright)")
     parser.add_argument("--query", help="module discover: from a home page, search this and draft from the results")
+    parser.add_argument("--since", help="watch-sites: only pages published since this ISO date (first poll)")
+    parser.add_argument("--read-new", action="store_true", help="watch-sites: also read the new pages' main text")
+    parser.add_argument("--skill-dir", help="skill install: the skills folder (default ~/.claude/skills)")
     parser.add_argument("--save", action="store_true",
         help="module discover: save the best drafted module")
     parser.add_argument("--module", metavar="ID",
@@ -499,6 +516,9 @@ def parse_args(argv=None):
         elif action not in {"show", "add", "enable", "disable", "rm"} or len(args.urls) != 2:
             parser.error("module takes: list | show ID | add FILE | enable ID | disable ID | rm ID"
                          " | repair TRACE_ID FILE | discover URL [--save]")
+    elif args.operation == "skill":
+        if args.urls not in ([], ["install"], ["show"]):
+            parser.error("skill takes: install [--skill-dir DIR] | show")
     elif args.operation == "setup":
         if args.urls:
             parser.error("setup takes no arguments (add --no-stealth to skip the stealth providers)")
@@ -508,7 +528,7 @@ def parse_args(argv=None):
     elif args.operation == "identity-status":
         if len(args.urls) > 1:
             parser.error("identity-status accepts at most one identity ID")
-    elif args.operation in {"batch", "images", "search"}:
+    elif args.operation in {"batch", "images", "search", "watch-sites"}:
         if not args.urls:
             parser.error(f"{args.operation} requires at least one URL or query token")
     elif args.operation == "do":

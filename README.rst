@@ -97,6 +97,19 @@ books) backed by official free APIs, and ``--mode merge`` to fuse every source
 at once. Running on a server that reads URLs it didn't choose? Set
 ``FRANKENSURF_BLOCK_PRIVATE_NETWORK=1``.
 
+Every page read carries ``receipt.quality``: ``good``, ``partial`` or ``poor``,
+with flags such as ``paywall``, ``menus`` or ``placeholder``, so an agent (or a
+paid fallback) knows when a page didn't really come through.
+
+Keeping up with many sites? ``frankensurf watch-sites URL… --since DATE`` lists
+their new pages from the feeds and sitemaps they publish, polled with
+conditional requests. Running on a server? Run Steel beside it
+(``docker compose up -d``) and, if sites still refuse your data-centre address,
+set ``FRANKENSURF_PROXY`` to a proxy you bring.
+
+Agents learn the tools from a bundled skill: the MCP server sends it as its
+instructions, and ``frankensurf skill install`` adds it to ``~/.claude/skills``.
+
 Reading many pages from one site? Let Frankensurf learn it first::
 
     frankensurf module discover https://www.example.com/ --query "desk lamp" --save

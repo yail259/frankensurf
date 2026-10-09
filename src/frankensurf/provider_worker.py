@@ -116,6 +116,26 @@ def _keep_capture(items, entry, limit):
     return True
 
 
+def _camoufox_binaries(version):
+    """The pinned Camoufox build, wherever this platform caches it."""
+    import os
+    roots = [Path.home()/".cache"/"camoufox", Path.home()/"Library"/"Caches"/"camoufox"]
+    if os.environ.get("LOCALAPPDATA"):
+        roots.append(Path(os.environ["LOCALAPPDATA"])/"camoufox")
+    found = []
+    for root in roots:
+        for build in (root/"browsers"/"official").glob(version + "-*"):
+            for name in ("camoufox-bin", "Camoufox.app/Contents/MacOS/camoufox", "camoufox.exe"):
+                if (build/name).is_file():
+                    found.append(build/name)
+                    break
+    return found
+
+
+def _browser_proxy(settings):
+    return {key: settings[key] for key in ("server", "username", "password") if key in settings}
+
+
 def _capture_json(capture, request, url, status, content_type, body):
     """Keep one JSON (or newline-delimited JSON) body the page fetched for itself."""
     limit_items = request.get("capture_json_max_items", 20)
@@ -301,7 +321,14 @@ def _chromium_executable():
         found = shutil.which(name)
         if found:
             return found
-    builds = sorted((Path.home()/".cache/ms-playwright").glob("chromium-*/chrome-linux*/chrome"))
+    for app in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                "/Applications/Chromium.app/Contents/MacOS/Chromium"):
+        if Path(app).is_file():
+            return app
+    caches = [Path.home()/".cache/ms-playwright", Path.home()/"Library/Caches/ms-playwright"]
+    patterns = ("chromium-*/chrome-linux*/chrome", "chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium",
+                "chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing")
+    builds = sorted(path for cache in caches for pattern in patterns for path in cache.glob(pattern))
     return str(builds[-1]) if builds else None
 
 
@@ -316,9 +343,13 @@ async def _nodriver(url, request, timeout, maximum):
     executable = _chromium_executable()
     if executable is None:
         return _failed("PROVIDER_UNAVAILABLE")
+    proxy = request.get("proxy") or {}
+    if proxy.get("username"):
+        return _failed("PROVIDER_UNAVAILABLE")  # Chrome flags cannot carry proxy credentials.
     browser = await nodriver.start(headless=request.get("public_browser_headless", True),
                                    browser_executable_path=executable,
-                                   browser_args=["--no-first-run", "--no-default-browser-check"])
+                                   browser_args=["--no-first-run", "--no-default-browser-check"]
+                                   + (["--proxy-server=" + proxy["server"]] if proxy.get("server") else []))
     try:
         _report_stage("navigation_readiness")
         tab = await asyncio.wait_for(browser.get(url), timeout)
@@ -345,10 +376,11 @@ async def acquire(request):
         _report_stage("browser_start")
         from camoufox.async_api import AsyncCamoufox
         from camoufox.addons import DefaultAddons
-        binaries=list((Path.home()/".cache/camoufox/browsers/official").glob("152.0.4-beta.31-*/camoufox-bin"))
+        binaries=_camoufox_binaries("152.0.4-beta.31")
         if len(binaries)!=1:return {"status":"failed","failure":"PROVIDER_UNAVAILABLE"}
         async with AsyncCamoufox(headless=request.get("public_browser_headless",True), geoip=False, humanize=False,
-                executable_path=str(binaries[0]),exclude_addons=[DefaultAddons.UBO]) as browser:
+                executable_path=str(binaries[0]),exclude_addons=[DefaultAddons.UBO],
+                **({"proxy": _browser_proxy(request["proxy"])} if request.get("proxy") else {})) as browser:
             context=await browser.new_context(ignore_https_errors=False, permissions=[])
             page=await context.new_page()
             page.set_default_timeout(timeout*1000)
@@ -412,7 +444,8 @@ async def acquire(request):
             google_search=request.get("scrapling_google_search",False), disable_resources=False, network_idle=False,
             load_dom=request.get("scrapling_load_dom",True),
             timeout=timeout*1000, wait=0, page_action=observed, page_setup=setup,
-            locale="en-AU",timezone_id="Australia/Sydney")
+            locale="en-AU",timezone_id="Australia/Sydney",
+            **({"proxy": _browser_proxy(request["proxy"])} if request.get("proxy") else {}))
         _scrapling_safety(session)
         async with session:
             try:
@@ -451,7 +484,8 @@ async def acquire(request):
         _report_stage("browser_start")
         from patchright.async_api import async_playwright as patchright
         async with patchright() as playwright:
-            browser = await playwright.chromium.launch(headless=request.get("public_browser_headless", True))
+            browser = await playwright.chromium.launch(headless=request.get("public_browser_headless", True),
+                **({"proxy": _browser_proxy(request["proxy"])} if request.get("proxy") else {}))
             try:
                 context = await browser.new_context(**(request.get("profile_context") or {}))
                 page = await context.new_page()
@@ -468,7 +502,8 @@ async def acquire(request):
         from scrapling.fetchers import AsyncFetcher
         response=await AsyncFetcher.get(url, impersonate="chrome", verify=True,
             retries=1,timeout=timeout,follow_redirects=True,max_redirects=10,
-            stealthy_headers=False)
+            stealthy_headers=False,
+            **({"proxy": request["proxy"]["url"]} if (request.get("proxy") or {}).get("url") else {}))
         if failure:=_status_failure(response.status):
             raw = response.body
             content = raw if isinstance(raw, str) else raw.decode(response.encoding or "utf-8", errors="replace")

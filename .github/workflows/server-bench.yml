@@ -1,0 +1,58 @@
+# Benchmark from a data-centre machine (a fresh GitHub-hosted Azure VM), not a
+# home connection: free tools only, no keys. Push a branch named bench/<anything>
+# (or run it by hand) and download the rows from the run's artifacts.
+name: Server benchmark
+
+on:
+  push:
+    branches: ["bench/**"]
+  workflow_dispatch:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    # The self-hosted Steel browser, as docker-compose.yml runs it next to FrankenSurf.
+    services:
+      steel:
+        image: ghcr.io/steel-dev/steel-browser-api@sha256:2948a8d8ba1103146dac1c32a121e511955f43976da6905ada0c32fd19b41f59
+        ports: ["3300:3000", "9323:9223"]
+        env:
+          DOMAIN: 127.0.0.1:3300
+          CDP_DOMAIN: 127.0.0.1:9323
+          LOG_STORAGE_ENABLED: "false"
+        options: --shm-size=1g
+    env:
+      FRANKENSURF_STEEL_URL: http://127.0.0.1:3300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install FrankenSurf, Chromium and the free stealth tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[test,main]"
+          python -m playwright install --with-deps chromium
+          frankensurf setup || true
+      - name: Where is this machine?
+        run: curl -s https://ipinfo.io/json | python -c "import json,sys; d=json.load(sys.stdin); print(d.get('org'), d.get('city'), d.get('country'))"
+      - name: 139 held-out sites, free tools
+        run: |
+          mkdir -p out /tmp/tb
+          touch out/heldout4-free-server.jsonl
+          PYTHONPATH=.:src python scripts/toolbench.py --state /tmp/tb \
+            --rows benchmarks/2026-10-06/sitebench-paid-v0.14.jsonl --only-set heldout4 \
+            --arms stitched_free --workers 4 --label heldout4-free-server \
+            --resume out/heldout4-free-server.jsonl > out/toolbench.log 2>&1 || true
+          tail -3 out/toolbench.log
+      - name: 108 news and company articles, free tools, main content
+        run: |
+          PYTHONPATH=src python scripts/article_eval.py read benchmarks/2026-10-09/articles-108.json \
+            out/articles-server.jsonl /tmp/articles > out/articles.log 2>&1 || true
+          wc -l out/articles-server.jsonl || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-bench
+          path: out/
