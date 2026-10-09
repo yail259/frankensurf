@@ -278,12 +278,23 @@ async def batch(urls: list[str], provider: str | None = None, adapter: str | Non
 @server.tool()
 async def search(query: str, source: str | None = None, limit: int = 10,
                  identity: str | None = None, provider: str | None = None,
+                 site: str | None = None, exclude_domains: list[str] | None = None,
+                 recency: str | None = None, region: str | None = None,
+                 vertical: str = "web", mode: str = "fallback",
                  acquisition_policy: dict | None = None) -> dict:
     """Discover indexed candidates through installed sources with exact attribution.
 
     Omit source to permit policy-bounded fallback. An explicit source is never
     substituted. Search source candidate, allow and preference fields can be set
     in acquisition_policy without exposing service credentials.
+
+    site keeps one domain; exclude_domains (up to 200) never come back from any
+    source; recency is day, week, month or year; region looks like en-AU. Each
+    source applies them natively where it can and every list is filtered after
+    (receipt.search_options says what was dropped). vertical picks the kind of
+    source: web, news (Bing News), reference (Wikipedia), discussions (Hacker
+    News), qa (Stack Overflow), code (GitHub), papers (arXiv), books (Open
+    Library). mode="merge" asks every eligible source at once and fuses them.
     """
     config = ({"base_url": os.environ["FRANKENSURF_SEARCH_URL"]}
               if os.getenv("FRANKENSURF_SEARCH_URL") and source in (None, "searxng") else None)
@@ -298,7 +309,8 @@ async def search(query: str, source: str | None = None, limit: int = 10,
         options["provider"] = "http"
     async with runtime() as web:
         return await web.search(query, source=source, limit=limit, engine_config=config,
-                                policy=WebPolicy(**options))
+                                policy=WebPolicy(**options), site=site, exclude_domains=exclude_domains,
+                                recency=recency, region=region, vertical=vertical, mode=mode)
 
 
 @server.tool()

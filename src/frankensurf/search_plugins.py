@@ -228,6 +228,27 @@ def _copy_attribution(value, request, identifier, manifest, maximum):
             "request_url": _url(value.get("request_url"))}
 
 
+def _copy_extra(value, maximum):
+    """Source-specific scalars on a result (points, publisher, stars): at most
+    ten, named in snake_case, strings bounded like every other text."""
+    import re as _re
+    if type(value) is not dict or len(value) > 10:
+        raise ValueError()
+    copied = {}
+    for key, item in value.items():
+        if type(key) is not str or _re.fullmatch(r"[a-z][a-z0-9_]{0,31}", key) is None:
+            raise ValueError()
+        if item is None or type(item) in (bool, int):
+            copied[key] = item
+        elif type(item) is float and math.isfinite(item):
+            copied[key] = item
+        elif type(item) is str:
+            copied[key] = _text(item, maximum) if item else item
+        else:
+            raise ValueError()
+    return copied
+
+
 def _copy_search_bundle(result, request, identifier, manifest):
     maximum = request.policy.max_bytes
     if (type(result) is not dict or set(result) != {"response", "acquisition"}
@@ -254,9 +275,10 @@ def _copy_search_bundle(result, request, identifier, manifest):
     results = []
     for item in response["results"]:
         if (type(item) is not dict
-                or set(item) != {"url", "title", "snippet", "engines",
-                                 "indexed_date", "listing_state",
-                                 "verification", "query_attribution"}
+                or not {"url", "title", "snippet", "engines", "indexed_date", "listing_state",
+                        "verification", "query_attribution"} <= set(item)
+                or set(item) - {"url", "title", "snippet", "engines", "indexed_date",
+                                "listing_state", "verification", "query_attribution", "extra"}
                 or item.get("listing_state") != "unknown"
                 or item.get("verification") != "indexed_discovery"
                 or type(item.get("engines")) is not list
@@ -270,13 +292,16 @@ def _copy_search_bundle(result, request, identifier, manifest):
         indexed = item.get("indexed_date")
         if indexed is not None:
             indexed = _text(indexed, maximum)
-        results.append({"url": _url(item.get("url")),
-                        "title": _text(item.get("title"), maximum),
-                        "snippet": _text(item.get("snippet"), maximum),
-                        "engines": engines, "indexed_date": indexed,
-                        "listing_state": "unknown",
-                        "verification": "indexed_discovery",
-                        "query_attribution": item_attribution})
+        copied = {"url": _url(item.get("url")),
+                  "title": _text(item.get("title"), maximum),
+                  "snippet": _text(item.get("snippet"), maximum),
+                  "engines": engines, "indexed_date": indexed,
+                  "listing_state": "unknown",
+                  "verification": "indexed_discovery",
+                  "query_attribution": item_attribution}
+        if "extra" in item:
+            copied["extra"] = _copy_extra(item["extra"], maximum)
+        results.append(copied)
     failures = response.get("upstream_failures")
     if type(failures) is not list or len(failures) > maximum:
         raise ValueError()
@@ -342,6 +367,9 @@ class SearchManifest:
     # Some sources expose a transport-level wire contract. Bundled HTML/RSS
     # search adapters require raw HTTP bytes; other plugins remain routed.
     transport_provider: str | None = None
+    # web, or one kind of result (news, reference, discussions, qa, code,
+    # papers, books). Automatic fallback stays inside one vertical.
+    vertical: str = "web"
 
 
 @dataclass(frozen=True)
@@ -432,7 +460,7 @@ class SearchRegistry:
             raise WebFailure("BUDGET_EXHAUSTED", "Search source cannot enforce the requested cost cap")
         return manifest
 
-    def candidates(self, policy, *, explicit=None):
+    def candidates(self, policy, *, explicit=None, vertical="web"):
         if explicit is not None:
             self.require_enabled(explicit, policy)
             selected = [explicit]
@@ -448,6 +476,7 @@ class SearchRegistry:
             selected = [identifier for identifier in selected if identifier in allowed]
         selected = [identifier for identifier in selected
                     if identifier in self._plugins and identifier not in self._disabled
+                    and (explicit is not None or self._plugins[identifier].manifest.vertical == vertical)
                     and (not self._plugins[identifier].manifest.paid or policy.allow_paid_fallbacks)
                     and (explicit is not None or self._available(identifier))]
         if explicit is None and policy.search_source_prefer:
@@ -672,8 +701,10 @@ class SearchRegistry:
 
 class HttpSearchPlugin:
     def __init__(self, identifier, version="1"):
+        from .search import REGISTRY
         self.manifest = SearchManifest(identifier, version,
-                                       transport_provider="http")
+                                       transport_provider="http",
+                                       vertical=REGISTRY[identifier].get("vertical", "web"))
 
     async def search(self, request, services):
         url, definition = build_search(request.query, self.manifest.id, request.config)
@@ -692,7 +723,7 @@ class HttpSearchPlugin:
         if receipt.get("status") == "observed":
             try:
                 found, failures = normalize_results(acquisition["content"], acquisition["structured"],
-                                                    self.manifest.id, request.limit)
+                                                    self.manifest.id, request.limit, url)
                 response["upstream_failures"] = failures
                 response["coverage"] = "partial" if failures else "returned-results"
                 if not found and failures:
@@ -769,7 +800,9 @@ class HostedSearchPlugin:
 
     async def search(self, request, services):
         from .hosted_providers import search_url
-        url = search_url(self._transport, request.query, request.limit)
+        url = search_url(self._transport, request.query, request.limit,
+                         {key: value for key, value in (request.config or {}).items()
+                          if key in ("site", "exclude_domains", "recency", "region")})
         acquisition = await services.read(url, request.policy, adapter="json")
         receipt = acquisition["receipt"]
         receipt["operation"] = "search"
@@ -799,7 +832,8 @@ class HostedSearchPlugin:
 
 
 DEFAULT_SEARCHES = SearchRegistry()
-for _identifier in ("searxng", "duckduckgo_html", "bing_rss"):
+from .search import REGISTRY as _HTTP_SOURCES
+for _identifier in _HTTP_SOURCES:
     DEFAULT_SEARCHES.register(HttpSearchPlugin(_identifier))
 DEFAULT_SEARCHES.register(HostedSearchPlugin("exa", "exa_api", "exa_api_key"))
 DEFAULT_SEARCHES.register(HostedSearchPlugin("brave", "brave_api", "brave_api_key"))
