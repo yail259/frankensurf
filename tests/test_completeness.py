@@ -249,3 +249,10 @@ def test_query_keys_are_matched_however_they_are_spelled_and_echo_free_pages_are
             "text": " ".join(f"Body lotion {n} $9" for n in range(12)) + " Guide", "content_type": "text/html"}
     verdict = assess(url, page)
     assert verdict["off_query"] and verdict["complete"] is False
+
+
+def test_prices_with_the_currency_after_the_amount_count():
+    url = "https://shop.example.de/search_dir.html?sw=gitarre"
+    text = " ".join(f"Gitarre {n} {n},99 €" for n in range(1, 6)) + " " + "Menü " * 300
+    verdict = assess(url, {"content": "<p>" + text + "</p>", "text": text, "content_type": "text/html"})
+    assert verdict["kind"] == "search" and verdict["prices"] == 5 and verdict["complete"]

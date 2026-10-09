@@ -226,3 +226,33 @@ def test_navigation_and_seo_link_farms_are_not_items():
         for n in range(8)]}
     content = page([f'<script type="application/ld+json">{json.dumps(nav)}</script>'])
     assert discover(result_for(content), "https://shop.example.com/search?q=watch")["drafts"] == []
+
+
+async def test_auto_items_on_any_listing_page_without_a_saved_module(tmp_path, monkeypatch):
+    from frankensurf import providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+    from frankensurf.runtime import Runtime
+
+    class Fixture:
+        manifest = ProviderManifest("fixture", "1")
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            return {"url": request.url, "content": page([next_data(PRODUCTS)]), "content_type": "text/html",
+                    "http_status": 200}
+    registry = ProviderRegistry()
+    registry.register(Fixture())
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    overrides = {"origin_route_hint_ttl_seconds": 0, "origin_min_interval_seconds": 0,
+                 "second_opinion_text_chars": 0, "completeness_escalation": False}
+    async with Runtime(tmp_path) as web:
+        plain = await web.read(URL, policy_overrides=overrides)
+        shaped = await web.read(URL, policy_overrides={**overrides, "auto_items": True})
+        assert web.site_modules.inspect() == []
+        web.site_modules.put(shaped["auto_module"])
+        saved = await web.read("https://shop.example.com/search?q=desk", policy_overrides=overrides)
+    assert "items" not in plain and "auto_items" not in plain["receipt"]
+    assert len(shaped["items"]) == 8 and shaped["receipt"]["auto_items"]["count"] == 8
+    assert saved["items"][0]["name"] == "Brass lamp 0"

@@ -18,6 +18,19 @@ named, the next page, and checks that tell you when the site changes.
 A module is **data, never code**, and lives in your own state folder.
 Frankensurf ships none; site knowledge stays with whoever learned it.
 
+## Items with no module at all
+
+Pass `auto_items` (MCP: `items=True`) on any read. If the page carries a list
+of items in its own data, the result gets `items`, found the same way as below
+and with no extra read, plus `auto_module`: the module that found them. Save
+it (`site_modules` `put`) and every later read of that kind of page is shaped
+without asking.
+
+```python
+page = await web.read(url, policy_overrides={"auto_items": True})
+page["items"][:3]; page["receipt"]["auto_items"]   # {"found", "count", "source"}
+```
+
 ## Let Frankensurf draft one
 
 Most listing pages carry their rows as data for their own frontend: JSON-LD,

@@ -28,7 +28,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
                profile: str | None = None, try_harder_than: str | None = None,
                expect_terms: list[str] | None = None, card_images: bool | None = None,
                module: str | None = None, module_override: dict | None = None,
-               allow_archive: bool | None = None,
+               allow_archive: bool | None = None, items: bool | None = None,
                acquisition_policy: dict | None = None) -> dict:
     """Retrieve evidence. Omitted settings use runtime defaults and operator public routes.
 
@@ -36,6 +36,9 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     operational settings. Content does not certify live or sold state.
     allow_handoff=True lets a person clear a CAPTCHA, sign-in or 2FA wall in a
     visible browser when every automatic route fails; the call waits for them.
+    items=True returns items (name, url, price, image) from a listing page with no
+    saved module, found in the page's own data, plus result.auto_module: the
+    drafted module, which site_modules put saves for every later read.
     allow_archive=True lets a walled page come from the Internet Archive's latest
     stored copy as the last resort; receipt.archived says when it was taken. Not
     live: don't use it for prices or stock.
@@ -57,7 +60,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
         "render": render, "include_images": include_images, "freshness": freshness,
         "identity": identity, "allow_handoff": allow_handoff, "profile": profile,
         "expect_terms": tuple(expect_terms) if expect_terms else None,
-        "card_images": card_images, "allow_archive": allow_archive})
+        "card_images": card_images, "allow_archive": allow_archive, "auto_items": items})
     # Agents read text: ask servers for markdown first (T0). Callers can pass
     # acquisition_policy={"prefer_markdown": false} for raw HTML structure.
     options.setdefault("prefer_markdown", True)

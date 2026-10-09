@@ -46,7 +46,10 @@ _NOT_ITEM = re.compile(r"\.(css|js|mjs|json|xml|pdf|png|jpe?g|gif|svg|webp|ico|w
                        r"disclosure|accessibility|sitemap|store-locator|stores|gift-card|login|"
                        r"sign-?in|register|account|contact|returns|shipping|delivery)", re.I)
 _LONG_ID = re.compile(r"\d{5,}|[A-Z0-9]{8,}")
-_PRICE = re.compile(r"(?:A\$|AU\$|US\$|C\$|NZ\$|\$|€|£)\s?\d[\d,]*(?:\.\d{2})?")
+# A currency before the amount ($49, € 12), or after it as most of Europe
+# writes it (1.599 €, 249,00 kr, 99 zł).
+_PRICE = re.compile(r"(?:A\$|AU\$|US\$|C\$|NZ\$|\$|€|£)\s?\d[\d,]*(?:\.\d{2})?"
+                    r"|(?<![\w.,])\d{1,3}(?:[.\s ]\d{3})*(?:,\d{2}|,-)?\s?(?:€|EUR|kr|zł|Kč|Ft|CHF|lei|лв)(?!\w)")
 _HREF = re.compile(r"""<a\b[^>]*?\bhref\s*=\s*["']([^"'#]+)""", re.I)
 _MARKDOWN_LINK = re.compile(r"\]\((https?://[^)\s#]+|/[^)\s#]*)")
 # An anchor with its attributes and inner HTML, and a markdown link with its text.
@@ -158,7 +161,7 @@ def item_links(html: str, base: str) -> int:
     return len(found)
 
 
-_ZERO_PRICE = re.compile(r"^\D*0+(?:[.,]0+)?$")
+_ZERO_PRICE = re.compile(r"^\D*0+(?:[.,]0+|,-)?\D*$")
 # Template syntax and script values that leaked into the text before the page rendered.
 _UNRENDERED = re.compile(r"\{\{\s*[\w.$]+\s*\}\}|\$\{\s*[\w.]+\s*\}|\b(?:NaN|undefined)\b|\[object Object\]")
 

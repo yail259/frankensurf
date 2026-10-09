@@ -177,6 +177,10 @@ class WebPolicy:
     # A stored copy (Internet Archive) as the very last resort. The result is
     # not live: result.archived and receipt.archived say when it was taken.
     allow_archive: bool = False
+    # Items from any listing page with no saved module: the page's own data is
+    # searched for its item list (module discovery, no extra read) and the
+    # draft module comes back too, ready to save.
+    auto_items: bool = False
     max_cost_usd: float | None = None
     search_source_candidates: tuple[str, ...] | None = None
     search_source_allow: tuple[str, ...] | None = None
@@ -303,6 +307,7 @@ class WebPolicy:
 
     def _validate_capture_and_pacing(self):
         _require(type(self.allow_archive) is bool, "allow_archive must be a boolean")
+        _require(type(self.auto_items) is bool, "auto_items must be a boolean")
         _require(type(self.capture_json_responses) is bool,
                  "capture_json_responses must be a boolean")
         _require(type(self.prefer_markdown) is bool, "prefer_markdown must be a boolean")
@@ -2896,8 +2901,10 @@ class Runtime:
                 return await self._read(url, effective, adapter=adapter,
                                         _planning_failure=WebFailure("POLICY_DENIED", str(error)))
         if selected is None:
-            return await self._read_entry(url, policy, provider, adapter, policy_overrides,
-                                          workload_assertions, retry_of)
+            result = await self._read_entry(url, policy, provider, adapter, policy_overrides,
+                                            workload_assertions, retry_of)
+            self._auto_items(url, result, policy, policy_overrides)
+            return result
         if policy is None:
             # The module's operational defaults; anything the caller set wins.
             policy_overrides = {**selected.policy_overrides(), **(policy_overrides or {})}
@@ -2930,6 +2937,31 @@ class Runtime:
             result["next_url"] = output["next_url"]
         receipt["module"] = receipt_record(selected, source, output, validation)
         self._annotate_trace(receipt, "module")
+
+    def _auto_items(self, url, result, policy, policy_overrides):
+        """With auto_items and no saved module: items from the page's own data,
+        and the drafted module that found them (result.auto_module) to save."""
+        from .routes import request_policy
+        try:
+            effective, _ = request_policy(policy, policy_overrides)
+        except Exception:
+            return
+        receipt = result.get("receipt") or {}
+        if not effective.auto_items or receipt.get("status") != "observed" or not isinstance(url, str):
+            return
+        from .module_discovery import discover
+        from .site_modules import SiteModule
+        found = discover(result, url, limit=1)
+        if not found["drafts"]:
+            receipt["auto_items"] = {"found": False}
+            return
+        record = found["drafts"][0]["module"]
+        output = SiteModule.from_record(record).extract(result, url)
+        result["items"] = output["items"]
+        result["auto_module"] = record
+        receipt["auto_items"] = {"found": True, "count": output["count"],
+                                 "source": record["sources"]["listing"]["kind"],
+                                 "save": "site_modules put with result.auto_module to reuse it"}
 
     def _module_satisfied(self, result, url, terms):
         """True when the active module's assertions pass on this page."""
