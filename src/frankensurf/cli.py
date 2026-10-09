@@ -24,6 +24,7 @@ _POLICY_ARGUMENTS = {
     "agent_task": "browser_agent_task",
     "capture_json": "capture_json_responses",
     "markdown": "prefer_markdown",
+    "main": "main_content",
     "handoff": "allow_handoff",
     "profile": "profile",
     "expect": "expect_terms",
@@ -122,6 +123,12 @@ def _load_json(path, label):
     if not isinstance(value, dict):
         raise ValueError(label + " must contain an object")
     return value
+
+
+def _one_site(sites):
+    if len(sites or []) > 1:
+        raise ValueError("search takes one --site")
+    return sites[0] if sites else None
 
 
 def _module_op(args):
@@ -238,7 +245,9 @@ async def run(args):
                     "provider", "provider_candidates", "identity")) else WebPolicy(
                     **{**policy_kwargs, "provider": "http"})
                 result = await web.search(" ".join(args.urls), source=args.source,
-                    limit=args.limit, engine_config=config, policy=search_policy)
+                    limit=args.limit, engine_config=config, policy=search_policy,
+                    site=_one_site(args.site), exclude_domains=args.exclude_domains, recency=args.recency,
+                    region=args.region, vertical=args.vertical, mode=args.mode)
             elif args.operation == "do":
                 with open(args.intent_file, encoding="utf-8") as source:
                     raw = source.read(policy.browser_do_packet_max_bytes + 1)
@@ -366,13 +375,16 @@ def build_parser():
         help="A word the search results should mention; repeat for more")
     parser.add_argument("--agent-task",
         help="Task for the browser agent, e.g. 'search for sony a7iii'; the agent may finish on any allowed page")
+    parser.add_argument("--main", action="store_true", default=None,
+        help="Also return main_text: the article without menus, footers and banners")
     parser.add_argument("--markdown", action="store_true", default=None,
         help="Ask servers for text/markdown first (content negotiation)")
     parser.add_argument("--profile", help="Read with a stored FrankenSurf profile (see profile-login)")
     parser.add_argument("--try-harder-than", metavar="TRACE_ID",
         help="read: skip every tool an earlier read used and start from the strongest remaining one")
     parser.add_argument("--site", action="append", default=[],
-        help="profile-login: a site the profile covers; repeat for each")
+        help="profile-login: a site the profile covers; repeat for each."
+             " search: only results from this one domain")
     parser.add_argument("--sharing", choices=["local", "hosted"], default="local",
         help="profile-login: which providers may carry the session")
     parser.add_argument("--login-timeout", type=float, default=600,
@@ -391,6 +403,16 @@ def build_parser():
         help="Bounded seconds to wait for --content-ready-selector")
     from .search_plugins import DEFAULT_SEARCHES
     search_sources = [item["id"] for item in DEFAULT_SEARCHES.inspect()]
+    parser.add_argument("--exclude-domain", dest="exclude_domains", action="append",
+        help="search: never return results from this domain; repeat for more")
+    parser.add_argument("--recency", choices=["day", "week", "month", "year"],
+        help="search: only results from the last day, week, month or year")
+    parser.add_argument("--region", help="search: region and language, like en-AU")
+    parser.add_argument("--vertical", default="web",
+        choices=["web", "news", "reference", "discussions", "qa", "code", "papers", "books"],
+        help="search: the kind of source (default web)")
+    parser.add_argument("--mode", default="fallback", choices=["fallback", "merge"],
+        help="search: merge asks every eligible source at once and fuses the results")
     parser.add_argument("--source", choices=search_sources,
         help="Explicit single search source; omission permits bounded source fallback")
     parser.add_argument("--search-source-candidate", dest="search_source_candidates",

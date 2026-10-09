@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import copy
 import hashlib
 import html
@@ -177,6 +178,13 @@ class WebPolicy:
     # A stored copy (Internet Archive) as the very last resort. The result is
     # not live: result.archived and receipt.archived say when it was taken.
     allow_archive: bool = False
+    # Refuse loopback, private, link-local and local-only addresses (and names
+    # that resolve to them, and redirects into them). For servers reading URLs
+    # they did not choose; FRANKENSURF_BLOCK_PRIVATE_NETWORK=1 sets it for all reads.
+    block_private_network: bool = False
+    # Also return main_text: the article without menus, footers and banners
+    # (main_content.py; trafilatura when installed).
+    main_content: bool = False
     # Items from any listing page with no saved module: the page's own data is
     # searched for its item list (module discovery, no extra read) and the
     # draft module comes back too, ready to save.
@@ -187,6 +195,8 @@ class WebPolicy:
     search_source_prefer: tuple[str, ...] = ()
     search_max_attempts: int | None = None
     search_source_timeout_seconds: float | None = 8
+    # Sources asked at once by search(mode="merge").
+    search_merge_sources: int = 4
     search_terminal_failures: tuple[str, ...] = ("POLICY_DENIED", "BUDGET_EXHAUSTED")
     browser_agent_max_steps: int = 40
     browser_agent_max_model_calls: int = 40
@@ -307,7 +317,11 @@ class WebPolicy:
 
     def _validate_capture_and_pacing(self):
         _require(type(self.allow_archive) is bool, "allow_archive must be a boolean")
+        _require(type(self.block_private_network) is bool, "block_private_network must be a boolean")
+        _require(type(self.main_content) is bool, "main_content must be a boolean")
         _require(type(self.auto_items) is bool, "auto_items must be a boolean")
+        _require(_is_int(self.search_merge_sources, 1) and self.search_merge_sources <= 10,
+                 "search_merge_sources must be an integer from 1 to 10")
         _require(type(self.capture_json_responses) is bool,
                  "capture_json_responses must be a boolean")
         _require(type(self.prefer_markdown) is bool, "prefer_markdown must be a boolean")
@@ -1434,6 +1448,65 @@ def _navigation_failure(message):
     return None
 
 
+def _result_key(url):
+    """One search result per page: scheme, www., trailing slash, fragments and
+    tracking parameters don't make a different result."""
+    parsed = urlparse(url)
+    query = "&".join(sorted(part for part in parsed.query.split("&")
+                            if part and not re.match(r"(?i)(utm_|fbclid|gclid|ref=|ref_|mc_)", part)))
+    return ((parsed.hostname or "").lower().removeprefix("www.") + parsed.path.rstrip("/")
+            + ("?" + query if query else ""))
+
+
+# Set once a read asks for block_private_network: every HTTP hop after that
+# (redirects included) is checked before it is sent.
+PRIVATE_GUARD: ContextVar = ContextVar("frankensurf_private_guard", default=False)
+_PRIVATE_NAMES = (".localhost", ".local", ".internal", ".lan", ".home.arpa", ".intranet")
+
+
+def _private_host(host) -> bool:
+    """A loopback, private, link-local, reserved or local-only name or address."""
+    host = str(host or "").strip("[]").lower().rstrip(".")
+    if not host:
+        return False
+    if host == "localhost" or host.endswith(_PRIVATE_NAMES) or "." not in host and ":" not in host:
+        return True
+    try:
+        return not ipaddress.ip_address(host).is_global
+    except ValueError:
+        return False
+
+
+async def _refuse_private(url):
+    """Raise when url points into a private network, by name, literal address
+    or what its name resolves to (so a public name for 10.0.0.5 is refused)."""
+    host = urlparse(url).hostname or ""
+    if _private_host(host):
+        raise WebFailure("POLICY_DENIED", "Private network address refused (block_private_network)")
+    try:
+        infos = await asyncio.get_running_loop().getaddrinfo(host, None)
+    except (OSError, UnicodeError):
+        return  # Unresolvable: the request itself will fail.
+    if any(_private_host(info[4][0]) for info in infos):
+        raise WebFailure("POLICY_DENIED", "Name resolves to a private network address (block_private_network)")
+
+
+async def _guard_hop(request) -> None:
+    if PRIVATE_GUARD.get():
+        await _refuse_private(str(request.url))
+
+
+def _user_agent() -> str:
+    """Plain HTTP reads say who they are, with a contact URL, as polite-bot
+    policies ask (Wikimedia refuses agents without one)."""
+    try:
+        from importlib.metadata import version
+        release = version("frankensurf")
+    except Exception:
+        release = "dev"
+    return f"FrankenSurf/{release} (+https://frankensurf.dev)"
+
+
 def default_state_dir() -> str:
     """Where the CLI and MCP server keep state: $FRANKENSURF_STATE, else one
     per-user folder, so state doesn't land in whatever directory a client starts in."""
@@ -1471,6 +1544,10 @@ class Runtime:
                 base_searches=search_module.DEFAULT_SEARCHES,
                 base_adapters=adapter_module.DEFAULT_ADAPTERS)
         self.steel_api_url = steel_api_url or os.getenv("FRANKENSURF_STEEL_URL")
+        # Servers that read URLs from search results or users should set this:
+        # every read then refuses private network addresses.
+        self.block_private_network = os.getenv("FRANKENSURF_BLOCK_PRIVATE_NETWORK", "").lower() in (
+            "1", "true", "yes")
         self.local_cdp_url = local_cdp_url or os.getenv("FRANKENSURF_LOCAL_CDP")
         if self.steel_api_url:
             p = urlparse(self.steel_api_url)
@@ -1540,8 +1617,8 @@ class Runtime:
         (self.state_dir / "cache").mkdir(exist_ok=True)
         from .bot_auth import sign_hop
         self._http = httpx.AsyncClient(follow_redirects=True, transport=self._transport,
-                                       headers={"User-Agent": "FrankenSurf/0.1 evidence-first sourcing"},
-                                       event_hooks={"request": [sign_hop]})
+                                       headers={"User-Agent": _user_agent()},
+                                       event_hooks={"request": [sign_hop, _guard_hop]})
         try:
             await self._plugin_session.start()
         except BaseException:
@@ -3240,6 +3317,16 @@ class Runtime:
             result = await self._ensure_complete(url, result, policy, adapter, policy_overrides,
                                                  workload_assertions, effective)
         self._offer_try_harder(result, effective)
+        if effective.main_content and (result.get("receipt") or {}).get("status") == "observed":
+            from .main_content import main_content
+            found = main_content(result.get("content") or "", result.get("content_type") or "",
+                                 result.get("url") or url)
+            if found:
+                result["main_text"] = found["text"]
+                result["receipt"]["main_content"] = {
+                    "method": found["method"], "chars": found["chars"],
+                    "of_chars": len(result.get("text") or ""),
+                    **({"cookie_notice": True} if found.get("cookie_notice") else {})}
         if isinstance(url, str) and not effective.profile:
             self._record_origin_hint(url, effective, result.get("receipt") or {})
             _suggest_handoff(result.get("receipt") or {})
@@ -4222,6 +4309,9 @@ class Runtime:
             from .actions import require_action
             require_action(policy, action_class)
             _validate_url(url)
+            if policy.block_private_network or self.block_private_network:
+                await _refuse_private(url)
+                PRIVATE_GUARD.set(True)
             result["url"] = _output_url(url, named_identity=bool(policy.identity))
             receipt["requested_url"] = result["url"]
             resolved = self.identities.resolve(policy.identity,url,provider=policy.provider,
@@ -4340,6 +4430,9 @@ class Runtime:
                             candidate_version, candidate_binding_id,
                             identity_authority, attempt_cost)
                         _validate_url(response["url"])
+                        if PRIVATE_GUARD.get():
+                            # A browser that followed a redirect inside.
+                            await _refuse_private(response["url"])
                         attempt_final_url = response["url"]
                         parsed = self._parse_acquired(
                             response, adapter, url, policy, receipt, resolved,
@@ -4517,13 +4610,38 @@ class Runtime:
             json.dumps(trace, ensure_ascii=False, indent=2).encode())
 
     async def search(self, query: str, source: str | None = None, limit: int = 10,
-                     engine_config: dict | None = None, policy: WebPolicy | None = None) -> dict:
-        """Search through installed sources; an explicit source never falls back."""
+                     engine_config: dict | None = None, policy: WebPolicy | None = None, *,
+                     site: str | None = None, exclude_domains: list[str] | None = None,
+                     recency: str | None = None, region: str | None = None,
+                     vertical: str = "web", mode: str = "fallback") -> dict:
+        """Search through installed sources; an explicit source never falls back.
+
+        site, exclude_domains, recency (day, week, month, year) and region
+        (en-AU) go to every source, natively where it can, and every result
+        list is filtered afterwards. vertical picks the kind of source for
+        automatic fallback: web, news, reference, discussions, qa, code,
+        papers or books.
+
+        mode="merge" asks every eligible source in the vertical at once (up
+        to search_merge_sources) and fuses their lists by reciprocal rank:
+        better recall, and one blocked engine costs nothing."""
+        if mode not in ("fallback", "merge"):
+            raise ValueError("mode is fallback or merge")
+        if mode == "merge" and source is None:
+            return await self._search_merged(query, limit, engine_config, policy, site=site,
+                                             exclude_domains=exclude_domains, recency=recency,
+                                             region=region, vertical=vertical)
+        from .search import VERTICALS, filter_results, normalize_options
         from .search_plugins import SearchRequest, SearchServices
         if not isinstance(query, str) or not query.strip() or len(query) > 2000:
             raise ValueError("Invalid search query")
         if not 1 <= limit <= 100:
             raise ValueError("Search limit must be 1..100")
+        if vertical not in VERTICALS:
+            raise ValueError("vertical must be one of: " + ", ".join(VERTICALS))
+        options = normalize_options(site, exclude_domains, recency, region)
+        # Ask for a few more when results will be filtered, then trim.
+        fetch_limit = min(100, limit + 10) if options else limit
         if source is not None and not self.searches.contains(source):
             raise ValueError("Unknown search source")
         policy = policy or WebPolicy()
@@ -4531,7 +4649,7 @@ class Runtime:
         from .actions import require_action
         try:
             require_action(policy, "READ_PUBLIC")
-            candidates = self.searches.candidates(policy, explicit=source)
+            candidates = self.searches.candidates(policy, explicit=source, vertical=vertical)
         except WebFailure as exc:
             candidates, planning_failure = [], exc
         else:
@@ -4579,9 +4697,10 @@ class Runtime:
                         content_ready_timeout_seconds=min(
                             attempt_policy.content_ready_timeout_seconds,
                             source_timeout))
-                config = engine_config if source is not None or identifier == "searxng" else None
+                config = {**((engine_config or {}) if source is not None or identifier == "searxng" else {}),
+                          **options} or None
                 bundle, manifest = await self.searches.search(identifier,
-                    SearchRequest(query, limit, attempt_policy, config), services)
+                    SearchRequest(query, fetch_limit, attempt_policy, config), services)
             except ValueError:
                 raise
             except WebFailure as exc:
@@ -4662,7 +4781,13 @@ class Runtime:
                  "policy_candidate_order" if policy.search_source_candidates is not None else
                  "policy_preference_then_registry_order" if policy.search_source_prefer else
                  "provisional_free_registry_order")
-        receipt["search_routing"] = {"selection_basis": basis,
+        if options:
+            response["results"], dropped = filter_results(response["results"], options)
+            response["results"] = response["results"][:limit]
+            receipt["search_options"] = {**options, "filtered": dropped}
+        else:
+            response["results"] = response["results"][:limit]
+        receipt["search_routing"] = {"selection_basis": basis, "vertical": vertical,
             "candidates": candidates, "automatic_fallback": source is None,
             "benchmark_earned_order": False,
             "source_timeout_seconds": policy.search_source_timeout_seconds}
@@ -4677,6 +4802,65 @@ class Runtime:
         acquisition["query_attribution"] = response["query_attribution"]
         self._save_trace(acquisition, record_observations=False)
         return response
+
+    async def _search_merged(self, query, limit, engine_config, policy, **options):
+        """Every eligible source at once, fused by reciprocal rank (k=60)."""
+        from .search import VERTICALS, normalize_options
+        if options["vertical"] not in VERTICALS:
+            raise ValueError("vertical must be one of: " + ", ".join(VERTICALS))
+        normalize_options(options["site"], options["exclude_domains"], options["recency"], options["region"])
+        policy = policy or WebPolicy()
+        started = time.monotonic()
+        sources = self.searches.candidates(policy, vertical=options["vertical"])[:policy.search_merge_sources]
+        if not sources:
+            return await self.search(query, None, limit, engine_config, policy, **options)
+
+        async def one(identifier):
+            try:
+                return identifier, await self.search(query, identifier, limit,
+                                                     engine_config if identifier == "searxng" else None,
+                                                     policy, **options)
+            except WebFailure as exc:
+                return identifier, {"results": [], "receipt": {"status": "failed",
+                                                               "failure": {"code": exc.code}}}
+        answers = await asyncio.gather(*(one(identifier) for identifier in sources))
+        fused, order = {}, []
+        for identifier, answer in answers:
+            for rank, item in enumerate(answer.get("results") or []):
+                key = _result_key(item.get("url") or "")
+                if key not in fused:
+                    fused[key] = {**item, "engines": list(item.get("engines") or []),
+                                  "fusion": {"score": 0.0, "sources": []}}
+                    order.append(key)
+                else:
+                    for engine in item.get("engines") or []:
+                        if engine not in fused[key]["engines"]:
+                            fused[key]["engines"].append(engine)
+                fused[key]["fusion"]["score"] += 1.0 / (60 + rank + 1)
+                fused[key]["fusion"]["sources"].append({"source": identifier, "rank": rank + 1})
+        results = sorted((fused[key] for key in order), key=lambda item: -item["fusion"]["score"])[:limit]
+        for item in results:
+            item["fusion"]["score"] = round(item["fusion"]["score"], 5)
+        observed = [identifier for identifier, answer in answers
+                    if (answer.get("receipt") or {}).get("status") == "observed"]
+        costs = [(answer.get("receipt") or {}).get("cost_usd") for _, answer in answers]
+        receipt = {"trace_id": uuid.uuid4().hex, "operation": "search", "action_class": "READ_PUBLIC",
+                   "status": "observed" if observed else "failed",
+                   **({} if observed else {"failure": {"code": "SEARCH_UNAVAILABLE",
+                                                       "message": "Every merged search source failed"}}),
+                   "observed_at": utcnow(), "cost_usd": None if None in costs else _total_cost(costs),
+                   "latency_ms": round((time.monotonic() - started) * 1000),
+                   "search_merge": [{"source": identifier,
+                                     "status": (answer.get("receipt") or {}).get("status"),
+                                     "failure": ((answer.get("receipt") or {}).get("failure") or {}).get("code"),
+                                     "results": len(answer.get("results") or []),
+                                     "trace_id": (answer.get("receipt") or {}).get("trace_id")}
+                                    for identifier, answer in answers],
+                   "search_routing": {"selection_basis": "merge", "vertical": options["vertical"],
+                                      "candidates": sources, "automatic_fallback": False}}
+        return {"query": query, "source": None, "results": results, "receipt": receipt,
+                "query_attribution": None, "coverage": "returned-results" if observed else "unknown",
+                "upstream_failures": []}
 
     def import_evidence(self, content: str, url: str, observed_at: str,
                         method: str = "operator_browser", content_type: str = "text/html",

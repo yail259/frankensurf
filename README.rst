@@ -88,6 +88,15 @@ Also in the box: profiles (log in once, reuse the session from any tool), human
 handoff for CAPTCHAs and 2FA, site modules (save what your agent learns about a
 site as data), and Web Bot Auth request signing.
 
+Want the article, not the menus? Pass ``--main`` (MCP ``main_content=True``)
+for ``main_text`` (best with ``pip install "frankensurf[main]"``).
+
+Search takes ``--site``, ``--exclude-domain``, ``--recency`` and ``--region`` on
+every source, a ``--vertical`` (news, reference, discussions, qa, code, papers,
+books) backed by official free APIs, and ``--mode merge`` to fuse every source
+at once. Running on a server that reads URLs it didn't choose? Set
+``FRANKENSURF_BLOCK_PRIVATE_NETWORK=1``.
+
 Reading many pages from one site? Let Frankensurf learn it first::
 
     frankensurf module discover https://www.example.com/ --query "desk lamp" --save

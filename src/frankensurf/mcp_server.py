@@ -29,6 +29,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
                expect_terms: list[str] | None = None, card_images: bool | None = None,
                module: str | None = None, module_override: dict | None = None,
                allow_archive: bool | None = None, items: bool | None = None,
+               main_content: bool | None = None,
                acquisition_policy: dict | None = None) -> dict:
     """Retrieve evidence. Omitted settings use runtime defaults and operator public routes.
 
@@ -36,6 +37,9 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     operational settings. Content does not certify live or sold state.
     allow_handoff=True lets a person clear a CAPTCHA, sign-in or 2FA wall in a
     visible browser when every automatic route fails; the call waits for them.
+    main_content=True returns the article without menus, footers or banners as
+    text (receipt.main_content says how it was cut; full_text_chars is the size
+    of the whole page's text). Use it for articles and news.
     items=True returns items (name, url, price, image) from a listing page with no
     saved module, found in the page's own data, plus result.auto_module: the
     drafted module, which site_modules put saves for every later read.
@@ -60,7 +64,8 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
         "render": render, "include_images": include_images, "freshness": freshness,
         "identity": identity, "allow_handoff": allow_handoff, "profile": profile,
         "expect_terms": tuple(expect_terms) if expect_terms else None,
-        "card_images": card_images, "allow_archive": allow_archive, "auto_items": items})
+        "card_images": card_images, "allow_archive": allow_archive, "auto_items": items,
+        "main_content": main_content})
     # Agents read text: ask servers for markdown first (T0). Callers can pass
     # acquisition_policy={"prefer_markdown": false} for raw HTML structure.
     options.setdefault("prefer_markdown", True)
@@ -72,6 +77,9 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     async with runtime() as web:
         result = await web.read(url, policy_overrides=options, **extra)
         result.pop("content", None)
+        if main_content and "main_text" in result:
+            result["full_text_chars"] = len(result.get("text") or "")
+            result["text"] = result.pop("main_text")
         return result
 
 
@@ -278,12 +286,23 @@ async def batch(urls: list[str], provider: str | None = None, adapter: str | Non
 @server.tool()
 async def search(query: str, source: str | None = None, limit: int = 10,
                  identity: str | None = None, provider: str | None = None,
+                 site: str | None = None, exclude_domains: list[str] | None = None,
+                 recency: str | None = None, region: str | None = None,
+                 vertical: str = "web", mode: str = "fallback",
                  acquisition_policy: dict | None = None) -> dict:
     """Discover indexed candidates through installed sources with exact attribution.
 
     Omit source to permit policy-bounded fallback. An explicit source is never
     substituted. Search source candidate, allow and preference fields can be set
     in acquisition_policy without exposing service credentials.
+
+    site keeps one domain; exclude_domains (up to 200) never come back from any
+    source; recency is day, week, month or year; region looks like en-AU. Each
+    source applies them natively where it can and every list is filtered after
+    (receipt.search_options says what was dropped). vertical picks the kind of
+    source: web, news (Bing News), reference (Wikipedia), discussions (Hacker
+    News), qa (Stack Overflow), code (GitHub), papers (arXiv), books (Open
+    Library). mode="merge" asks every eligible source at once and fuses them.
     """
     config = ({"base_url": os.environ["FRANKENSURF_SEARCH_URL"]}
               if os.getenv("FRANKENSURF_SEARCH_URL") and source in (None, "searxng") else None)
@@ -298,7 +317,8 @@ async def search(query: str, source: str | None = None, limit: int = 10,
         options["provider"] = "http"
     async with runtime() as web:
         return await web.search(query, source=source, limit=limit, engine_config=config,
-                                policy=WebPolicy(**options))
+                                policy=WebPolicy(**options), site=site, exclude_domains=exclude_domains,
+                                recency=recency, region=region, vertical=vertical, mode=mode)
 
 
 @server.tool()

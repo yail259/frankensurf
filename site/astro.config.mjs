@@ -57,6 +57,7 @@ export default defineConfig({
             { label: "Signed-in pages", slug: "docs/read/signed-in" },
             { label: "Profiles", slug: "docs/read/profiles" },
             { label: "Site modules", slug: "docs/read/site-modules" },
+            { label: "Main content", slug: "docs/read/main-content" },
           ] },
           { label: "Search", slug: "docs/search" },
           { label: "Watch", slug: "docs/watch" },

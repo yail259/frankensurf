@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "frankensurf"
-version = "0.27.0"
+version = "0.28.0"
 description = "One read() call for AI agents, stitched from 28 web tools: cheapest first, every page checked, a receipt for every attempt"
 readme = "README.rst"
 license = "Apache-2.0"
@@ -28,6 +28,8 @@ dependencies = ["httpx>=0.28,<1", "beautifulsoup4>=4.13,<5", "playwright>=1.63,<
 [project.optional-dependencies]
 test = ["pytest>=9,<10", "pytest-asyncio>=1,<2"]
 mcp = ["mcp>=1.2,<2"]
+# Better main-content extraction (read main_content=True); a built-in extractor works without it.
+main = ["trafilatura>=2,<3"]
 
 [project.urls]
 Homepage = "https://frankensurf.dev"

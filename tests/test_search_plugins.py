@@ -43,7 +43,7 @@ async def test_omitted_source_falls_back_with_exact_attribution_and_attempts(tmp
         "searxng", "duckduckgo_html"]
     assert result["receipt"]["cost_usd"] == 0
     assert result["receipt"]["search_routing"] == {
-        "selection_basis": "provisional_free_registry_order",
+        "selection_basis": "provisional_free_registry_order", "vertical": "web",
         "candidates": ["searxng", "duckduckgo_html", "bing_rss"],
         "automatic_fallback": True, "benchmark_earned_order": False,
         "source_timeout_seconds": 8}
@@ -245,7 +245,11 @@ def test_search_registry_and_policy_defer_safe_unknown_ids_to_runtime_catalog():
 
 def test_builtin_sources_are_inspectable_plugins():
     manifests = {item["id"]: item for item in DEFAULT_SEARCHES.inspect()}
-    assert set(manifests) == {"searxng", "duckduckgo_html", "bing_rss", "exa", "brave", "tavily", "parallel"}
+    assert set(manifests) == {"searxng", "duckduckgo_html", "bing_rss", "exa", "brave", "tavily", "parallel",
+                              "bing_news_rss", "wikipedia", "hacker_news", "stack_exchange", "github",
+                              "arxiv", "open_library"}
+    assert {name for name, item in manifests.items() if item["vertical"] == "web"} == {
+        "searxng", "duckduckgo_html", "bing_rss", "exa", "brave", "tavily", "parallel"}
     assert all(item["enabled"] for item in manifests.values())
     assert {name for name, item in manifests.items() if item["paid"]} == {"exa", "brave", "tavily", "parallel"}
 

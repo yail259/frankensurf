@@ -15,6 +15,15 @@ read resumes in that same tab.
   automatic.
 - Runs only when a call asks for it.
 
+## Servers: refuse internal addresses
+
+If a server reads URLs it did not choose (from search results or from users),
+set `FRANKENSURF_BLOCK_PRIVATE_NETWORK=1`, or `block_private_network` on a
+read. Reads then refuse loopback, private, link-local and local-only targets
+(`localhost`, `*.internal`, `*.local`), names that resolve to them, and
+redirects into them, with `POLICY_DENIED`. It is off by default so agents can
+still read your own local development servers.
+
 ## Or an older copy
 
 When a page is walled and an older copy will do (an article, a spec sheet,

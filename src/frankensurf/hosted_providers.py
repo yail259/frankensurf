@@ -423,6 +423,15 @@ class _SearchTransport(_Keyed):
             count = 10
         return query, count
 
+    @staticmethod
+    def _options(url):
+        """Search options carried on the transport URL (see search_url)."""
+        params = parse_qs(urlsplit(url).query)
+        options = {key: params[key][0] for key in ("site", "recency", "region") if params.get(key)}
+        if params.get("exclude"):
+            options["exclude_domains"] = [item for item in params["exclude"][0].split(",") if item][:200]
+        return options
+
 
 class ExaTransport(_SearchTransport):
     required_settings = ("exa_api_key",)
@@ -433,11 +442,17 @@ class ExaTransport(_SearchTransport):
 
     async def acquire(self, request, services):
         query, count = self._query(request.url)
+        options = self._options(request.url)
+        body = {"query": query, "numResults": count, "contents": {"highlights": True}}
+        if options.get("site"):
+            body["includeDomains"] = [options["site"]]
+        if options.get("exclude_domains"):
+            body["excludeDomains"] = options["exclude_domains"]
+        if options.get("recency"):
+            body["startPublishedDate"] = _since(options["recency"])
         status, _, raw = await _call(
             "POST", self.ENDPOINT, request.policy,
-            headers={"x-api-key": self._required("exa_api_key")},
-            json_body={"query": query, "numResults": count,
-                       "contents": {"highlights": True}})
+            headers={"x-api-key": self._required("exa_api_key")}, json_body=body)
         error = _service_status(status, "Exa")
         if error:
             raise error
@@ -455,6 +470,16 @@ class BraveTransport(_SearchTransport):
     required_settings = ("brave_api_key",)
     ENDPOINT = "https://api.search.brave.com/res/v1/web/search"
 
+    @staticmethod
+    def _brave_params(query, count, options):
+        from .search import _operators
+        params = {"q": _operators(query, options)[:400], "count": min(count, 20)}
+        if options.get("recency"):
+            params["freshness"] = {"day": "pd", "week": "pw", "month": "pm", "year": "py"}[options["recency"]]
+        if "-" in options.get("region", ""):
+            params["country"] = options["region"].split("-")[1].lower()
+        return params
+
     def __init__(self):
         self.manifest = _manifest("brave_api", "1", paid=True, route_scope_required=True)
 
@@ -464,7 +489,7 @@ class BraveTransport(_SearchTransport):
             "GET", self.ENDPOINT, request.policy,
             headers={"X-Subscription-Token": self._required("brave_api_key"),
                      "Accept": "application/json"},
-            params={"q": query, "count": min(count, 20)})
+            params=self._brave_params(query, count, self._options(request.url)))
         error = _service_status(status, "Brave Search")
         if error:
             raise error
@@ -684,6 +709,17 @@ class TavilyTransport(_SearchTransport):
     required_settings = ("tavily_api_key",)
     ENDPOINT = "https://api.tavily.com/search"
 
+    @staticmethod
+    def _tavily_body(query, count, options):
+        body = {"query": query, "max_results": min(count, 20)}
+        if options.get("site"):
+            body["include_domains"] = [options["site"]]
+        if options.get("exclude_domains"):
+            body["exclude_domains"] = options["exclude_domains"]
+        if options.get("recency"):
+            body["time_range"] = options["recency"]
+        return body
+
     def __init__(self):
         self.manifest = _manifest("tavily_api", "1", paid=True, route_scope_required=True)
 
@@ -692,7 +728,7 @@ class TavilyTransport(_SearchTransport):
         status, _, raw = await _call(
             "POST", self.ENDPOINT, request.policy,
             headers={"Authorization": "Bearer " + self._required("tavily_api_key")},
-            json_body={"query": query, "max_results": min(count, 20)})
+            json_body=self._tavily_body(query, count, self._options(request.url)))
         error = _service_status(status, "Tavily")
         if error:
             raise error
@@ -723,11 +759,25 @@ class ParallelTransport(_SearchTransport):
         return result
 
 
-def search_url(transport, query, limit):
-    """The Core read URL for a search transport (the plugin turns it into the API call)."""
+def _since(recency):
+    from datetime import datetime, timedelta, timezone
+    from .search import RECENCY
+    return (datetime.now(timezone.utc) - timedelta(days=RECENCY[recency])).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def search_url(transport, query, limit, options=None):
+    """The Core read URL for a search transport (the plugin turns it into the API call).
+    Search options ride along as parameters; each transport applies them natively."""
     endpoint = {"exa_api": ExaTransport.ENDPOINT, "brave_api": BraveTransport.ENDPOINT,
                 "tavily_api": TavilyTransport.ENDPOINT, "parallel_api": ParallelTransport.ENDPOINT}[transport]
-    return endpoint + "?q=" + quote(query, safe="") + "&count=" + str(limit)
+    url = endpoint + "?q=" + quote(query, safe="") + "&count=" + str(limit)
+    options = options or {}
+    for key in ("site", "recency", "region"):
+        if options.get(key):
+            url += "&" + key + "=" + quote(str(options[key]), safe="")
+    if options.get("exclude_domains"):
+        url += "&exclude=" + quote(",".join(options["exclude_domains"]), safe="")
+    return url
 
 
 # Providers that reach the target through their own unblocking network. An

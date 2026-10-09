@@ -10,7 +10,7 @@ import { Aside } from "@astrojs/starlight/components";
 
 | Tool | Arguments | Returns |
 | --- | --- | --- |
-| `read` | `url`, `provider`, `render`, `include_images`, `freshness`, `identity`, `allow_handoff`, `profile`, `try_harder_than`, `expect_terms`, `card_images`, `allow_archive`, `items`, `acquisition_policy` | The page and its receipt. Asks for markdown by default. `try_harder_than` takes an earlier read's `trace_id` and skips every tool it used. `expect_terms` are words results should mention; a results page that mentions none is flagged `off_query`. `card_images` adds `cards` (link, title, thumbnail). `module` names a [site module](/docs/read/site-modules/) (`none` turns them off); `module_override` runs an unsaved one. |
+| `read` | `url`, `provider`, `render`, `include_images`, `freshness`, `identity`, `allow_handoff`, `profile`, `try_harder_than`, `expect_terms`, `card_images`, `allow_archive`, `items`, `main_content`, `acquisition_policy` | The page and its receipt. `main_content` returns the article without menus ([Main content](/docs/read/main-content/)). Asks for markdown by default. `try_harder_than` takes an earlier read's `trace_id` and skips every tool it used. `expect_terms` are words results should mention; a results page that mentions none is flagged `off_query`. `card_images` adds `cards` (link, title, thumbnail). `module` names a [site module](/docs/read/site-modules/) (`none` turns them off); `module_override` runs an unsaved one. |
 | `read_template` | `module`, `template`, `params`, `expect_terms`, `card_images`, `acquisition_policy` | A read of a URL built from a saved module's template, shaped by that module: `items`, `next_url`, `receipt.module`. |
 | `site_modules` | `action` (`list`, `get`, `put`, `enable`, `disable`, `delete`), `module_id`, `module` | Save and manage [site modules](/docs/read/site-modules/). |
 | `batch_template` | `module`, `template`, `params_list`, `acquisition_policy` | One saved template (say, a search) for many parameter sets as one paced batch: each result's `params`, `items`, `next_url` and receipt status, without page text. |
@@ -19,7 +19,7 @@ import { Aside } from "@astrojs/starlight/components";
 | `trace` | `trace_id` | The full record of an earlier read: tools tried, failures, timings, completeness steps. No page content. |
 | `extract` | `url`, `adapter`, `include_images`, `identity`, `provider`, `freshness`, `acquisition_policy` | The page through an adapter: `html` (default), `json` or `rss`. |
 | `batch` | `urls`, `provider`, `adapter`, `identity`, `include_images`, `freshness` | One result per URL. |
-| `search` | `query`, `source`, `limit`, `identity`, `provider`, `acquisition_policy` | Attributed results. |
+| `search` | `query`, `source`, `limit`, `site`, `exclude_domains`, `recency`, `region`, `vertical`, `mode`, `identity`, `provider`, `acquisition_policy` | Attributed results. Options are applied natively and filtered after; `vertical` picks news, reference, discussions, qa, code, papers or books; `mode="merge"` fuses every eligible source. See [Search](/docs/search/). |
 | `paginate` | `url`, `adapter`, `continuation_adapter`, `acquisition_policy` | Every page with an aggregate receipt. |
 | `images` | `urls`, `identity`, `max_images`, `provider` | Checked images. |
 | `identity_status` | `identity` | Health of your identities. |
