@@ -3671,9 +3671,10 @@ class Runtime:
                       and verdict.get("prices", 0) < 2 * 4)
         one_action_away = (effective.interact_on_escalation and effective.allow_local_browser
                            and self.providers.is_available("local")
+                           # Only pages that name the action they need: a thin search page is
+                           # better served by a stronger tool than by pressing buttons.
                            and (verdict.get("needs_interaction")
-                                or "consent" in str(verdict.get("reason") or "")
-                                or (verdict.get("kind") == "search" and not verdict["complete"])))
+                                or "consent" in str(verdict.get("reason") or "")))
         if verdict["complete"] and not borderline and not one_action_away:
             return first
         receipt = first["receipt"]
