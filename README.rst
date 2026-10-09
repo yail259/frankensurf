@@ -1,46 +1,70 @@
 Frankensurf
 ===========
 
-**Every site. Every agent. One call.**
+**One read() call for AI agents, stitched from 28 web tools.**
 
-Frankensurf is an open-source web layer for AI agents. Ask for a URL or a
-search, and it picks the right browsing tool for that page, climbs to a stronger
-one when the site pushes back, and returns clean page data with a receipt of how
-it got there.
+Every web tool breaks somewhere. Frankensurf sits in front of all of them and
+gives your agent one call. It tries the cheapest tool first, checks the page is
+real, climbs to a stronger tool only when a site pushes back, and returns clean
+page data with a receipt of how it got there.
 
-- **Every site.** Plain HTTP, real browsers, stealth browsers, unblockers and, as
-  a last resort, a person. Six rungs behind one call.
-- **Every agent.** The same tools and results on any model, through MCP, Python
-  or the command line.
+- **Cheapest first.** Plain HTTP, Jina Reader, a local browser, free stealth
+  browsers, hosted browsers, then paid unblockers only if you allow them.
+- **Every page checked.** A challenge page, a login wall, or a search page whose
+  results never loaded counts as a failure, not a success.
 - **Shows its work.** Every result says which tools ran, how long each took and
   what it cost.
 
-Website and docs: https://frankensurf.pages.dev/docs/
+Website and docs: https://frankensurf.dev ·
+`Why I built it <https://frankensurf.dev/blog/i-just-wanted-a-cheap-film-camera/>`_
 
-Install
--------
+Try it
+------
 
-Python 3.12 or newer. Linux, or Windows through WSL (macOS should work but
+Python 3.12 or newer, on Linux or Windows through WSL (macOS should work but
 isn't tested yet)::
 
-  git clone https://github.com/yail259/frankensurf.git
-  cd frankensurf
-  python3 -m venv .venv
-  .venv/bin/pip install -e '.[mcp]'
-  .venv/bin/playwright install chromium
-  .venv/bin/frankensurf read https://example.com
+  pip install "frankensurf[mcp]"
+  frankensurf setup        # Chromium + the free stealth browsers, a few minutes
+  frankensurf read "https://www.walmart.com/search?q=air+fryer" --explain
 
-No account or key needed. See `Install <https://frankensurf.pages.dev/docs/install/>`_
-for the optional tools (local search, Steel, stealth browsers, Crawl4AI, paid
-services).
+No account or key needed. The read climbs until it gets the real page::
+
+  https://www.walmart.com/search?q=air+fryer
+    ✗ http                   CAPTCHA                0.4s
+    ✗ local                  CAPTCHA                1.5s
+    ✓ camoufox               got the page           15.6s
+
+  air fryer - Walmart.com
+  24,192 characters via camoufox, complete (107 results), free
+
+Drop ``--explain`` for the full JSON: text or markdown, JSON-LD, the page's
+embedded and fetched JSON, images, and the receipt.
+
+Free or paid
+------------
+
+Everything works with no keys. Paid tools are opt-in, and only run after the
+free ones fail. From the benchmark below (152 sites picked before any was read):
+
+=========================================  ==============  =============
+Setup                                      Sites read      Cost per 1k
+=========================================  ==============  =============
+Free tools only (``frankensurf setup``)    73.7%           $0
+Plus paid fallbacks (Firecrawl, Zyte, …)   89.5%           $0.73
+=========================================  ==============  =============
+
+To allow paid tools, set their keys (for example ``FIRECRAWL_API_KEY``) and pass
+``allow_paid_fallbacks``. See
+`Paid tools and budgets <https://frankensurf.dev/docs/blocked/paid-tools/>`_.
 
 Use it
 ------
 
 From an agent, as an MCP server
-(`setup for each client <https://frankensurf.pages.dev/docs/agents/>`_)::
+(`setup for each client <https://frankensurf.dev/docs/agents/>`_)::
 
-  claude mcp add frankensurf -e FRANKENSURF_STATE=$PWD/state -- $PWD/.venv/bin/frankensurf-mcp
+  claude mcp add frankensurf -- frankensurf-mcp
 
 From Python::
 
@@ -56,57 +80,83 @@ From the command line::
   frankensurf search playwright python tutorial
   frankensurf watch https://news.ycombinator.com/ --link-pattern 'item\?id=\d+'
 
-What you get back is raw page data, not answers: text or markdown, JSON-LD, the
-page's embedded and fetched JSON, images, PDFs as text, and a receipt. Your agent
-decides what the page means.
+What you get back is raw page data, not answers. Your agent decides what the page
+means, and if it isn't what it wanted, it can ask again with
+``retry_of=<trace_id>`` to skip every tool already tried.
+
+Also in the box: profiles (log in once, reuse the session from any tool), human
+handoff for CAPTCHAs and 2FA, site modules (save what your agent learns about a
+site as data), and Web Bot Auth request signing.
 
 How it works
 ------------
 
-Every way to fetch a page is a rung: markdown negotiation and plain HTTP,
-browsers, stealth browsers and signed requests, paid unblockers, and finally a
-person clearing the wall in a visible browser. A read starts at the cheapest rung
-and climbs only when a page pushes back; app shells, challenge pages and empty
-renders count as failures, not thin successes. Route memory and per-site hints
-make repeat visits fast. See
-`How escalation works <https://frankensurf.pages.dev/docs/blocked/escalation/>`_
-and the `full list of integrations <https://frankensurf.pages.dev/docs/integrations/>`_.
+Every way to fetch a page is a rung: plain HTTP and markdown negotiation,
+browsers, stealth browsers and signed requests, hosted browsers, paid unblockers,
+and finally a person clearing the wall in a visible browser. A read starts at the
+cheapest rung and climbs only when a page pushes back. Every tool is a plugin, so
+new ones slot in as another rung. See
+`How escalation works <https://frankensurf.dev/docs/blocked/escalation/>`_
+and the `full list of integrations <https://frankensurf.dev/docs/integrations/>`_.
 
-Benchmarks
-----------
+Benchmark
+---------
 
-``scripts/toolbench.py`` runs each provider on its own, then the stitched router,
-on the same pages with the same content checks. Results from 6 October 2026,
-with raw rows in ``benchmarks/2026-10-06/``:
+``scripts/toolbench.py`` runs each tool on its own, then Frankensurf, on the same
+pages with the same content checks. 152 sites picked before any was read, one run
+on 6 October 2026, raw rows in ``benchmarks/2026-10-06/``:
 
-=============================  ==========  ===========  ======================
-Arm                            Tuned (78)  Unseen (45)  $ per 1k valid, unseen
-=============================  ==========  ===========  ======================
-Headless Chromium Only         32.1%       15.6%        $0
-Plain HTTP Only                43.6%       33.3%        $0
-Jina Reader Only               35.9%       51.1%        $0
-Camoufox Only                  60.3%       48.9%        $0
-Scrapling Only                 61.5%       60.0%        $0
-Firecrawl Only                 88.5%       73.3%        $4.61
-Frankensurf, free tools only   89.7%       53.3%        $0
-Frankensurf                    98.7%       71.1%        $1.07
-=============================  ==========  ===========  ======================
+==========================  ===========
+Tool                        Sites read
+==========================  ===========
+Headless Chromium only      32.2%
+Plain HTTP only             46.1%
+Camoufox only               48.7%
+Scrapling only              53.3%
+ZenRows only                55.3%
+Jina Reader only            63.8%
+Zyte only                   73.7%
+Firecrawl only              80.3%
+**Frankensurf**             **89.5%**
+==========================  ===========
 
-"Tuned" pages are the ones route seeds were built on; "unseen" sites were never
-tuned on. On unseen sites Frankensurf lands two points behind Firecrawl Only at a
-quarter of the cost, with roughly twice the median latency (6.6 s against
-2.8 s). ZenRows is left out: the plan's rate limit cut its run short. See
-`Benchmarks <https://frankensurf.pages.dev/docs/more/benchmarks/>`_.
+Frankensurf read 19 sites Firecrawl missed and Firecrawl read 5 Frankensurf
+missed. Frankensurf costs a fifth as much per page, but is slower: median 9.5 s
+against 5.6 s. Scrapfly is left out because its free plan ran out mid-run. See
+`Benchmarks <https://frankensurf.dev/docs/more/benchmarks/>`_.
+
+Known walls
+-----------
+
+It's an alpha, and some sites still win:
+
+- **Need the paid tools:** in a free-only spot check on 9 October, Etsy, Home
+  Depot, Yelp, Crunchbase and G2 blocked every free tool.
+- **Beat everything so far:** Shopee, Temu and Idealista.
+- **Logged-in pages** (your feeds, your orders) need a
+  `profile <https://frankensurf.dev/docs/read/profiles/>`_.
+- **Slower than one tool:** a read that climbs several rungs takes 10–30 s.
+
+Found a site it can't read?
+`Report it <https://github.com/yail259/frankensurf/issues/new?template=site-it-cant-read.yml>`_;
+every report becomes a test case.
 
 Develop
 -------
 
-::
+From a clone::
 
+  python3 -m venv .venv
   .venv/bin/pip install -e '.[test,mcp]'
+  .venv/bin/frankensurf setup
   PYTHONPATH=.:src .venv/bin/pytest -q
 
 The product design is in ``SPEC.rst``; contributor rules are in ``AGENTS.md``.
 New tools are plugins, never branches in Core; see
-`Writing a plugin <https://frankensurf.pages.dev/docs/more/plugins/>`_. The
+`Writing a plugin <https://frankensurf.dev/docs/more/plugins/>`_. The
 website and docs live in ``site/``.
+
+Licence
+-------
+
+Apache-2.0. See ``LICENSE``.
