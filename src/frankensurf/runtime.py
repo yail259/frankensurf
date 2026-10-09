@@ -3535,18 +3535,23 @@ class Runtime:
         manifest = next((item for item in self.providers.inspect() if item["id"] == method), None)
         if manifest is None or manifest.get("rendering") or not effective.allow_local_browser:
             return None
-        tool = next((tool for tool in ("local", "scrapling", "camoufox")
-                     if self.providers.is_available(tool) and tool not in effective.exclude_providers), None)
-        if tool is None:
-            return None
+        tools = [tool for tool in ("local", "camoufox", "scrapling")
+                 if self.providers.is_available(tool) and tool not in effective.exclude_providers]
         settle = max(effective.settle_ms, effective.completeness_settle_ms)
-        if policy is not None:
-            second = await self._read_unpaced(url, replace(policy, provider_candidates=(tool,), settle_ms=settle),
-                                              None, adapter, workload_assertions=workload_assertions)
-        else:
-            second = await self._read_unpaced(url, None, None, adapter, policy_overrides={
-                **(policy_overrides or {}), "provider_candidates": [tool], "settle_ms": settle},
-                workload_assertions=workload_assertions)
+        second, tool = None, None
+        # A browser that reads the page decides; one that meets a wall hands over to a stealthier one.
+        for tool in tools[:2]:
+            if policy is not None:
+                second = await self._read_unpaced(url, replace(policy, provider_candidates=(tool,), settle_ms=settle),
+                                                  None, adapter, workload_assertions=workload_assertions)
+            else:
+                second = await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                    **(policy_overrides or {}), "provider_candidates": [tool], "settle_ms": settle},
+                    workload_assertions=workload_assertions)
+            if (second.get("receipt") or {}).get("status") == "observed":
+                break
+        if second is None:
+            return None
         receipt = second.get("receipt") or {}
         if receipt.get("status") != "observed":
             return None
@@ -4509,10 +4514,14 @@ class Runtime:
         anonymous = not resolved and not policy.profile
         terminal = exc.code in policy.terminal_failures
         suspect = False
+        if exc.code == "RATE_LIMITED":
+            # A bot checkpoint often answers 429 (Vercel, some CDNs); a 404 after it
+            # is as suspect as one after a wall.
+            plan_state["refused"] = True
         if exc.code == "NOT_FOUND" and anonymous:
             plan_state["not_found"] = plan_state.get("not_found", 0) + 1
-            if plan_state["walls"] or (plan_state["not_found"] == 1
-                                       and candidate in ("http", "scrapling_http")):
+            if plan_state["walls"] or (plan_state.get("refused") and plan_state["not_found"] == 1) or (
+                    plan_state["not_found"] == 1 and candidate in ("http", "scrapling_http")):
                 terminal, suspect = False, True
         if exc.code in ("AUTH_REQUIRED", "AUTH_EXPIRED") and anonymous:
             plan_state["auth_walls"] = plan_state.get("auth_walls", 0) + 1
