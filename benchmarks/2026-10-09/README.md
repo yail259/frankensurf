@@ -87,3 +87,13 @@ minutes, 2,301 new pages on 77 sites; 51 sites had feeds, 43 only sitemaps,
 treated as baseline), and the next one 43, all dated within minutes of the
 poll: real new or changed pages. A repeat poll costs about 370 small requests
 for 108 sites (84 answered 304 Not Modified) and under 4 minutes.
+
+## Walls: warm-up retry and site sessions
+
+-  (home) and
+   (Azure VM with Steel): the
+  free arm with the warm-up retry for walled deep links and the interact step.
+  Home 110/139 (112 before), server 103/139 (104 before): within run-to-run
+  noise. The warm-up retry recovered the same walled sites in both runs
+  (Bloomingdale\x27s, OzBargain; Darty and Homes.com on the server); other sites
+  came and went between runs.

@@ -123,6 +123,42 @@ climbing:
   different tool, since some sites serve fake 404s to bots; then the read
   stops.
 
+## One small action
+
+Some pages are one action away from their content: a cookie banner over the
+article, a "load more" button under the first results, or a price that
+appears only after you pick an option. When a page says it needs a choice
+(`completeness.needs_interaction`) or is only a consent notice, the first
+escalation step is `interact`: the local browser with three safe actions.
+
+- **dismiss_consent**: inside a cookie or consent banner, press reject or
+  "necessary only". It never accepts; with no reject button it closes the
+  banner.
+- **reveal**: give a required dropdown that has no value its first real option.
+- **load_more**: press "load more" or "show more" up to three times while the
+  page keeps growing. Never "next page", which leaves the page.
+
+Nothing is bought, booked, signed in to, submitted or typed: a guard refuses
+any button whose words say buy, checkout, add to cart, subscribe, sign in,
+pay, book or accept. `receipt.interactions` lists every press. Ask for the
+actions on any browser read with `interactions` (for example
+`["dismiss_consent", "load_more"]`).
+
+## Walled deep links
+
+A public read that ends at a wall (`BLOCKED`, `CAPTCHA`) gets one more try:
+a stealth browser that opens the site's home page first and then follows to
+the page, as a person arrives, instead of landing cold on a deep link.
+`receipt.warm_up` says what happened (`warm_up_on_wall`, on by default). In
+two runs on the 139-site set, at home and on a server, it recovered the same
+walled sites (Bloomingdale's, OzBargain); it adds time to reads that stay
+walled.
+
+The local browser also keeps each site's cookies for a day
+(`site_session_hours`), so a challenge it passed or a banner it rejected stays
+that way on the next read. Only anonymous state: never a profile's or an
+identity's.
+
 ## Hedging a slow read
 
 A blocked site can take a dozen tools in turn before one gets through. Once an
