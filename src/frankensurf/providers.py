@@ -62,6 +62,9 @@ class ProviderManifest:
     diagnosis: bool = False
     # Serves stored copies, not the live page: only with policy.allow_archive.
     archive: bool = False
+    # Fetches from the provider's own network, so the site sees another address
+    # than this machine's: what gets past walls that block by address.
+    remote: bool = False
 
 
 @dataclass(frozen=True)

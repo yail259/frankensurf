@@ -40,6 +40,9 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `card_images` | `False` | Add `cards`: each result link with its title and own thumbnail URL. |
 | `scroll_screens` | `0` | Screens a browser scrolls before capture so lazy content loads (3 with `card_images`). |
 | `expect_terms` | `()` | Words search results should mention besides the URL query; results that mention none are flagged `off_query`. |
+| `main_content` | `False` | Also return `main_text`: the article without menus, footers and banners. |
+| `interactions` | `()` | Safe browser actions on browser reads: `dismiss_consent` (reject, never accept), `load_more`, `reveal`. |
+| `auto_items` | `False` | Items from any listing page with no saved module, found in the page's own data; the draft module comes back too. |
 | `max_image_bytes` | 20 MB | Largest image accepted. |
 | `image_max_attempts` | `2` | Attempts per image. |
 | `image_retry_delay_seconds` | `0.25` | Delay between image attempts. |
@@ -57,9 +60,16 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `max_cost_usd` | `None` | Cap on measured provider cost for the whole operation. |
 | `allow_handoff` | `False` | Try `handoff` after every automatic provider fails. |
 | `handoff_timeout_seconds` | `300.0` | How long a handoff waits for a person. |
+| `allow_archive` | `False` | A stored copy (Internet Archive) as the very last resort; the result says when it was taken. |
+| `block_private_network` | `False` | Refuse loopback, private and link-local addresses, names that resolve to them, and redirects into them. |
+| `exclude_providers` | `()` | Skip these providers (the agent's try-harder lever). |
+| `try_harder` | `False` | Order the remaining providers strongest first, paid ones included when allowed. |
+| `retry_of_trace` | `None` | The trace this read retries, for the receipt. |
 | `terminal_failures` | `AUTH_REQUIRED`, `AUTH_EXPIRED`, `NOT_FOUND` | Failures that stop the climb. |
 | `context_stop_failures` | `AUTH_REQUIRED`, `AUTH_EXPIRED` | Failures that stop later reads of the same domain in this Runtime. |
-| `escalate_after_walls` | `4` | Walls in one read before paid providers move ahead; 0 turns it off. |
+| `auth_wall_confirmations` | `5` | Providers in a row that must hit a sign-in wall before a public read stops. |
+| `fake_wall_confirmers` | `jina_reader`, `camoufox`, `firecrawl`, `zyte`, `scrapling`, `zenrows` | Providers that go next after a suspected fake wall, in this order. |
+| `escalate_after_walls` | `4` | Walls in one read before paid providers, then free tools that fetch from their own network, move ahead; 0 turns it off. |
 | `escalation_failures` | `BLOCKED`, `CAPTCHA` | Failures that count as walls. |
 | `use_route_memory` | `True` | Let route memory reorder providers. |
 | `route_memory_ttl_seconds` | `3600` | How far back route memory looks. |
@@ -73,6 +83,23 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `provider_composition_max_depth` | `8` | Deepest nesting when one provider calls another. |
 | `provider_composition_max_attempts` | `64` | Most nested provider attempts in one operation. |
 | `compound_source_candidates` | `http`, `camoufox`, `scrapling` | Validated provider list reserved for compound routes; not used by the default route. |
+
+## Completeness and walls
+
+| Field | Default | What it does |
+| --- | --- | --- |
+| `completeness_escalation` | `True` | Check each automatic read's structure and re-read an incomplete page along the ladder. |
+| `completeness_ladder` | `jina_reader`, `scrapling`, `camoufox`, `firecrawl`, `zyte`, `zenrows`, `scrapfly`, `patchright`, `brightdata_unlocker` | Providers an incomplete page is re-read with, in order (paid ones only when allowed). |
+| `completeness_max_extra_reads` | `5` | Most extra reads one escalation makes. |
+| `completeness_parallel` | `2` | Free ladder tools raced at once (up to 4); paid tools always run alone. |
+| `completeness_stop_on_agreement` | `True` | Stop climbing once two browsers read the same page as the first read. |
+| `completeness_borderline_items` | `20` | A search page that passes with fewer item links (and few prices) gets one more read. |
+| `completeness_settle_ms` | `5000` | Minimum settle time for escalation reads. |
+| `completeness_deadline_seconds` | `150.0` | Time allowed for the whole escalation. |
+| `hedge_after_seconds` | `10.0` | After this long, a slow read gets a second read beside it from the first free ladder tool; 0 turns it off. |
+| `interact_on_escalation` | `True` | Pages that need a choice or show only a consent notice get one local-browser read with the safe actions first. |
+| `warm_up_on_wall` | `True` | A public read that ends at a wall gets one more try through the site's home page. |
+| `site_session_hours` | `24.0` | Hours the local browser keeps each site's cookies; 0 turns it off. |
 
 ## Pacing
 
@@ -115,6 +142,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `search_max_attempts` | `None` | Most sources to try. |
 | `search_source_timeout_seconds` | `8` | Time per source; `None` uses the operation timeout. |
 | `search_terminal_failures` | `POLICY_DENIED`, `BUDGET_EXHAUSTED` | Failures that stop search fallback. |
+| `search_merge_sources` | `4` | Sources asked at once by `search(mode="merge")`. |
 | `max_pages` | `2` | Most pages `paginate` follows. |
 
 ## Browser agent
@@ -142,6 +170,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | Field | Default | What it does |
 | --- | --- | --- |
 | `identity` | `None` | Read as a registered identity. |
+| `profile` | `None` | Read as a stored FrankenSurf profile; exclusive with `identity`. |
 | `action_classes` | `READ_PUBLIC`, `READ_AUTHENTICATED` | Action classes this operation grants. |
 | `browser_do_allowed_tools` | `fill`, `click`, `wait_for`, `assert_text`, `assert_value` | Browser tools `do` may use. |
 | `browser_do_allowed_contracts` | `local_fixture.reversible_draft.v1` | Action contracts `do` may run. |

@@ -189,6 +189,46 @@ async def test_slow_read_is_hedged_with_the_first_free_ladder_tool(tmp_path, esc
     assert ("cancelled", "slow_main") in log
 
 
+async def test_a_hedge_page_stands_in_when_the_main_read_fails(tmp_path, escalating):
+    class Walled:
+        def __init__(self, identifier, delay):
+            self.manifest = ProviderManifest(identifier, "1", rendering=True)
+            self.delay = delay
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            await asyncio.sleep(self.delay)
+            raise WebFailure("BLOCKED", "fixture wall")
+
+    class Flaky:
+        """A remote reader that gets the page once, then meets the wall."""
+        manifest = ProviderManifest("flaky_free", "1", remote=True)
+        calls = 0
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            type(self).calls += 1
+            if type(self).calls > 1:
+                raise WebFailure("CAPTCHA", "fixture wall")
+            return {"url": request.url, "content": SHELL, "content_type": "text/html", "http_status": 200}
+
+    escalating(Walled("walled_a", 0.4), Walled("walled_b", 0.4), Flaky())
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "hedge_after_seconds": 0.2, "completeness_ladder": ["flaky_free", "walled_b"],
+            "warm_up_on_wall": False})
+    receipt = result["receipt"]
+    assert receipt["status"] == "observed" and receipt["method"] == "flaky_free"
+    assert receipt["hedge"]["won"] is True and receipt["hedge"]["after_failure"] == "CAPTCHA"
+    assert receipt["hedge"]["walled"] == ["flaky_free", "walled_a", "walled_b"]
+    # The tools the main read was walled on are not tried again while escalating.
+    assert [step["provider"] for step in receipt["completeness"].get("escalations", [])] == []
+
+
 async def test_an_incomplete_hedge_never_replaces_the_main_read(tmp_path, escalating):
     log = []
     escalating(slow_plugin("slow_main", RESULTS, 0.6, log),

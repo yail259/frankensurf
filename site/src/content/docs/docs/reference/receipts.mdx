@@ -56,7 +56,18 @@ read planned, after skipping anything unavailable.
   `failed`, or `invalid` when its markers matched the site's error page).
 - **`completeness`** records the structure check: page kind, item links,
   prices, every escalation step, and for searches with a known query, `query`
-  (terms, matching items, text mentions) and `off_query`.
+  (terms, matching items, text mentions) and `off_query`. `agreed` means the
+  climb stopped because two browsers read the same page as the first read.
+- **`wall_vendor`** names the bot-defence service behind a wall the read met
+  (`cloudflare`, `akamai`, `datadome`, `perimeterx`, `imperva`, `kasada`,
+  `aws_waf`, `vercel`, `sucuri`), from the response's own headers and
+  challenge page. `routing.learned_for` shows when that vendor's past results
+  on this machine [reordered the ladder](/docs/blocked/escalation/#skipping-ahead),
+  and `routing.escalated_to` when walls moved paid tools, or tools that fetch
+  from their own network, ahead.
+- **`hedge`** appears when a slow read started a second read beside it:
+  `provider`, `won`, and when its page stood in for a failed main read,
+  `after_failure` and the `walled` tools.
 - Cookies, keys and credential URL parameters never appear.
 
 ## Quality

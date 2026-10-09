@@ -190,8 +190,8 @@ class WebPolicy:
     # Safe read-only browser actions on browser reads (interactions.py):
     # dismiss_consent (reject, never accept), load_more, reveal.
     interactions: tuple[str, ...] = ()
-    # When a page needs a choice, is only a consent notice, or is a thin
-    # search page, try one local-browser read with those actions first.
+    # When a page needs a choice or is only a consent notice, try one
+    # local-browser read with those actions first.
     interact_on_escalation: bool = True
     # A public read that ends at a wall (BLOCKED, CAPTCHA) gets one more try:
     # a stealth browser that enters through the site's home page first, as a
@@ -3688,8 +3688,8 @@ class Runtime:
         A blocked site can take a dozen tools in turn before one gets through.
         Once the read has run hedge_after_seconds, one read pinned to the first
         free ladder tool starts beside it. Whichever returns a complete page
-        first wins; a hedge page that is incomplete or failed never replaces
-        the main read. Free tools only, so a hedge never costs money.
+        first wins; an incomplete hedge page replaces the main read only when
+        the main read fails. Free tools only, so a hedge never costs money.
         """
         main = asyncio.ensure_future(self._read_unpaced(
             url, policy, provider, adapter, policy_overrides=policy_overrides,
@@ -3729,7 +3729,23 @@ class Runtime:
                     return second
             first = await main
             record.setdefault("won", False)
-            (first.get("receipt") or {})["hedge"] = record
+            failed = first.get("receipt") or {}
+            if failed.get("status") != "observed":
+                # The main read failed: the hedge's page, complete or not, beats none.
+                try:
+                    second = await hedge
+                except Exception:
+                    second = {}
+                receipt = second.get("receipt") or {}
+                record.update(status=receipt.get("status"), trace_id=receipt.get("trace_id"))
+                if receipt.get("status") == "observed":
+                    record.update(won=True, after_failure=(failed.get("failure") or {}).get("code"),
+                                  walled=sorted({item["provider"] for item in failed.get("attempts") or ()
+                                                 if isinstance(item, dict) and item.get("provider")
+                                                 and item.get("failure") in effective.escalation_failures}))
+                    receipt["hedge"] = record
+                    return second
+            failed["hedge"] = record
             return first
         finally:
             for task in (main, hedge):
@@ -3844,6 +3860,7 @@ class Runtime:
         receipt = first["receipt"]
         tried = {attempt.get("provider") for attempt in receipt.get("attempts") or ()}
         tried.add((receipt.get("second_opinion") or {}).get("other"))
+        tried.update((receipt.get("hedge") or {}).get("walled") or ())
         ladder = []
         from .profiles import ACTIVE
         carriers = ACTIVE.get().carriers() if effective.profile and ACTIVE.get() else None
@@ -4621,7 +4638,8 @@ class Runtime:
 
         Paid providers and cost-capped reads are never retried, since a retry is
         a second charge. After enough walls, allowed paid providers move ahead
-        of the remaining free ones.
+        of the remaining free ones, then free tools that fetch from their own
+        network.
         """
         if (exc.code in policy.provider_retry_failures
                 and exc.code not in policy.terminal_failures
@@ -4664,11 +4682,17 @@ class Runtime:
                 and not plan_state["escalated"]
                 and plan_state["walls"] >= policy.escalate_after_walls):
             remaining = order[plan_state["position"] + 1:]
-            paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
-            ahead = [item for item in remaining if item in paid]
+            manifests = {item["id"]: item for item in self.providers.inspect()}
+            paid = [item for item in remaining if manifests.get(item, {}).get("paid")]
+            # A wall that blocks by address stops every tool on this machine
+            # alike; a tool that fetches from elsewhere is the next real chance.
+            elsewhere = [item for item in remaining if item not in paid
+                         and manifests.get(item, {}).get("remote")
+                         and not manifests[item].get("archive")]
+            ahead = paid + elsewhere
             if ahead:
                 order[plan_state["position"] + 1:] = ahead + [
-                    item for item in remaining if item not in paid]
+                    item for item in remaining if item not in ahead]
                 plan_state["escalated"] = True
                 receipt.setdefault("routing", {})["escalated_to"] = ahead[0]
         return "stop" if (resolved or terminal or candidate == order[-1]) else "next"

@@ -1,4 +1,4 @@
-"""Print the WebPolicy reference tables for site/src/content/docs/docs/reference/web-policy.mdx."""
+"""Print the WebPolicy reference tables for site/src/content/docs/docs/reference/settings.mdx."""
 import dataclasses
 from frankensurf.runtime import WebPolicy
 
@@ -50,7 +50,7 @@ D = {
  "handoff_timeout_seconds": "How long a handoff waits for a person.",
  "terminal_failures": "Failures that stop the climb.",
  "context_stop_failures": "Failures that stop later reads of the same domain in this Runtime.",
- "escalate_after_walls": "Walls in one read before paid providers move ahead; 0 turns it off.",
+ "escalate_after_walls": "Walls in one read before paid providers, then free tools that fetch from their own network, move ahead; 0 turns it off.",
  "escalation_failures": "Failures that count as walls.",
  "use_route_memory": "Let route memory reorder providers.",
  "route_memory_ttl_seconds": "How far back route memory looks.",
@@ -106,16 +106,44 @@ D = {
  "workload_assertion_max_count": "Most assertions on one extract (for repair).",
  "workload_assertion_max_bytes": "Largest assertion set.",
  "repair_overlay_registry_max_bytes": "Largest repair overlay registry.",
+ "card_images": "Add `cards`: each result link with its title and own thumbnail URL.",
+ "scroll_screens": "Screens a browser scrolls before capture so lazy content loads (3 with `card_images`).",
+ "expect_terms": "Words search results should mention besides the URL query; results that mention none are flagged `off_query`.",
+ "main_content": "Also return `main_text`: the article without menus, footers and banners.",
+ "interactions": "Safe browser actions on browser reads: `dismiss_consent` (reject, never accept), `load_more`, `reveal`.",
+ "auto_items": "Items from any listing page with no saved module, found in the page's own data; the draft module comes back too.",
+ "exclude_providers": "Skip these providers (the agent's try-harder lever).",
+ "try_harder": "Order the remaining providers strongest first, paid ones included when allowed.",
+ "retry_of_trace": "The trace this read retries, for the receipt.",
+ "allow_archive": "A stored copy (Internet Archive) as the very last resort; the result says when it was taken.",
+ "block_private_network": "Refuse loopback, private and link-local addresses, names that resolve to them, and redirects into them.",
+ "auth_wall_confirmations": "Providers in a row that must hit a sign-in wall before a public read stops.",
+ "fake_wall_confirmers": "Providers that go next after a suspected fake wall, in this order.",
+ "completeness_escalation": "Check each automatic read's structure and re-read an incomplete page along the ladder.",
+ "completeness_ladder": "Providers an incomplete page is re-read with, in order (paid ones only when allowed).",
+ "completeness_max_extra_reads": "Most extra reads one escalation makes.",
+ "completeness_parallel": "Free ladder tools raced at once (up to 4); paid tools always run alone.",
+ "completeness_stop_on_agreement": "Stop climbing once two browsers read the same page as the first read.",
+ "completeness_borderline_items": "A search page that passes with fewer item links (and few prices) gets one more read.",
+ "completeness_settle_ms": "Minimum settle time for escalation reads.",
+ "completeness_deadline_seconds": "Time allowed for the whole escalation.",
+ "hedge_after_seconds": "After this long, a slow read gets a second read beside it from the first free ladder tool; 0 turns it off.",
+ "interact_on_escalation": "Pages that need a choice or show only a consent notice get one local-browser read with the safe actions first.",
+ "warm_up_on_wall": "A public read that ends at a wall gets one more try through the site's home page.",
+ "site_session_hours": "Hours the local browser keeps each site's cookies; 0 turns it off.",
+ "search_merge_sources": "Sources asked at once by `search(mode=\"merge\")`.",
+ "profile": "Read as a stored FrankenSurf profile; exclusive with `identity`.",
 }
 ALL = [x.name for x in dataclasses.fields(WebPolicy)]
 GROUPS = [
- ("Fetching", ["freshness","render","prefer_markdown","sign_requests","timeout_seconds","unblocker_timeout_seconds","agent_provider_timeout_seconds","max_bytes","pdf_max_pages","capture_json_responses","capture_json_max_items","capture_json_max_bytes","include_images","max_images","max_image_bytes","image_max_attempts","image_retry_delay_seconds","image_retry_failures","retain_public_failure_evidence"]),
- ("Routing and cost", ["provider","provider_candidates","allow_local_browser","allow_paid_fallbacks","max_cost_usd","allow_handoff","handoff_timeout_seconds","terminal_failures","context_stop_failures","escalate_after_walls","escalation_failures","use_route_memory","route_memory_ttl_seconds","route_memory_min_samples","origin_route_hint_ttl_seconds","provider_max_attempts_per_candidate","provider_retry_delay_seconds","provider_retry_failures","provider_deadline_grace_seconds","provider_cleanup_grace_seconds","provider_composition_max_depth","provider_composition_max_attempts","compound_source_candidates"]),
+ ("Fetching", ["freshness","render","prefer_markdown","sign_requests","timeout_seconds","unblocker_timeout_seconds","agent_provider_timeout_seconds","max_bytes","pdf_max_pages","capture_json_responses","capture_json_max_items","capture_json_max_bytes","include_images","max_images","card_images","scroll_screens","expect_terms","main_content","interactions","auto_items","max_image_bytes","image_max_attempts","image_retry_delay_seconds","image_retry_failures","retain_public_failure_evidence"]),
+ ("Routing and cost", ["provider","provider_candidates","allow_local_browser","allow_paid_fallbacks","max_cost_usd","allow_handoff","handoff_timeout_seconds","allow_archive","block_private_network","exclude_providers","try_harder","retry_of_trace","terminal_failures","context_stop_failures","auth_wall_confirmations","fake_wall_confirmers","escalate_after_walls","escalation_failures","use_route_memory","route_memory_ttl_seconds","route_memory_min_samples","origin_route_hint_ttl_seconds","provider_max_attempts_per_candidate","provider_retry_delay_seconds","provider_retry_failures","provider_deadline_grace_seconds","provider_cleanup_grace_seconds","provider_composition_max_depth","provider_composition_max_attempts","compound_source_candidates"]),
+ ("Completeness and walls", ["completeness_escalation","completeness_ladder","completeness_max_extra_reads","completeness_parallel","completeness_stop_on_agreement","completeness_borderline_items","completeness_settle_ms","completeness_deadline_seconds","hedge_after_seconds","interact_on_escalation","warm_up_on_wall","site_session_hours"]),
  ("Pacing", ["origin_min_interval_seconds","origin_cooldown_seconds","origin_cooldown_failures"]),
  ("Rendering and content checks", ["wait_selector","wait_state","content_ready_selector","content_ready_timeout_seconds","settle_ms","public_browser_headless","html_shell_min_text_chars","html_shell_large_bytes","html_shell_large_min_text_chars","rendered_min_text_chars","second_opinion_text_chars","navigation_page","public_entry_url","public_entry_continue_failures","scrapling_navigation_wait_until","scrapling_solve_cloudflare","scrapling_load_dom","scrapling_google_search"]),
- ("Search and paging", ["search_source_candidates","search_source_allow","search_source_prefer","search_max_attempts","search_source_timeout_seconds","search_terminal_failures","max_pages"]),
+ ("Search and paging", ["search_source_candidates","search_source_allow","search_source_prefer","search_max_attempts","search_source_timeout_seconds","search_terminal_failures","search_merge_sources","max_pages"]),
  ("Browser agent", [f for f in ALL if f.startswith("browser_agent_")]),
- ("Identity and actions", ["identity","action_classes"] + [f for f in ALL if f.startswith("browser_do_")]),
+ ("Identity and actions", ["identity","profile","action_classes"] + [f for f in ALL if f.startswith("browser_do_")]),
  ("Repair", ["workload_assertion_max_count","workload_assertion_max_bytes","repair_overlay_registry_max_bytes"]),
 ]
 fields = {f.name: f for f in dataclasses.fields(WebPolicy)}

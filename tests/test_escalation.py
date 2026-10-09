@@ -10,9 +10,9 @@ URL = "https://walled.example.com/item"
 PAGE = "<html><head><title>Item</title></head><body>" + "x" * 200 + "</body></html>"
 
 
-def provider(identifier, outcome, paid=False):
+def provider(identifier, outcome, paid=False, remote=False):
     class Plugin:
-        manifest = ProviderManifest(identifier, "1", paid=paid)
+        manifest = ProviderManifest(identifier, "1", paid=paid, remote=remote)
 
         async def acquire(self, request, services):
             if outcome != "ok":
@@ -47,6 +47,26 @@ async def test_walls_escalate_to_paid_rungs_when_allowed(tmp_path, registry):
     assert tried(paid) == ["w1", "w2", "w3", "paid_ok"]
     assert paid["receipt"]["routing"]["escalated_to"] == "paid_ok"
     assert tried(free) == ["w1", "w2", "w3", "free_ok"]
+
+
+async def test_walls_move_tools_that_fetch_from_elsewhere_ahead(tmp_path, registry):
+    registry(provider("w1", "BLOCKED"), provider("w2", "CAPTCHA"), provider("w3", "BLOCKED"),
+             provider("remote_ok", "ok", remote=True), provider("paid_ok", "ok", paid=True, remote=True))
+    policy = dict(escalate_after_walls=2, origin_route_hint_ttl_seconds=0,
+                  provider_max_attempts_per_candidate=1)
+    async with Runtime(tmp_path) as web:
+        free = await web.read(URL, WebPolicy(**policy))
+        paid = await web.read(URL, WebPolicy(allow_paid_fallbacks=True, **policy))
+    assert tried(free) == ["w1", "w2", "remote_ok"]
+    assert free["receipt"]["routing"]["escalated_to"] == "remote_ok"
+    assert tried(paid) == ["w1", "w2", "paid_ok"]
+
+
+def test_hosted_providers_fetch_from_elsewhere():
+    from frankensurf.providers import DEFAULT_PROVIDERS
+    remote = {item["id"] for item in DEFAULT_PROVIDERS.inspect() if item["remote"]}
+    assert {"jina_reader", "firecrawl"} <= remote
+    assert not remote & {"http", "local", "camoufox", "scrapling"}
 
 
 async def test_outages_do_not_count_as_walls(tmp_path, registry):
