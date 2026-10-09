@@ -87,3 +87,25 @@ statistics carry over.
   Jina Reader) never met a learned move, so this is run-to-run variation, not a
   gain or a loss from learning. Learned routing stays: it only reorders after
   at least 3 tries at even odds, and it needs more reads than one set gives.
+
+## Iteration 3 (in-sample): tools that fetch from elsewhere
+
+Across every free run since the hedge, all wins after the sixth try came from
+Jina Reader, which fetches from its own network and sat last on the ladder.
+`toolbench-heldout5-free-iter3.jsonl`: after 4 walls, remote tools move ahead
+(`ProviderManifest.remote`), and an observed hedge page stands in when the main
+read fails. Fresh state, like iteration 2.
+
+| Free arm | Sites read | Median (read) | p75 | p90 | p90 (all reads) | Total time |
+|---|---|---|---|---|---|---|
+| Iteration 2 | 127/150 | 4.5 s | 12.0 s | 26.1 s | 44.6 s | 1,999 s |
+| Iteration 3 | 126/150 | 4.3 s | 10.4 s | 23.4 s | 34.4 s | 1,790 s |
+
+Bass Pro gained; JobServe (a plain-HTTP page missing its content) and B&Q (Jina
+Reader down after 21 tries) lost. Against the blind run: 6 gained, none lost.
+Two problems showed up in the traces: walled reads now ended on a down tool
+and reported `PROVIDER_DOWN` instead of the wall, and OpenTable failed 13
+tries without one wall (timeouts, unrendered pages) before Jina Reader read
+it in 0.4 s, so the wall-only trigger never fired. Browser Use, configured on
+this machine, failed every try in 18 s with `INVALID_URL`: the address its
+agent ended on was not a web page.
