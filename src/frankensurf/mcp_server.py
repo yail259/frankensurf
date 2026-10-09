@@ -97,6 +97,17 @@ async def repair_site_module(trace_id: str, module: dict) -> dict:
 
 
 @server.tool()
+async def discover_site_module(url: str, save: bool = False, module_id: str | None = None) -> dict:
+    """Draft a site module from a listing page's own JSON feed (JSON-LD, JSON in
+    a script tag, or JSON the page fetched while rendering). Returns up to three
+    validated drafts, each with the item count and sample rows it extracts from
+    that page. save=True saves the best one, after which reads of matching URLs
+    return items. Check the sample before saving."""
+    async with runtime() as web:
+        return await web.discover_module(url, module_id=module_id, save=save)
+
+
+@server.tool()
 async def site_modules(action: str = "list", module_id: str | None = None,
                        module: dict | None = None) -> dict | list:
     """Save and manage site modules: per-site knowledge as data, never code.

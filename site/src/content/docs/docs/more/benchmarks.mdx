@@ -10,6 +10,40 @@ its content, not its status code: a product page must have a price, a search pag
 must have result links, an article must have real text. A challenge page or an
 empty app shell counts as a failure.
 
+## Fresh sites
+
+The fairest test: lists of sites picked before any of their pages was read,
+used once. Nothing was tuned on them.
+
+**152 sites, 6 October 2026 (v0.16):**
+
+| Tool | Sites read |
+| --- | --- |
+| Jina Reader only | 63.8% |
+| Zyte only | 73.7% |
+| Frankensurf, free tools only | 73.7% |
+| Firecrawl only | 80.3% |
+| **Frankensurf, with paid fallbacks** | **89.5%** |
+
+**139 more sites, 9 October 2026 (v0.26):**
+
+| Tool | Sites read | Median | p90 |
+| --- | --- | --- | --- |
+| Firecrawl only | 74.1% | 6.6 s | 14.7 s |
+| Frankensurf, free tools only | 81.3% | 5.6 s | 50.2 s |
+| Frankensurf, free, racing free tools | 82.0% | 4.5 s | 37.2 s |
+| **Frankensurf, with paid fallbacks** | **88.5%** | 9.2 s | 49.5 s |
+
+On the second set, Frankensurf read 22 sites Firecrawl missed and Firecrawl
+read 2 Frankensurf missed. Of the 127 sites at least one tool could read,
+Frankensurf got 96.9% and Firecrawl 81.1%. Firecrawl's plan rate-limited some
+pages at 12 workers; those were re-run one at a time until none were left.
+Every news, government, travel, jobs, media, property, food and car site
+passed. The misses are mostly US and Australian retail, plus Bluesky and
+Pinterest. Frankensurf is still slower in the tail, which is what racing the
+free tools goes after. Rows:
+[`benchmarks/2026-10-09/`](https://github.com/yail259/frankensurf/tree/main/benchmarks/2026-10-09).
+
 ## Tool benchmark
 
 Every tool reads the same pages on its own, then the stitched router reads them

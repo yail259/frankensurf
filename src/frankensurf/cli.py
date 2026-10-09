@@ -214,6 +214,9 @@ async def run(args):
         result = await _profile_op(args)
     elif args.operation == "setup":
         result = _setup(args)
+    elif args.operation == "module" and args.urls[0] == "discover":
+        async with Runtime(state_dir=args.state) as web:
+            result = await web.discover_module(args.urls[1], save=args.save)
     elif args.operation == "module" and args.urls[0] == "repair":
         async with Runtime(state_dir=args.state) as web:
             result = await web.propose_module_repair(args.urls[1], _load_json(args.urls[2], "site module file"))
@@ -322,6 +325,8 @@ def build_parser():
         help="read: print each tool tried and what happened, then the page, instead of JSON")
     parser.add_argument("--no-stealth", action="store_true",
         help="setup: skip the free stealth providers (Camoufox, Scrapling, Patchright)")
+    parser.add_argument("--save", action="store_true",
+        help="module discover: save the best drafted module")
     parser.add_argument("--module", metavar="ID",
         help="read: shape the read with this saved site module, or 'none' to turn modules off")
     parser.add_argument("--param", action="append", metavar="NAME=VALUE",
@@ -466,9 +471,11 @@ def parse_args(argv=None):
             pass
         elif action == "repair" and len(args.urls) == 3:
             pass
+        elif action == "discover" and len(args.urls) == 2:
+            pass
         elif action not in {"show", "add", "enable", "disable", "rm"} or len(args.urls) != 2:
             parser.error("module takes: list | show ID | add FILE | enable ID | disable ID | rm ID"
-                         " | repair TRACE_ID FILE")
+                         " | repair TRACE_ID FILE | discover URL [--save]")
     elif args.operation == "setup":
         if args.urls:
             parser.error("setup takes no arguments (add --no-stealth to skip the stealth providers)")

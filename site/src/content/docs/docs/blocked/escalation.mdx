@@ -76,6 +76,13 @@ gets one read from the strongest allowed tool, a paid one when allowed. `complet
 4) and `completeness_deadline_seconds` (default 150) bound the extra work, and
 `receipt.completeness` lists every step.
 
+Free tools on the ladder race in pairs (`completeness_parallel`, default 2,
+up to 4). The first complete page wins and the other read is cancelled.
+Starts are half a second apart, so a site sees at most two extra reads at
+once. Paid tools always run one at a time, so racing never pays twice. On the
+139-site held-out set this cut the free tier's p90 from 50 s to 37 s and its
+median from 5.6 s to 4.5 s.
+
 ### Pages a stronger tool can't fix
 
 Some wrong pages look right to every tool, so Frankensurf names them instead of

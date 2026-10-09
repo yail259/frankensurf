@@ -122,7 +122,23 @@ Firecrawl only              80.3%
 
 Frankensurf read 19 sites Firecrawl missed and Firecrawl read 5 Frankensurf
 missed. Frankensurf costs a fifth as much per page, but is slower: median 9.5 s
-against 5.6 s. Scrapfly is left out because its free plan ran out mid-run. See
+against 5.6 s. Scrapfly is left out because its free plan ran out mid-run.
+
+A second fresh set, 139 different sites picked on 9 October before any was read
+(raw rows in ``benchmarks/2026-10-09/``):
+
+==========================================  ===========  ========
+Tool                                        Sites read   Median
+==========================================  ===========  ========
+Firecrawl only                              74.1%        6.6 s
+Frankensurf, free tools only                81.3%        5.6 s
+**Frankensurf, with paid fallbacks**        **88.5%**    9.2 s
+==========================================  ===========  ========
+
+Frankensurf read 22 sites Firecrawl missed; Firecrawl read 2 Frankensurf
+missed. Firecrawl's rate-limited pages were re-run one at a time until none
+were left. Racing the free tools (v0.26) then took the free tier to 82.0%,
+with its median down to 4.5 s and its p90 from 50 s to 37 s. See
 `Benchmarks <https://frankensurf.dev/docs/more/benchmarks/>`_.
 
 Known walls
@@ -133,6 +149,9 @@ It's an alpha, and some sites still win:
 - **Need the paid tools:** in a free-only spot check on 9 October, Etsy, Home
   Depot, Yelp, Crunchbase and G2 blocked every free tool.
 - **Beat everything so far:** Shopee, Temu and Idealista.
+- **Social sites without a login:** LinkedIn, X, YouTube, Threads, Bluesky and
+  Reddit read fine. Instagram, TikTok, Facebook and Pinterest show only the public
+  shell (name, bio, counts); the posts need a login.
 - **Logged-in pages** (your feeds, your orders) need a
   `profile <https://frankensurf.dev/docs/read/profiles/>`_.
 - **Slower than one tool:** a read that climbs several rungs takes 10–30 s.
