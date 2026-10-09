@@ -90,10 +90,10 @@ for 108 sites (84 answered 304 Not Modified) and under 4 minutes.
 
 ## Walls: warm-up retry and site sessions
 
--  (home) and
-   (Azure VM with Steel): the
+- `toolbench-heldout4-free-home-walls.jsonl` (home) and
+  `toolbench-heldout4-free-azure-steel-walls.jsonl` (Azure VM with Steel): the
   free arm with the warm-up retry for walled deep links and the interact step.
   Home 110/139 (112 before), server 103/139 (104 before): within run-to-run
   noise. The warm-up retry recovered the same walled sites in both runs
-  (Bloomingdale\x27s, OzBargain; Darty and Homes.com on the server); other sites
+  (Bloomingdale's, OzBargain; Darty and Homes.com on the server); other sites
   came and went between runs.
