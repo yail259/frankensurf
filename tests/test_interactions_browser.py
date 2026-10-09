@@ -31,7 +31,17 @@ REVEAL = """<html><body><h1>Island cruise</h1>
 <script>document.getElementById('guests').onchange = e => {
   document.getElementById('price').textContent = 'From $1,299 per person for ' + e.target.value + ' guests'; };</script>
 </body></html>"""
-PAGES = {"/consent": CONSENT, "/more": MORE, "/cruise/island-cruise-10-nights": REVEAL}
+SHADOW = """<html><body><h1>Search</h1><result-list></result-list>
+<script>
+class ResultItem extends HTMLElement { connectedCallback() {
+  const root = this.attachShadow({mode: 'open'});
+  root.innerHTML = '<a href="/item/' + this.dataset.n + '">Jazz record ' + this.dataset.n + '</a>'; } }
+class ResultList extends HTMLElement { connectedCallback() {
+  const root = this.attachShadow({mode: 'open'});
+  for (let n = 0; n < 12; n++) { const item = document.createElement('result-item'); item.dataset.n = n; root.appendChild(item); } } }
+customElements.define('result-item', ResultItem); customElements.define('result-list', ResultList);
+</script></body></html>"""
+PAGES = {"/consent": CONSENT, "/more": MORE, "/cruise/island-cruise-10-nights": REVEAL, "/shadow": SHADOW}
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -90,3 +100,11 @@ async def test_escalation_reveals_a_price_behind_a_choice(tmp_path, site):
     assert any(step["provider"] == "interact" and step["complete"] for step in steps)
     assert "$1,299" in result["text"]
     assert result["receipt"]["interactions"][0]["action"] == "reveal"
+
+
+async def test_content_inside_shadow_roots_is_read(tmp_path, site):
+    async with Runtime(tmp_path) as web:
+        result = await web.read(site + "/shadow", WebPolicy(provider="local", render=True, settle_ms=200))
+    if result["receipt"]["status"] != "observed":
+        pytest.skip("local Chromium unavailable")
+    assert "Jazz record 11" in result["text"]

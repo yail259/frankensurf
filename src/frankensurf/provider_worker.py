@@ -116,6 +116,29 @@ def _keep_capture(items, entry, limit):
     return True
 
 
+_SHADOW_SCRIPT = r"""() => {
+  // Open shadow roots, recursively: web components keep their content there,
+  // where page.content() does not look.
+  const out = [], seen = new Set();
+  let size = 0;
+  const collect = (root) => {
+    for (const el of root.querySelectorAll('*')) {
+      const shadow = el.shadowRoot;
+      if (shadow && !seen.has(shadow)) {
+        seen.add(shadow);
+        const html = shadow.innerHTML;
+        size += html.length;
+        if (size > 5000000) return;
+        out.push(html);
+        collect(shadow);
+      }
+    }
+  };
+  collect(document);
+  return out.length ? out.join('\n') : null;
+}"""
+
+
 def _camoufox_binaries(version):
     """The pinned Camoufox build, wherever this platform caches it."""
     import os
@@ -276,6 +299,14 @@ async def _representation(page, response, maximum):
         except ValueError: pass
         else: return text, "application/json"
     text = await page.content()
+    try:
+        shadow = await page.evaluate(_SHADOW_SCRIPT)
+    except Exception:
+        shadow = None
+    if shadow:
+        block = '<div data-frankensurf-shadow-dom="1">' + shadow + "</div>"
+        index = text.lower().rfind("</body>")
+        text = text[:index] + block + text[index:] if index >= 0 else text + block
     return text, "text/html; rendered=1"
 
 

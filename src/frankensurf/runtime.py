@@ -1005,10 +1005,60 @@ def _challenge(html: str) -> bool:
 _SIGN_IN_PATH = re.compile(r"(^|[/._-])(sign-?in|log-?in|auth|ws/ebayisapi\.dll)([/._?-]|$)", re.I)
 
 
+_SHADOW_SCRIPT = r"""() => {
+  // Open shadow roots, recursively: web components keep their content there,
+  // where page.content() does not look.
+  const out = [], seen = new Set();
+  let size = 0;
+  const collect = (root) => {
+    for (const el of root.querySelectorAll('*')) {
+      const shadow = el.shadowRoot;
+      if (shadow && !seen.has(shadow)) {
+        seen.add(shadow);
+        const html = shadow.innerHTML;
+        size += html.length;
+        if (size > 5000000) return;
+        out.push(html);
+        collect(shadow);
+      }
+    }
+  };
+  collect(document);
+  return out.length ? out.join('\n') : null;
+}"""
+
+
+async def _rendered_html(page):
+    """The page's HTML with the content of open shadow roots added at the end of
+    the body, so text, links and items inside web components are read too."""
+    content = await page.content()
+    try:
+        shadow = await page.evaluate(_SHADOW_SCRIPT)
+    except Exception:
+        shadow = None
+    if not shadow:
+        return content
+    block = '<div data-frankensurf-shadow-dom="1">' + shadow + "</div>"
+    index = content.lower().rfind("</body>")
+    return content[:index] + block + content[index:] if index >= 0 else content + block
+
+
+# A browser's own error page ("This site can't be reached") is not the site.
+_BROWSER_ERROR = re.compile(r"\b(ERR_[A-Z0-9_]{4,}|NS_ERROR_[A-Z_]+)\b|this site can.t be reached|"
+                            r"unable to connect|hmm\. we.re having trouble finding that site", re.I)
+# A site down for maintenance answers with a page that is not the page.
+_MAINTENANCE = re.compile(r"(?i)\b(down for maintenance|under maintenance|scheduled maintenance|"
+                          r"we.ll be back (soon|shortly)|we are currently (performing|undergoing) maintenance|"
+                          r"currently working on [a-z0-9.-]+\.[a-z]{2,}|temporarily unavailable|site is temporarily down)\b")
+
+
 def _wall_after_parse(title, text, requested_url, final_url):
     """A provider may hand back a wall as if it were the page. Name it."""
     if _challenge_text(title, text or ""):
         return "CAPTCHA"
+    short = (text or "").strip()
+    if len(short) < 2000 and (_BROWSER_ERROR.search(short) or _MAINTENANCE.search(short)):
+        return "PROVIDER_DOWN"  # Another tool, or a later read, may get the page.
     try:
         requested, final = urlparse(requested_url), urlparse(final_url or requested_url)
     except ValueError:
@@ -1927,7 +1977,7 @@ class Runtime:
             if raw is None: raw = await response.body()
             content = raw.decode("utf-8-sig",errors="replace")
         else:
-            content = await page.content()
+            content = await _rendered_html(page)
             raw = content.encode()
             content_type = "text/html; rendered=1"
         if len(raw) > policy.max_bytes:
