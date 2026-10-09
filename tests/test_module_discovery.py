@@ -166,3 +166,52 @@ async def test_batch_template_reads_many_searches_with_the_saved_module(tmp_path
     assert [result["params"]["query"] for result in results] == ["desk", "floor lamp"]
     assert results[1]["url"] == "https://shop.example.com/search?q=floor+lamp"
     assert results[1]["items"][0]["name"] == "floor+lamp Brass lamp 0" and len(results[0]["items"]) == 8
+
+
+def test_find_search_reads_search_action_then_the_search_form():
+    from frankensurf.module_discovery import find_search
+    home = "https://shop.example.com/"
+    action = {"@context": "https://schema.org", "@type": "WebSite", "url": home, "potentialAction": {
+        "@type": "SearchAction", "target": {"@type": "EntryPoint",
+                                            "urlTemplate": "https://shop.example.com/find?text={term}"},
+        "query-input": "required name=term"}}
+    found = find_search(result_for(page([f'<script type="application/ld+json">{json.dumps(action)}</script>'])),
+                        home)
+    assert found == {"template": "https://shop.example.com/find?text={query}", "encoding": "query",
+                     "path_pattern": None, "from": "jsonld"}
+    form = ('<html><body><form action="/login" method="post"><input name="q"></form>'
+            '<form role="search" action="/s"><input type="hidden" name="cat" value="all">'
+            '<input type="search" name="kw"><button>Go</button></form></body></html>')
+    found = find_search(result_for(form), home)
+    assert found["template"] == "https://shop.example.com/s?cat=all&kw={query}" and found["from"] == "form"
+    offsite = '<form action="https://other.example/search"><input type="search" name="q"></form>'
+    assert find_search(result_for(offsite), home) is None
+
+
+async def test_discover_from_a_home_page_with_a_query(tmp_path, monkeypatch):
+    from frankensurf import providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+    from frankensurf.runtime import Runtime
+    home_page = '<html><body><form action="/search"><input type="search" name="q"></form></body></html>'
+
+    class Fixture:
+        manifest = ProviderManifest("fixture", "1")
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            content = page([next_data(PRODUCTS)]) if "/search" in request.url else home_page
+            return {"url": request.url, "content": content, "content_type": "text/html", "http_status": 200}
+    registry = ProviderRegistry()
+    registry.register(Fixture())
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    overrides = {"origin_route_hint_ttl_seconds": 0, "origin_min_interval_seconds": 0,
+                 "second_opinion_text_chars": 0, "completeness_escalation": False}
+    async with Runtime(tmp_path) as web:
+        found = await web.discover_module("https://shop.example.com/", query="brass lamp",
+                                          policy_overrides=overrides)
+    assert found["search"]["from"] == "form" and len(found["reads"]) == 2
+    module = found["drafts"][0]["module"]
+    assert module["templates"]["search"]["url"] == "https://shop.example.com/search?q={query}"
+    assert found["drafts"][0]["count"] == 8

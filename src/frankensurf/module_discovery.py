@@ -272,7 +272,7 @@ def _html_candidates(content, url, terms):
                 groups.setdefault(f"{element.name}.{name}", []).append(element)
     found = []
     for selector, elements in groups.items():
-        if not 4 <= len(elements) <= 400:
+        if not 4 <= len(elements) <= 400 or _CHROME_PATH.search(selector.split(".", 1)[1]):
             continue
         sample = elements[:40]
         rows = []
@@ -362,7 +362,7 @@ def _module_id(url):
     return ("auto-" + re.sub(r"[^a-z0-9]+", "-", host.lower()).strip("-"))[:64]
 
 
-def draft(url, candidate, *, module_id=None, notes=None):
+def draft(url, candidate, *, module_id=None, notes=None, search=None):
     """A site module record for one candidate list on the page at url."""
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
@@ -383,7 +383,7 @@ def draft(url, candidate, *, module_id=None, notes=None):
                                                 if re.fullmatch(r"[A-Za-z0-9_.\-\[\]]{1,128}", key)})
         if not record["match"]["query_keys"]:
             del record["match"]["query_keys"]
-    search = search_template(url)
+    search = search_template(url) or search
     if search:
         template, encoding, path_pattern = search
         record["templates"] = {"search": {"url": template,
@@ -391,6 +391,86 @@ def draft(url, candidate, *, module_id=None, notes=None):
         if path_pattern:
             record["match"]["path_pattern"] = path_pattern
     return record
+
+
+_SEARCH_WORDS = re.compile(r"(?i)search|/sch/|find|query|s[öø]k|zoek|such|busca|recherch|cerca|haku|szuk|hled|"
+                           r"検索|搜索|검색")
+_HELPER_INPUT = re.compile(r"(?i)suggest|hidden|autocomplete|typeahead|csrf|token")
+
+
+def find_search(result, url):
+    """How a site searches, from one of its pages (usually the home page):
+    schema.org SearchAction first, then the page's own search form. Returns
+    {"template": URL with {query}, "encoding", "path_pattern", "from"} or None.
+    Standards and HTML forms only; nothing here knows a site."""
+    origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
+    structured = result.get("structured") if isinstance(result.get("structured"), dict) else {}
+    for block in _jsonld_blocks(structured):
+        actions = block.get("potentialAction")
+        for action in actions if isinstance(actions, list) else [actions]:
+            if not isinstance(action, dict) or "SearchAction" not in _types(action):
+                continue
+            target = action.get("target")
+            target = target.get("urlTemplate") if isinstance(target, dict) else target
+            target = target[0] if isinstance(target, list) and target else target
+            if not isinstance(target, str):
+                continue
+            names = re.findall(r"\{([A-Za-z_][\w-]{0,63})\}", target)
+            if len(set(names)) != 1:
+                continue
+            template = urljoin(url, target.replace("{" + names[0] + "}", "{query}"))
+            if not template.startswith(origin + "/"):
+                continue
+            built = template.split("?", 1)
+            encoding = "query" if len(built) == 2 and "{query}" in built[1] else "path"
+            return {"template": template, "encoding": encoding, "path_pattern": None, "from": "jsonld"}
+    content_type = str(result.get("content_type") or "")
+    if "html" not in content_type and content_type:
+        return None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup((result.get("content") or "")[:4_000_000], "html.parser")
+    best = None
+    for form in soup.find_all("form", limit=50):
+        if (form.get("method") or "get").lower() != "get":
+            continue
+        fields = form.find_all(["input", "select"])
+        # The box a person types into: a conventional name first, then any
+        # search-typed input that is not a suggestion or hidden helper field.
+        typed = [field for field in fields if field.name == "input" and field.get("name")
+                 and (field.get("type") or "text").lower() in ("text", "search")
+                 and not _HELPER_INPUT.search(field.get("name"))]
+        query = next((field for field in typed if _QUERY_KEYS.match(field.get("name"))), None)
+        query = query or next((field for field in typed if (field.get("type") or "").lower() == "search"), None)
+        if query is None and len(typed) == 1:
+            # One box in a form that says it searches (its own attributes or the box's
+            # placeholder or label), whatever the box is named (eBay's _nkw, say).
+            words = " ".join(str(value) for node in (form, typed[0]) for key, value in node.attrs.items()
+                             if key in ("role", "id", "class", "action", "placeholder", "aria-label", "title"))
+            if _SEARCH_WORDS.search(words):
+                query = typed[0]
+        if query is None:
+            continue
+        action = urljoin(url, form.get("action") or url).split("#")[0].split("?")[0]
+        if not action.startswith(origin + "/") and action != origin:
+            continue
+        parts = []
+        for field in fields:
+            name = field.get("name")
+            if not name or field.name != "input":
+                continue
+            if field is query:
+                parts.append(f"{quote_plus(name)}={{query}}")
+            elif (field.get("type") or "").lower() == "hidden" and field.get("value") is not None:
+                parts.append(f"{quote_plus(name)}={quote_plus(field.get('value'))}")
+        score = 2 if (query.get("type") or "").lower() == "search" else 1
+        score += 1 if re.search(r"(?i)search", " ".join([form.get("role") or "", form.get("id") or "",
+                                                          " ".join(form.get("class") or []),
+                                                          form.get("action") or ""])) else 0
+        if best is None or score > best[0]:
+            best = (score, action + "?" + "&".join(parts))
+    if best:
+        return {"template": best[1], "encoding": "query", "path_pattern": None, "from": "form"}
+    return None
 
 
 # Parameter names sites commonly use for the search box: a web convention, not a site list.
@@ -437,7 +517,7 @@ def search_template(url):
     return None
 
 
-def discover(result, url, *, module_id=None, limit=3):
+def discover(result, url, *, module_id=None, limit=3, search=None):
     """Draft site modules from one read result. Each draft is validated and run
     against the same page; drafts that extract nothing are dropped. JSON feeds
     come first (they survive redesigns better); repeated HTML rows after."""
@@ -456,7 +536,7 @@ def discover(result, url, *, module_id=None, limit=3):
         if key in seen:
             continue
         seen.add(key)
-        record = draft(url, candidate, module_id=module_id)
+        record = draft(url, candidate, module_id=module_id, search=search)
         try:
             module = SiteModule.from_record(record)
         except ValueError:
@@ -464,6 +544,17 @@ def discover(result, url, *, module_id=None, limit=3):
         output = module.extract(result, url)
         if output["count"] < _MIN_ROWS:
             continue
+        # Items have names (or are bare links from an ItemList); rows whose
+        # names are mostly empty are tiles or banners.
+        if "name" in candidate["fields"]:
+            named = sum(1 for item in output["items"] if isinstance(item.get("name"), str)
+                        and len(item["name"].strip()) >= 3)
+            if named < 0.6 * output["count"]:
+                continue
+        if "url" in candidate["fields"]:
+            linked = sum(1 for item in output["items"] if item.get("url"))
+            if linked < 0.6 * output["count"]:
+                continue
         drafts.append({"module": module.record(), "count": output["count"],
                        "fields": sorted(candidate["fields"]), "sample": output["items"][:3]})
         if len(drafts) >= limit:

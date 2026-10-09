@@ -149,6 +149,37 @@ def item_links(html: str, base: str) -> int:
     return len(found)
 
 
+_ZERO_PRICE = re.compile(r"^\D*0+(?:[.,]0+)?$")
+# Template syntax and script values that leaked into the text before the page rendered.
+_UNRENDERED = re.compile(r"\{\{\s*[\w.$]+\s*\}\}|\$\{\s*[\w.]+\s*\}|\b(?:NaN|undefined)\b|\[object Object\]")
+
+
+_INTERACTION_GATE = re.compile(
+    r"(?i)\b(?:select|choose|pick|enter|add)\b[^.!?]{0,80}?\bto (?:see|view|get|show|check)\b"
+    r"[^.!?]{0,30}?\b(?:prices?|pricing|rates?|fares?|availability|cost|quotes?)\b")
+
+
+def _placeholder(text: str, zero_prices: int, prices: int) -> str | None:
+    """Why the text is an unrendered placeholder, or None."""
+    if zero_prices and not prices:
+        return f"{zero_prices} price(s) of 0 and no real price: the prices have not loaded"
+    leaks = len(_UNRENDERED.findall(text[:200_000]))
+    if leaks >= 3:
+        return f"{leaks} unrendered template values ({{{{ }}}}, NaN, undefined) in the text"
+    return None
+
+
+def _link_text_share(content: str, text: str) -> float:
+    """How much of the page's text sits inside links: near 1 for a page that
+    is only menus and footers."""
+    if not text:
+        return 0.0
+    linked = 0
+    for found in _ANCHOR.finditer(content[:2_000_000]):
+        linked += len(" ".join(_TAG.sub(" ", found.group(4)).split()))
+    return min(linked / max(len(" ".join(text.split())), 1), 1.0)
+
+
 def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
            min_text_chars: int = 1500, expect_terms=()) -> dict:
     """Score a page and say whether it looks complete for its kind of URL."""
@@ -159,8 +190,20 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
     if "html" not in content_type and "markdown" not in content_type:
         return {"kind": kind, "complete": True, "score": len(text), "reason": "not a document page"}
     items = item_links(content, result.get("url") or url)
-    prices = len(_PRICE.findall(text))
+    found_prices = _PRICE.findall(text)
+    # "$0" and "$ 0.00" are a price that has not loaded yet, not a price.
+    prices = sum(1 for price in found_prices if not _ZERO_PRICE.search(price))
     score = items * 100 + prices * 20 + min(len(text), 50_000) / 10
+    placeholder = _placeholder(text, len(found_prices) - prices, prices)
+    if placeholder:
+        return {"kind": kind, "complete": False, "score": score, "item_links": items, "prices": prices,
+                "text_chars": len(text), "reason": placeholder, "placeholder": True}
+    if kind != "search" and prices == 0 and "html" in content_type:
+        share = _link_text_share(content, text)
+        if share > 0.8 and len(text) >= 400:
+            return {"kind": kind, "complete": False, "score": score, "item_links": items, "prices": prices,
+                    "text_chars": len(text), "link_text_share": round(share, 2),
+                    "reason": f"{round(share * 100)}% of the text is links: menus, not the page"}
     if kind == "search":
         complete = items >= min_items or prices >= min_prices
         reason = None if complete else f"search page with {items} item links and {prices} prices"
@@ -172,6 +215,12 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
         reason = None if complete else f"page with {len(text)} characters of text"
     verdict = {"kind": kind, "complete": complete, "score": score, "item_links": items,
                "prices": prices, "text_chars": len(text), "reason": reason}
+    if not prices:
+        gate = _INTERACTION_GATE.search(text[:500_000])
+        if gate:
+            # Real page, but its prices wait for a choice (guests, dates, a
+            # postcode): no stronger read tool will show them.
+            verdict["needs_interaction"] = " ".join(gate.group(0).split())[:160]
     # Only a page that looks like results can be the wrong results; an
     # incomplete one may still be loading them, so it escalates as before.
     if kind == "search" and complete:

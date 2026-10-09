@@ -2961,27 +2961,114 @@ class Runtime:
         return results
 
     async def discover_module(self, url: str, *, module_id: str | None = None, save: bool = False,
-                              policy_overrides: dict | None = None) -> dict:
+                              query: str | None = None, policy_overrides: dict | None = None) -> dict:
         """Draft a site module from the page's own JSON (JSON-LD, script JSON,
         or the JSON it fetched while rendering). Reads the page once; when that
         page carries no feed, reads it again in a browser that records the JSON
-        responses. save=True saves the best draft."""
-        from .module_discovery import discover
+        responses. save=True saves the best draft.
+
+        With query and a page that is not itself a search (a home page), the
+        site's search is found first (schema.org SearchAction, else its search
+        form), the query is searched, and the module is drafted from that."""
+        from .module_discovery import discover, find_search, search_template
         overrides = dict(policy_overrides or {})
         result = await self.read(url, module=False, policy_overrides=overrides)
-        found = discover(result, url, module_id=module_id)
         reads = [(result.get("receipt") or {}).get("trace_id")]
+        search = None
+        if query and not search_template(url) and (result.get("receipt") or {}).get("status") == "observed":
+            search = find_search(result, url)
+            if search is None:
+                # A search box run by script: type the query once and see where it lands.
+                from .routes import request_policy
+                effective, _ = request_policy(None, overrides)
+                landed = await self._probe_search(url, query, effective)
+                landed_template = search_template(landed) if landed else None
+                if landed_template:
+                    search = {"template": landed_template[0], "encoding": landed_template[1],
+                              "path_pattern": landed_template[2], "from": "search box"}
+                elif landed:
+                    search = {"template": None, "encoding": None, "path_pattern": None,
+                              "from": "search box", "landed": landed}
+            if search is None:
+                return {"url": url, "drafts": [], "found": False, "reads": [trace for trace in reads if trace],
+                        "hint": "No search found on this page (no SearchAction, no search form, no search"
+                                " box that navigates); pass a search results URL instead."}
+            from urllib.parse import quote, quote_plus
+            encode = quote_plus if search["encoding"] == "query" else (lambda text: quote(text, safe=""))
+            url = (search["template"].replace("{query}", encode(query)) if search["template"]
+                   else search["landed"])
+            result = await self.read(url, module=False, policy_overrides=overrides)
+            reads.append((result.get("receipt") or {}).get("trace_id"))
+        template = ((search["template"], search["encoding"], search["path_pattern"])
+                    if search and search["template"] else None)
+        found = discover(result, url, module_id=module_id, search=template)
         if not found["drafts"] and (result.get("receipt") or {}).get("status") == "observed":
             rendered = await self.read(url, module=False, policy_overrides={
                 **overrides, "capture_json_responses": True,
                 "provider_candidates": overrides.get("provider_candidates") or ["local"]})
             reads.append((rendered.get("receipt") or {}).get("trace_id"))
             if (rendered.get("receipt") or {}).get("status") == "observed":
-                found = discover(rendered, url, module_id=module_id)
+                found = discover(rendered, url, module_id=module_id, search=template)
         found["reads"] = [trace for trace in reads if trace]
+        if search:
+            found["search"] = search
         if save and found["drafts"]:
             found["saved"] = self.site_modules.put(found["drafts"][0]["module"])
         return found
+
+    async def _probe_search(self, url, query, policy):
+        """Type query into the page's visible search box and press Enter, in an
+        anonymous local browser; the URL it lands on, or None. One search and
+        nothing else: no other field is touched and nothing is submitted but
+        the search. Boxes are found by web conventions (type=search, role,
+        label), not by site."""
+        if not policy.allow_local_browser:
+            return None
+        _validate_url(url)
+        try:
+            browser = await self._browser("local", policy)
+            context = await browser.new_context()
+        except Exception:
+            return None
+        try:
+            page = await context.new_page()
+            await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds * 1000)
+            await page.wait_for_timeout(1500)
+            box = None
+            for selector in ('input[type="search"]', '[role="searchbox"]', '[role="search"] input[type="text"]',
+                             'input[name="q"]', 'input[aria-label*="search" i]',
+                             'input[placeholder*="search" i]', 'input[type="text"][name*="search" i]'):
+                found = page.locator(selector)
+                for index in range(min(await found.count(), 6)):
+                    if await found.nth(index).is_visible():
+                        box = found.nth(index)
+                        break
+                if box is not None:
+                    break
+            if box is None:
+                return None
+            try:
+                # Some boxes open on click; an overlay (a consent banner) may take the
+                # click, and nothing else is clicked to clear it.
+                await box.click(timeout=3000)
+            except Exception:
+                pass
+            await box.fill(query, timeout=5000)
+            try:
+                async with page.expect_navigation(timeout=15000):
+                    await box.press("Enter")
+            except Exception:
+                pass
+            await page.wait_for_timeout(1000)
+            landed = page.url.split("#")[0]
+            _validate_url(landed)
+            same = urlparse(landed).netloc.split(":")[0].endswith(
+                ".".join((urlparse(url).hostname or "").split(".")[-2:]))
+            return landed if same and landed != url.split("#")[0] else None
+        except Exception:
+            return None
+        finally:
+            await context.close()
 
     async def _read_entry(self, url, policy, provider, adapter, policy_overrides,
                           workload_assertions, retry_of):
@@ -3256,6 +3343,9 @@ class Runtime:
                                                     "text_chars", "reason")}
         if verdict.get("query"):
             record["query"] = verdict["query"]
+        for key in ("placeholder", "link_text_share", "needs_interaction"):
+            if verdict.get(key):
+                record[key] = verdict[key]
         first["receipt"]["completeness"] = record
         if verdict.get("off_query"):
             # Another tool would read the same wrong page: hand it back, named.

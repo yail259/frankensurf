@@ -83,6 +83,23 @@ once. Paid tools always run one at a time, so racing never pays twice. On the
 139-site held-out set this cut the free tier's p90 from 50 s to 37 s and its
 median from 5.6 s to 4.5 s.
 
+### Placeholders and menus
+
+Two more shapes of a page that came back without its content are caught on
+every kind of page, not only search results:
+
+- **Placeholders.** Prices of `$0` with no real price, or template values that
+  leaked into the text (`{{ price }}`, `NaN`, `undefined`), mean the page had
+  not loaded. `completeness.placeholder` is set and the read escalates.
+- **Menus only.** When more than 80% of the text is link text and there is no
+  price, the read got the site's navigation, not the page.
+  `completeness.link_text_share` says how much.
+
+Some pages are complete but hide their prices behind a choice ("select guests
+to see prices"). No stronger tool would show more, so these don't escalate;
+`completeness.needs_interaction` quotes the page so your agent knows why there
+is no price.
+
 ### Pages a stronger tool can't fix
 
 Some wrong pages look right to every tool, so Frankensurf names them instead of

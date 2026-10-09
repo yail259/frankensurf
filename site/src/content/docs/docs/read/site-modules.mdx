@@ -61,6 +61,19 @@ pages it had never seen, it drafted the right list on 8, the wrong one on 1,
 and nothing on 7 (mostly pages it could not read). Keep the drafts that are
 right, and edit or write the rest by hand.
 
+Start from a home page instead, with a query, when you don't know the
+site's search URL. Frankensurf finds the search itself: schema.org
+`SearchAction` first, then the page's search form, then, for a search box run
+by script, it types the query once into the visible box in a local browser,
+presses Enter and keeps the URL it lands on. Nothing else is typed or clicked.
+
+```bash
+frankensurf module discover https://www.example.com/ --query "desk lamp" --save
+```
+
+On 14 home pages it had never seen, it found the search on 10 (three of the
+others refused the read) and drafted the right results on 6.
+
 When the page was a search, the draft also gets a `search` template built from
 its URL: the parameter that held the search words (`?q=lamp`), or the path
 segment after `/q/`, `/search/` or `/tag/`. Everything else in the URL stays
