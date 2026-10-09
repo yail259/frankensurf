@@ -3189,6 +3189,9 @@ class Runtime:
             page = await context.new_page()
             await page.goto(url, wait_until="domcontentloaded", timeout=policy.timeout_seconds * 1000)
             await page.wait_for_timeout(1500)
+            # A consent banner over the search box takes the click: reject it first.
+            from .interactions import dismiss_consent
+            await dismiss_consent(page, [])
             box = None
             for selector in ('input[type="search"]', '[role="searchbox"]', '[role="search"] input[type="text"]',
                              'input[name="q"]', 'input[aria-label*="search" i]',

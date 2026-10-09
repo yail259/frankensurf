@@ -9,8 +9,8 @@ words in common languages), never by site:
 - dismiss_consent: inside a cookie or consent banner, press the reject or
   necessary-only button (the most privacy-preserving choice). Never accept;
   if there is no reject, close the banner.
-- load_more: press "load more" / "show more" / "next" up to a few times while
-  the page keeps growing.
+- load_more: press "load more" / "show more" up to a few times while the page
+  keeps growing (never "next page": that leaves the page; paginate() follows it).
 - reveal: give required dropdowns that have no value their first real option.
 
 Nothing is bought, booked, submitted, signed in to or typed. A guard refuses
@@ -31,7 +31,8 @@ _REJECT = re.compile(
     r"avvisa alla|afvis alle|avvis alle|odrzuć wszystkie|recusar( tudo)?)\s*$")
 _CLOSE = re.compile(r"(?i)^\s*(close|dismiss|×|✕|x|schließen|fermer|chiudi|cerrar|sluiten|stäng|luk)\s*$")
 _MORE = re.compile(
-    r"(?i)^\s*((load|show|view|see) more( results| products| items)?|more results|next( page)?|›|»|"
+    # Buttons that add to the page; "next page" navigates away, which paginate() handles.
+    r"(?i)^\s*((load|show|view|see) more( results| products| items| listings)?|more results|"
     r"mehr (laden|anzeigen)|weitere (laden|anzeigen)|voir plus|afficher plus|ver más|cargar más|meer laden|"
     r"toon meer|mostra (altri|di più)|carica altri|visa fler|vis flere|näytä lisää)\s*$")
 # Never press anything that commits, pays, signs in or shares.
