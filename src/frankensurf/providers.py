@@ -60,6 +60,8 @@ class ProviderManifest:
     action_classes: tuple[str, ...] = ()
     action_contracts: tuple[str, ...] = ()
     diagnosis: bool = False
+    # Serves stored copies, not the live page: only with policy.allow_archive.
+    archive: bool = False
 
 
 @dataclass(frozen=True)
@@ -684,6 +686,7 @@ class ProviderRegistry:
                     and not manifest.rendering):
                 continue
             if manifest.paid and not policy.allow_paid_fallbacks: continue
+            if manifest.archive and not getattr(policy, "allow_archive", False): continue
             if manifest.requires_local_browser and not policy.allow_local_browser: continue
             try:
                 available = getattr(plugin, "available", None)
@@ -1640,6 +1643,15 @@ class ProviderRegistry:
                 filtered["acquisition_evidence"] = safe_evidence
             if content_readiness is not None:
                 filtered["content_readiness"] = content_readiness
+            archived = result.get("archived")
+            if getattr(getattr(plugin, "manifest", None), "archive", False):
+                # An archive must say when its copy was taken; nothing else may claim it.
+                if (type(archived) is not dict or set(archived) != {"source", "archived_at", "snapshot_url"}
+                        or not all(type(value) is str and len(value) <= 2048 for value in archived.values())
+                        or not re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", archived["archived_at"])
+                        or not archived["snapshot_url"].startswith("https://")):
+                    raise WebFailure("PROVIDER_DOWN", "Archive provider did not date its copy")
+                filtered["archived"] = dict(archived)
             captured = result.get("captured_json")
             if captured is not None and request.policy.capture_json_responses:
                 # Raw page data is passed through only when the caller opted in,

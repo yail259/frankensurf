@@ -175,3 +175,84 @@ async def test_paid_tools_never_race(tmp_path, escalating):
     assert ("start", "paid_two") not in log
     with pytest.raises(ValueError):
         WebPolicy(completeness_parallel=0)
+
+
+async def test_slow_read_is_hedged_with_the_first_free_ladder_tool(tmp_path, escalating):
+    log = []
+    escalating(slow_plugin("slow_main", RESULTS, 30, log),
+               slow_plugin("fast_free", RESULTS, 0, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "hedge_after_seconds": 0.2, "completeness_ladder": ["fast_free"]})
+    receipt = result["receipt"]
+    assert receipt["method"] == "fast_free" and receipt["hedge"]["won"] is True
+    assert ("cancelled", "slow_main") in log
+
+
+async def test_an_incomplete_hedge_never_replaces_the_main_read(tmp_path, escalating):
+    log = []
+    escalating(slow_plugin("slow_main", RESULTS, 0.6, log),
+               slow_plugin("shell_free", SHELL, 0, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "hedge_after_seconds": 0.2, "completeness_ladder": ["shell_free"]})
+        quick = await web.read(SEARCH + "&page=2", policy_overrides={
+            **POLICY, "hedge_after_seconds": 0, "completeness_ladder": ["shell_free"]})
+    assert result["receipt"]["method"] == "slow_main"
+    assert result["receipt"]["hedge"] == {**result["receipt"]["hedge"], "provider": "shell_free", "won": False}
+    assert "hedge" not in quick["receipt"]
+    with pytest.raises(ValueError):
+        WebPolicy(hedge_after_seconds=-1)
+
+
+def test_zero_prices_and_unrendered_values_are_placeholders():
+    item = "https://cruise.example.com/itinerary/10-day-islands/sydney/pp1"
+    text = "Home Cruises Deals " * 30 + "From $ 0 * average per person, 0 person room. " + "Details " * 200
+    page = {"content": "<html><body><p>" + text + "</p></body></html>", "text": text, "content_type": "text/html"}
+    verdict = assess(item, page)
+    assert verdict["complete"] is False and verdict["placeholder"] and verdict["prices"] == 0
+    real = text.replace("From $ 0", "From $1,299")
+    assert assess(item, {**page, "text": real, "content": "<p>" + real + "</p>"})["complete"]
+    leaked = "Sailing {{ sailing.name }} departs {{ sailing.date }} for {{ price }} NaN " + "x " * 900
+    assert assess(item, {**page, "text": leaked, "content": "<p>" + leaked + "</p>"})["placeholder"]
+
+
+def test_a_page_of_menus_is_not_the_page():
+    item = "https://cruise.example.com/cruise/cl27-aq09jan27"
+    links = "".join(f'<li><a href="/ships/ship-{n}">Ship number {n} cruises and deals</a></li>' for n in range(300))
+    content = f"<html><body><nav><ul>{links}</ul></nav><p>Loading</p></body></html>"
+    text = " ".join(f"Ship number {n} cruises and deals" for n in range(300)) + " Loading"
+    verdict = assess(item, {"content": content, "text": text, "content_type": "text/html"})
+    assert verdict["complete"] is False and verdict["link_text_share"] > 0.9
+    article = "<p>" + "A long article paragraph about the voyage. " * 80 + "</p>" + links[:3000]
+    text = "A long article paragraph about the voyage. " * 80 + " Ship number 1 cruises and deals" * 10
+    assert assess(item, {"content": article, "text": text, "content_type": "text/html"})["complete"]
+
+
+def test_prices_behind_a_choice_are_named_not_escalated():
+    item = "https://cruise.example.com/cruise/cl27-aq09jan27"
+    text = ("Day 1 Sydney. Day 2 At Sea. " * 80 + "How many guests in this cabin? "
+            "Select 1-4 guests for your first cabin to see prices.")
+    verdict = assess(item, {"content": "<p>" + text + "</p>", "text": text, "content_type": "text/html"})
+    assert verdict["complete"] is True
+    assert verdict["needs_interaction"].startswith("Select 1-4 guests")
+
+
+def test_query_keys_are_matched_however_they_are_spelled_and_echo_free_pages_are_off_query():
+    from frankensurf.completeness import query_terms
+    assert query_terms("https://x.example/search?search_term=sofa") == ["sofa"]
+    assert query_terms("https://x.example/results.html?words=lamp") == ["lamp"]
+    url = "https://x.example/search?search-term=sunscreen"
+    links = "".join(f'<a href="/p/item-{n}/SKU{n:06d}">Body lotion {n} $9</a>' for n in range(12))
+    links += '<a href="/p/sunscreen-guide/SKU999999">Guide</a>'
+    page = {"content": "<html><body>" + links + "</body></html>",
+            "text": " ".join(f"Body lotion {n} $9" for n in range(12)) + " Guide", "content_type": "text/html"}
+    verdict = assess(url, page)
+    assert verdict["off_query"] and verdict["complete"] is False
+
+
+def test_prices_with_the_currency_after_the_amount_count():
+    url = "https://shop.example.de/search_dir.html?sw=gitarre"
+    text = " ".join(f"Gitarre {n} {n},99 €" for n in range(1, 6)) + " " + "Menü " * 300
+    verdict = assess(url, {"content": "<p>" + text + "</p>", "text": text, "content_type": "text/html"})
+    assert verdict["kind"] == "search" and verdict["prices"] == 5 and verdict["complete"]

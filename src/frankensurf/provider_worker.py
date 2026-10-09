@@ -86,11 +86,41 @@ def _report_stage(stage):
         _PROTOCOL.flush()
 
 
+def _rows_in(value, depth=0):
+    """The longest list of objects inside a JSON value: how much a captured
+    response looks like a feed of items rather than config or telemetry."""
+    if depth > 8:
+        return 0
+    if isinstance(value, list):
+        here = sum(1 for item in value[:500] if isinstance(item, dict))
+        return max([here] + [_rows_in(item, depth + 1) for item in value[:5]])
+    if isinstance(value, dict):
+        return max([0] + [_rows_in(item, depth + 1) for item in list(value.values())[:200]
+                          if isinstance(item, (dict, list))])
+    return 0
+
+
+def _keep_capture(items, entry, limit):
+    """Add entry to a bounded capture. When full, a response carrying a list of
+    objects replaces the kept response with the fewest; True when kept."""
+    if len(items) < limit:
+        items.append(entry)
+        return True
+    rows = _rows_in(entry["data"])
+    if rows < 3:
+        return False
+    weakest = min(range(len(items)), key=lambda index: _rows_in(items[index]["data"]))
+    if _rows_in(items[weakest]["data"]) >= rows:
+        return False
+    items[weakest] = entry
+    return True
+
+
 def _capture_json(capture, request, url, status, content_type, body):
     """Keep one JSON (or newline-delimited JSON) body the page fetched for itself."""
     limit_items = request.get("capture_json_max_items", 20)
     limit_bytes = request.get("capture_json_max_bytes", 2 * 1024 * 1024)
-    if len(capture["json_items"]) >= limit_items or body is None or len(body) > limit_bytes or not _valid_url(url):
+    if body is None or len(body) > limit_bytes or not _valid_url(url):
         capture["json_skipped"] += 1
         return
     try:
@@ -110,8 +140,9 @@ def _capture_json(capture, request, url, status, content_type, body):
         except (UnboundLocalError, ValueError):
             capture["json_skipped"] += 1
             return
-    capture["json_items"].append({"url": url, "http_status": status, "content_type": content_type,
-                                  "format": shape, "data": data})
+    if not _keep_capture(capture["json_items"], {"url": url, "http_status": status, "content_type": content_type,
+                                                 "format": shape, "data": data}, limit_items):
+        capture["json_skipped"] += 1
 
 
 def _failed(code, status=None, url=None, stage=None):

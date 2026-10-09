@@ -248,3 +248,31 @@ async def test_charged_target_failures_keep_their_cost(tmp_path, monkeypatch, ap
     result = await read(tmp_path, URL, provider='zenrows', allow_paid_fallbacks=True)
     assert result['receipt']['failure']['code'] == 'NOT_FOUND'
     assert result['receipt']['cost_usd'] == 0.025
+
+
+async def test_archive_is_opt_in_and_says_the_page_is_not_live(tmp_path, api):
+    calls, routes = api
+    routes["https://archive.org/wayback/available"] = lambda request: httpx.Response(200, json={
+        "archived_snapshots": {"closest": {"available": True, "status": "200", "timestamp": "20260901123045",
+                                           "url": "http://web.archive.org/web/20260901123045/" + URL}}})
+    routes["https://web.archive.org/web/20260901123045id_/"] = lambda request: httpx.Response(
+        200, text=HTML, headers={"content-type": "text/html"})
+    async with Runtime(tmp_path) as web:
+        assert "internet_archive" not in web.providers.candidates(WebPolicy())
+        assert "internet_archive" in web.providers.candidates(WebPolicy(allow_archive=True))
+    denied = await read(tmp_path, URL, provider="internet_archive")
+    assert denied["receipt"]["failure"]["code"] == "POLICY_DENIED" and not calls
+    result = await read(tmp_path, URL, provider="internet_archive", allow_archive=True)
+    receipt = result["receipt"]
+    assert receipt["status"] == "observed" and result["title"] == "Item one"
+    assert receipt["archived"]["archived_at"] == "2026-09-01T12:30:45Z"
+    assert receipt["source_freshness"] == "archived"
+    assert result["archived"]["snapshot_url"] == "https://web.archive.org/web/20260901123045/" + URL
+
+
+async def test_archive_without_a_copy_is_not_found(tmp_path, api):
+    _, routes = api
+    routes["https://archive.org/wayback/available"] = lambda request: httpx.Response(
+        200, json={"archived_snapshots": {}})
+    result = await read(tmp_path, URL, provider="internet_archive", allow_archive=True)
+    assert result["receipt"]["failure"]["code"] == "NOT_FOUND"

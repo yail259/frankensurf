@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import re
-from urllib.parse import parse_qsl, urljoin, urlparse
+from urllib.parse import parse_qsl, quote_plus, urljoin, urlparse
 
 from .site_modules import SiteModule, _jsonld_blocks, _types
 
@@ -184,7 +184,31 @@ def _fields(sample):
         names = {str(_walk_value(row, fields["name"])).strip().lower() for row in sample}
         if len(names) < 0.7 * len(sample):
             return None
+    # schema.org navigation (menus, breadcrumbs) is site structure, not items.
+    nav = sum(1 for row in sample if _types(row) & _NAV_TYPES or _types(row.get("item") or {}) & _NAV_TYPES)
+    if nav > 0.5 * len(sample):
+        return None
     return fields
+
+
+_NAV_TYPES = {"SiteNavigationElement", "BreadcrumbList", "WPHeader", "WPFooter", "WPSideBar"}
+
+
+def _link_farm(names):
+    """Rows whose names mostly open with the same two or more words ("Python
+    jobs in London", "Python jobs in Leeds") are SEO links, not items."""
+    words = [str(name).lower().split()[:3] for name in names if isinstance(name, str) and name.strip()]
+    if len(words) < 4:
+        return False
+    openings = {}
+    # "<same two words> in|near|at <place>": product names may share a brand and
+    # model ("Apple iPhone 15 ..."), but not a place word in third position.
+    for opening in (tuple(parts[:2]) for parts in words if len(parts) >= 3 and parts[2] in _PLACE_WORDS):
+        openings[opening] = openings.get(opening, 0) + 1
+    return bool(openings) and max(openings.values()) >= 0.7 * len(words)
+
+
+_PLACE_WORDS = {"in", "near", "at", "around", "en", "à", "a", "i", "im", "bei", "nära", "nær", "na", "w", "di"}
 
 
 def _lists(value, path="", depth=0, found=None):
@@ -238,7 +262,7 @@ def candidates(result, url=None):
     host, terms = urlparse(url).hostname, _terms(url)
     for spec, root in _sources(result):
         for path, rows in _lists(root):
-            if spec["kind"] == "jsonld" and not path:
+            if spec["kind"] == "jsonld" and (not path or spec.get("type") in _NAV_TYPES):
                 continue
             scored = _score_list(rows, path, host, terms)
             if scored is None:
@@ -272,7 +296,7 @@ def _html_candidates(content, url, terms):
                 groups.setdefault(f"{element.name}.{name}", []).append(element)
     found = []
     for selector, elements in groups.items():
-        if not 4 <= len(elements) <= 400:
+        if not 4 <= len(elements) <= 400 or _CHROME_PATH.search(selector.split(".", 1)[1]):
             continue
         sample = elements[:40]
         rows = []
@@ -362,7 +386,7 @@ def _module_id(url):
     return ("auto-" + re.sub(r"[^a-z0-9]+", "-", host.lower()).strip("-"))[:64]
 
 
-def draft(url, candidate, *, module_id=None, notes=None):
+def draft(url, candidate, *, module_id=None, notes=None, search=None):
     """A site module record for one candidate list on the page at url."""
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
@@ -383,10 +407,141 @@ def draft(url, candidate, *, module_id=None, notes=None):
                                                 if re.fullmatch(r"[A-Za-z0-9_.\-\[\]]{1,128}", key)})
         if not record["match"]["query_keys"]:
             del record["match"]["query_keys"]
+    search = search_template(url) or search
+    if search:
+        template, encoding, path_pattern = search
+        record["templates"] = {"search": {"url": template,
+                                          "params": {"query": {"required": True, "encoding": encoding}}}}
+        if path_pattern:
+            record["match"]["path_pattern"] = path_pattern
     return record
 
 
-def discover(result, url, *, module_id=None, limit=3):
+_SEARCH_WORDS = re.compile(r"(?i)search|/sch/|find|query|s[öø]k|zoek|such|busca|recherch|cerca|haku|szuk|hled|"
+                           r"検索|搜索|검색")
+_HELPER_INPUT = re.compile(r"(?i)suggest|hidden|autocomplete|typeahead|csrf|token")
+
+
+def find_search(result, url):
+    """How a site searches, from one of its pages (usually the home page):
+    schema.org SearchAction first, then the page's own search form. Returns
+    {"template": URL with {query}, "encoding", "path_pattern", "from"} or None.
+    Standards and HTML forms only; nothing here knows a site."""
+    origin = "{0.scheme}://{0.netloc}".format(urlparse(url))
+    structured = result.get("structured") if isinstance(result.get("structured"), dict) else {}
+    for block in _jsonld_blocks(structured):
+        actions = block.get("potentialAction")
+        for action in actions if isinstance(actions, list) else [actions]:
+            if not isinstance(action, dict) or "SearchAction" not in _types(action):
+                continue
+            target = action.get("target")
+            target = target.get("urlTemplate") if isinstance(target, dict) else target
+            target = target[0] if isinstance(target, list) and target else target
+            if not isinstance(target, str):
+                continue
+            names = re.findall(r"\{([A-Za-z_][\w-]{0,63})\}", target)
+            if len(set(names)) != 1:
+                continue
+            template = urljoin(url, target.replace("{" + names[0] + "}", "{query}"))
+            if not template.startswith(origin + "/"):
+                continue
+            built = template.split("?", 1)
+            encoding = "query" if len(built) == 2 and "{query}" in built[1] else "path"
+            return {"template": template, "encoding": encoding, "path_pattern": None, "from": "jsonld"}
+    content_type = str(result.get("content_type") or "")
+    if "html" not in content_type and content_type:
+        return None
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup((result.get("content") or "")[:4_000_000], "html.parser")
+    best = None
+    for form in soup.find_all("form", limit=50):
+        if (form.get("method") or "get").lower() != "get":
+            continue
+        fields = form.find_all(["input", "select"])
+        # The box a person types into: a conventional name first, then any
+        # search-typed input that is not a suggestion or hidden helper field.
+        typed = [field for field in fields if field.name == "input" and field.get("name")
+                 and (field.get("type") or "text").lower() in ("text", "search")
+                 and not _HELPER_INPUT.search(field.get("name"))]
+        query = next((field for field in typed if _QUERY_KEYS.match(field.get("name"))), None)
+        query = query or next((field for field in typed if (field.get("type") or "").lower() == "search"), None)
+        if query is None and len(typed) == 1:
+            # One box in a form that says it searches (its own attributes or the box's
+            # placeholder or label), whatever the box is named (eBay's _nkw, say).
+            words = " ".join(str(value) for node in (form, typed[0]) for key, value in node.attrs.items()
+                             if key in ("role", "id", "class", "action", "placeholder", "aria-label", "title"))
+            if _SEARCH_WORDS.search(words):
+                query = typed[0]
+        if query is None:
+            continue
+        action = urljoin(url, form.get("action") or url).split("#")[0].split("?")[0]
+        if not action.startswith(origin + "/") and action != origin:
+            continue
+        parts = []
+        for field in fields:
+            name = field.get("name")
+            if not name or field.name != "input":
+                continue
+            if field is query:
+                parts.append(f"{quote_plus(name)}={{query}}")
+            elif (field.get("type") or "").lower() == "hidden" and field.get("value") is not None:
+                parts.append(f"{quote_plus(name)}={quote_plus(field.get('value'))}")
+        score = 2 if (query.get("type") or "").lower() == "search" else 1
+        score += 1 if re.search(r"(?i)search", " ".join([form.get("role") or "", form.get("id") or "",
+                                                          " ".join(form.get("class") or []),
+                                                          form.get("action") or ""])) else 0
+        if best is None or score > best[0]:
+            best = (score, action + "?" + "&".join(parts))
+    if best:
+        return {"template": best[1], "encoding": "query", "path_pattern": None, "from": "form"}
+    return None
+
+
+# Parameter names sites commonly use for the search box: a web convention, not a site list.
+_QUERY_KEYS = re.compile(r"(?i)^(q|qs|query|search|searchterm|search_term|searchtext|search_query|keyword|"
+                         r"keywords|kw|k|term|terms|text|words|freetext|sw|s|tr|st|ntt|w|p)$")
+
+
+# A path segment that introduces a search word: /q/lamp, /search/lamp, /tag/lamp.
+_PATH_SEARCH = re.compile(r"(?i)^(q|s|k|search|suche|zoeken|buscar|busca|recherche|cerca|haku|sok|soeg|szukaj|"
+                          r"tag|tags|topic|topics|keyword|keywords)$")
+
+
+def search_template(url):
+    """(template URL with {query}, encoding, widened path pattern or None) for a
+    search URL, or None. The query is a parameter (?q=lamp) or one path segment
+    (/q/lamp/); every other part of the URL is kept as it was."""
+    parsed = urlparse(url)
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    texty = [(index, key) for index, (key, value) in enumerate(pairs)
+             if re.search(r"[^\W\d_]", value) and value.lower() not in ("true", "false", "on", "off")]
+    chosen = next((index for index, key in texty if _QUERY_KEYS.match(key)), None)
+    if chosen is None and len(texty) == 1:
+        chosen = texty[0][0]
+    if chosen is not None:
+        parts = [f"{quote_plus(key)}={'{query}' if index == chosen else quote_plus(value)}"
+                 for index, (key, value) in enumerate(pairs)]
+        base = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        return base + "?" + "&".join(parts), "query", None
+    if parsed.query:
+        return None
+    segments = parsed.path.split("/")
+    for index in range(len(segments) - 1, -1, -1):
+        segment = segments[index]
+        # One plain word only: a slug like python-jobs cannot be rebuilt from a query.
+        previous = next((part for part in reversed(segments[:index]) if part), "")
+        if (re.fullmatch(r"[^\W\d_]{2,64}", segment) and segment.lower() not in _GENERIC
+                and _PATH_SEARCH.match(previous)):
+            before, after = "/".join(segments[:index]) + "/", "/".join(segments[index + 1:])
+            after = ("/" + after) if index + 1 < len(segments) else ""
+            template = f"{parsed.scheme}://{parsed.netloc}{before}{{query}}{after}"
+            return template, "path", re.escape(before) + r"[^/]+" + re.escape(after)
+        if segment:
+            break
+    return None
+
+
+def discover(result, url, *, module_id=None, limit=3, search=None):
     """Draft site modules from one read result. Each draft is validated and run
     against the same page; drafts that extract nothing are dropped. JSON feeds
     come first (they survive redesigns better); repeated HTML rows after."""
@@ -405,13 +560,26 @@ def discover(result, url, *, module_id=None, limit=3):
         if key in seen:
             continue
         seen.add(key)
-        record = draft(url, candidate, module_id=module_id)
+        record = draft(url, candidate, module_id=module_id, search=search)
         try:
             module = SiteModule.from_record(record)
         except ValueError:
             continue
         output = module.extract(result, url)
         if output["count"] < _MIN_ROWS:
+            continue
+        # Items have names (or are bare links from an ItemList); rows whose
+        # names are mostly empty are tiles or banners.
+        if "name" in candidate["fields"]:
+            named = sum(1 for item in output["items"] if isinstance(item.get("name"), str)
+                        and len(item["name"].strip()) >= 3)
+            if named < 0.6 * output["count"]:
+                continue
+        if "url" in candidate["fields"]:
+            linked = sum(1 for item in output["items"] if item.get("url"))
+            if linked < 0.6 * output["count"]:
+                continue
+        if _link_farm([item.get("name") for item in output["items"]]):
             continue
         drafts.append({"module": module.record(), "count": output["count"],
                        "fields": sorted(candidate["fields"]), "sample": output["items"][:3]})

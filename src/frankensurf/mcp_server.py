@@ -28,6 +28,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
                profile: str | None = None, try_harder_than: str | None = None,
                expect_terms: list[str] | None = None, card_images: bool | None = None,
                module: str | None = None, module_override: dict | None = None,
+               allow_archive: bool | None = None, items: bool | None = None,
                acquisition_policy: dict | None = None) -> dict:
     """Retrieve evidence. Omitted settings use runtime defaults and operator public routes.
 
@@ -35,6 +36,12 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     operational settings. Content does not certify live or sold state.
     allow_handoff=True lets a person clear a CAPTCHA, sign-in or 2FA wall in a
     visible browser when every automatic route fails; the call waits for them.
+    items=True returns items (name, url, price, image) from a listing page with no
+    saved module, found in the page's own data, plus result.auto_module: the
+    drafted module, which site_modules put saves for every later read.
+    allow_archive=True lets a walled page come from the Internet Archive's latest
+    stored copy as the last resort; receipt.archived says when it was taken. Not
+    live: don't use it for prices or stock.
     profile names a stored FrankenSurf login (see the profiles tool); the session
     itself never reaches the agent.
     try_harder_than takes the trace_id of an earlier read whose page wasn't what
@@ -53,7 +60,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
         "render": render, "include_images": include_images, "freshness": freshness,
         "identity": identity, "allow_handoff": allow_handoff, "profile": profile,
         "expect_terms": tuple(expect_terms) if expect_terms else None,
-        "card_images": card_images})
+        "card_images": card_images, "allow_archive": allow_archive, "auto_items": items})
     # Agents read text: ask servers for markdown first (T0). Callers can pass
     # acquisition_policy={"prefer_markdown": false} for raw HTML structure.
     options.setdefault("prefer_markdown", True)
@@ -86,6 +93,23 @@ async def read_template(module: str, template: str, params: dict | None = None,
 
 
 @server.tool()
+async def batch_template(module: str, template: str, params_list: list[dict],
+                         acquisition_policy: dict | None = None) -> list[dict]:
+    """Read one saved site module template for many parameter sets at once,
+    e.g. its search template for ten queries. Reads are paced per site (the
+    first goes alone, the rest follow its route). Returns, in order, each
+    read's params, items, next_url and receipt status, without page text."""
+    options = _acquisition_overrides(acquisition_policy, {})
+    async with runtime() as web:
+        results = await web.batch_template(module, template, params_list, policy_overrides=options)
+    keep = ("url", "params", "items", "next_url")
+    return [{**{key: result[key] for key in keep if key in result},
+             "receipt": {key: (result.get("receipt") or {}).get(key)
+                         for key in ("status", "method", "trace_id", "failure", "module", "latency_ms")}}
+            for result in results]
+
+
+@server.tool()
 async def repair_site_module(trace_id: str, module: dict) -> dict:
     """Propose a fixed site module after a read reported receipt.module.status
     failed or invalid. module is the full next version (same id and origin, new
@@ -97,14 +121,17 @@ async def repair_site_module(trace_id: str, module: dict) -> dict:
 
 
 @server.tool()
-async def discover_site_module(url: str, save: bool = False, module_id: str | None = None) -> dict:
+async def discover_site_module(url: str, save: bool = False, module_id: str | None = None,
+                               query: str | None = None) -> dict:
     """Draft a site module from a listing page's own JSON feed (JSON-LD, JSON in
     a script tag, or JSON the page fetched while rendering). Returns up to three
     validated drafts, each with the item count and sample rows it extracts from
     that page. save=True saves the best one, after which reads of matching URLs
-    return items. Check the sample before saving."""
+    return items. Check the sample before saving. url can be a home page with
+    query: the site's search (SearchAction or search form) is found and used,
+    and the draft gets a search template for read_template and batch_template."""
     async with runtime() as web:
-        return await web.discover_module(url, module_id=module_id, save=save)
+        return await web.discover_module(url, module_id=module_id, save=save, query=query)
 
 
 @server.tool()

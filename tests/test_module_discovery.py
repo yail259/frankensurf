@@ -121,3 +121,138 @@ def test_server_rendered_rows_become_an_html_module():
     assert module["sources"]["listing"]["item_selector"] == "div.product-tile"
     assert found["drafts"][0]["sample"][0] == {"url": "https://shop.example.com/p/1", "name": "Steel lamp 1",
                                                "price": 19, "image": "https://shop.example.com/img/1.jpg"}
+
+
+def test_drafts_carry_a_search_template_built_from_the_url():
+    from frankensurf.module_discovery import search_template
+    assert search_template("https://x.example/s?cat=5&searchTerm=red+boots&page=2") == (
+        "https://x.example/s?cat=5&searchTerm={query}&page=2", "query", None)
+    assert search_template("https://x.example/q/fiets/") == ("https://x.example/q/{query}/", "path", "/q/[^/]+/")
+    assert search_template("https://x.example/about/team") is None
+    assert search_template("https://x.example/item/123") is None
+    module = SiteModule.from_record(discover(result_for(page([next_data(PRODUCTS)])), URL)["drafts"][0]["module"])
+    assert module.build_url("search", {"query": "desk lamp"}) == "https://shop.example.com/search?q=desk+lamp"
+
+
+async def test_batch_template_reads_many_searches_with_the_saved_module(tmp_path, monkeypatch):
+    from frankensurf import providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+    from frankensurf.runtime import Runtime
+    seen = []
+
+    class Fixture:
+        manifest = ProviderManifest("fixture", "1")
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            seen.append(request.url)
+            word = request.url.rsplit("=", 1)[-1]
+            products = [{**row, "title": f"{word} {row['title']}"} for row in PRODUCTS]
+            return {"url": request.url, "content": page([next_data(products)]), "content_type": "text/html",
+                    "http_status": 200}
+    registry = ProviderRegistry()
+    registry.register(Fixture())
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    overrides = {"origin_route_hint_ttl_seconds": 0, "origin_min_interval_seconds": 0,
+                 "second_opinion_text_chars": 0, "completeness_escalation": False}
+    async with Runtime(tmp_path) as web:
+        web._domain_delay = 0
+        await web.discover_module(URL, save=True, policy_overrides=overrides)
+        results = await web.batch_template("auto-shop-example-com", "search",
+                                           [{"query": "desk"}, {"query": "floor lamp"}],
+                                           policy_overrides=overrides)
+    assert [result["params"]["query"] for result in results] == ["desk", "floor lamp"]
+    assert results[1]["url"] == "https://shop.example.com/search?q=floor+lamp"
+    assert results[1]["items"][0]["name"] == "floor+lamp Brass lamp 0" and len(results[0]["items"]) == 8
+
+
+def test_find_search_reads_search_action_then_the_search_form():
+    from frankensurf.module_discovery import find_search
+    home = "https://shop.example.com/"
+    action = {"@context": "https://schema.org", "@type": "WebSite", "url": home, "potentialAction": {
+        "@type": "SearchAction", "target": {"@type": "EntryPoint",
+                                            "urlTemplate": "https://shop.example.com/find?text={term}"},
+        "query-input": "required name=term"}}
+    found = find_search(result_for(page([f'<script type="application/ld+json">{json.dumps(action)}</script>'])),
+                        home)
+    assert found == {"template": "https://shop.example.com/find?text={query}", "encoding": "query",
+                     "path_pattern": None, "from": "jsonld"}
+    form = ('<html><body><form action="/login" method="post"><input name="q"></form>'
+            '<form role="search" action="/s"><input type="hidden" name="cat" value="all">'
+            '<input type="search" name="kw"><button>Go</button></form></body></html>')
+    found = find_search(result_for(form), home)
+    assert found["template"] == "https://shop.example.com/s?cat=all&kw={query}" and found["from"] == "form"
+    offsite = '<form action="https://other.example/search"><input type="search" name="q"></form>'
+    assert find_search(result_for(offsite), home) is None
+
+
+async def test_discover_from_a_home_page_with_a_query(tmp_path, monkeypatch):
+    from frankensurf import providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+    from frankensurf.runtime import Runtime
+    home_page = '<html><body><form action="/search"><input type="search" name="q"></form></body></html>'
+
+    class Fixture:
+        manifest = ProviderManifest("fixture", "1")
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            content = page([next_data(PRODUCTS)]) if "/search" in request.url else home_page
+            return {"url": request.url, "content": content, "content_type": "text/html", "http_status": 200}
+    registry = ProviderRegistry()
+    registry.register(Fixture())
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    overrides = {"origin_route_hint_ttl_seconds": 0, "origin_min_interval_seconds": 0,
+                 "second_opinion_text_chars": 0, "completeness_escalation": False}
+    async with Runtime(tmp_path) as web:
+        found = await web.discover_module("https://shop.example.com/", query="brass lamp",
+                                          policy_overrides=overrides)
+    assert found["search"]["from"] == "form" and len(found["reads"]) == 2
+    module = found["drafts"][0]["module"]
+    assert module["templates"]["search"]["url"] == "https://shop.example.com/search?q={query}"
+    assert found["drafts"][0]["count"] == 8
+
+
+def test_navigation_and_seo_link_farms_are_not_items():
+    from frankensurf.module_discovery import _link_farm
+    assert _link_farm([f"Python jobs in {city}" for city in ("London", "Leeds", "Bath", "York", "Hull")])
+    assert not _link_farm([f"Apple iPhone 15 {size}GB" for size in (128, 256, 512, 1024)])
+    nav = {"@context": "https://schema.org", "@type": "SiteNavigationElement", "hasPart": [
+        {"@type": "WebPage", "name": f"Watches {n}", "url": f"https://shop.example.com/c/{n}"}
+        for n in range(8)]}
+    content = page([f'<script type="application/ld+json">{json.dumps(nav)}</script>'])
+    assert discover(result_for(content), "https://shop.example.com/search?q=watch")["drafts"] == []
+
+
+async def test_auto_items_on_any_listing_page_without_a_saved_module(tmp_path, monkeypatch):
+    from frankensurf import providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+    from frankensurf.runtime import Runtime
+
+    class Fixture:
+        manifest = ProviderManifest("fixture", "1")
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            return {"url": request.url, "content": page([next_data(PRODUCTS)]), "content_type": "text/html",
+                    "http_status": 200}
+    registry = ProviderRegistry()
+    registry.register(Fixture())
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    overrides = {"origin_route_hint_ttl_seconds": 0, "origin_min_interval_seconds": 0,
+                 "second_opinion_text_chars": 0, "completeness_escalation": False}
+    async with Runtime(tmp_path) as web:
+        plain = await web.read(URL, policy_overrides=overrides)
+        shaped = await web.read(URL, policy_overrides={**overrides, "auto_items": True})
+        assert web.site_modules.inspect() == []
+        web.site_modules.put(shaped["auto_module"])
+        saved = await web.read("https://shop.example.com/search?q=desk", policy_overrides=overrides)
+    assert "items" not in plain and "auto_items" not in plain["receipt"]
+    assert len(shaped["items"]) == 8 and shaped["receipt"]["auto_items"]["count"] == 8
+    assert saved["items"][0]["name"] == "Brass lamp 0"

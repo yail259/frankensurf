@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from urllib.parse import parse_qs, quote, urlsplit
 
@@ -218,6 +219,48 @@ class JinaReaderProvider(_Keyed):
         if title and not content.lstrip().startswith("# "):
             content = "# " + title + "\n\n" + content
         return _page(final, content, "text/markdown; charset=utf-8", 200)
+
+
+class InternetArchiveProvider(_Keyed):
+    """Last resort: the Internet Archive's closest stored copy of the page.
+
+    Never the live page, so it only runs when a read allows archives
+    (allow_archive). The result and receipt carry when it was archived."""
+
+    def __init__(self):
+        self.manifest = _manifest("internet_archive", "1", archive=True)
+
+    def available(self, configured):
+        return True
+
+    async def acquire(self, request, services):
+        if not getattr(request.policy, "allow_archive", False):
+            raise _failure("POLICY_DENIED", "Archived copies need allow_archive")
+        status, _, raw = await _call("GET", "https://archive.org/wayback/available",
+                                     request.policy, params={"url": request.url})
+        error = _service_status(status, "Internet Archive")
+        if error:
+            raise error
+        try:
+            closest = (json.loads(raw).get("archived_snapshots") or {}).get("closest") or {}
+            stamp = str(closest.get("timestamp") or "")
+        except (ValueError, AttributeError):
+            raise _failure("SCHEMA_CHANGED", "Internet Archive returned an unexpected body") from None
+        if not closest.get("available") or str(closest.get("status")) != "200" \
+                or not re.fullmatch(r"\d{14}", stamp):
+            raise _failure("NOT_FOUND", "The Internet Archive has no stored copy of this page")
+        # id_ asks for the page as archived, without the archive's own toolbar.
+        status, headers, raw = await _call("GET", f"https://web.archive.org/web/{stamp}id_/{request.url}",
+                                           request.policy)
+        error = _target_status(status, request.url)
+        if error:
+            raise error
+        archived_at = (f"{stamp[0:4]}-{stamp[4:6]}-{stamp[6:8]}T{stamp[8:10]}:{stamp[10:12]}:"
+                       f"{stamp[12:14]}Z")
+        page = _page(request.url, _decode(raw), headers.get("content-type") or "text/html; charset=utf-8", 200)
+        page["archived"] = {"source": "Internet Archive", "archived_at": archived_at,
+                            "snapshot_url": f"https://web.archive.org/web/{stamp}/{request.url}"}
+        return page
 
 
 class FirecrawlProvider(_Keyed):
@@ -699,7 +742,7 @@ HOSTED_PROVIDERS = (JinaReaderProvider, CloudflareBrowserRunProvider, FirecrawlP
                     FastCrwProvider, ApifyRagBrowserProvider, ZenRowsProvider,
                     ScrapflyProvider, BrightDataUnlockerProvider, ZyteProvider,
                     SkyvernProvider, ExaTransport, BraveTransport, TavilyTransport,
-                    ParallelTransport)
+                    ParallelTransport, InternetArchiveProvider)
 
 
 def register(registry):

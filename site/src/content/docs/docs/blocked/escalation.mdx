@@ -83,6 +83,23 @@ once. Paid tools always run one at a time, so racing never pays twice. On the
 139-site held-out set this cut the free tier's p90 from 50 s to 37 s and its
 median from 5.6 s to 4.5 s.
 
+### Placeholders and menus
+
+Two more shapes of a page that came back without its content are caught on
+every kind of page, not only search results:
+
+- **Placeholders.** Prices of `$0` with no real price, or template values that
+  leaked into the text (`{{ price }}`, `NaN`, `undefined`), mean the page had
+  not loaded. `completeness.placeholder` is set and the read escalates.
+- **Menus only.** When more than 80% of the text is link text and there is no
+  price, the read got the site's navigation, not the page.
+  `completeness.link_text_share` says how much.
+
+Some pages are complete but hide their prices behind a choice ("select guests
+to see prices"). No stronger tool would show more, so these don't escalate;
+`completeness.needs_interaction` quotes the page so your agent knows why there
+is no price.
+
 ### Pages a stronger tool can't fix
 
 Some wrong pages look right to every tool, so Frankensurf names them instead of
@@ -105,6 +122,19 @@ climbing:
   as `NOT_FOUND`. A plain fetch's error page gets one confirming read from a
   different tool, since some sites serve fake 404s to bots; then the read
   stops.
+
+## Hedging a slow read
+
+A blocked site can take a dozen tools in turn before one gets through. Once an
+automatic read has run for 10 seconds (`hedge_after_seconds`, 0 turns it off),
+one more read starts beside it, pinned to the first free tool on the
+completeness ladder (Jina Reader by default). If that read brings back a
+complete page first, it wins and the climb is cancelled. A hedge page that is
+incomplete or failed never replaces the main read, and a hedge never uses a
+paid tool. When the hedge wins, `receipt.hedge` says so and the site's route
+hint learns it, so the next read starts there. On the 139-site held-out set,
+reads that used to take about 50 seconds (Michaels, Naukri, Anthropologie,
+Urban Outfitters) came back in 8 to 17.
 
 ## Skipping ahead
 

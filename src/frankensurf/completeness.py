@@ -26,7 +26,14 @@ from urllib.parse import parse_qs, urljoin, urlparse
 
 QUERY_KEYS = frozenset({"q", "query", "k", "s", "st", "ss", "search", "searchterm", "keyword",
                         "keywords", "text", "term", "searchtext", "find_desc", "d", "field-keywords",
-                        "kw", "_nkw", "search_string", "search_key", "search_query", "searchquery"})
+                        "kw", "_nkw", "search_string", "search_key", "search_query", "searchquery",
+                        "words", "freetext", "sw", "ntt", "qs", "wd", "searchkeyword", "searchkeywords"})
+
+
+def _query_key(key: str) -> bool:
+    """A search-box parameter, however the site spells it (search_term, searchTerm)."""
+    lowered = key.lower()
+    return lowered in QUERY_KEYS or re.sub(r"[^a-z0-9]", "", lowered) in QUERY_KEYS
 _SEARCH_PATH = re.compile(r"/(search|s|shop|catalogsearch|browse|category|categories|c|list|"
                           r"jobs|homes|for_sale|sale|buy|rent|pdsearch|keyword\.php|w|p/pl)(/|$|\.|\?)", re.I)
 # A marker segment followed by the item itself (/p/<slug>, /rooms/<id>).
@@ -39,7 +46,10 @@ _NOT_ITEM = re.compile(r"\.(css|js|mjs|json|xml|pdf|png|jpe?g|gif|svg|webp|ico|w
                        r"disclosure|accessibility|sitemap|store-locator|stores|gift-card|login|"
                        r"sign-?in|register|account|contact|returns|shipping|delivery)", re.I)
 _LONG_ID = re.compile(r"\d{5,}|[A-Z0-9]{8,}")
-_PRICE = re.compile(r"(?:A\$|AU\$|US\$|C\$|NZ\$|\$|€|£)\s?\d[\d,]*(?:\.\d{2})?")
+# A currency before the amount ($49, € 12), or after it as most of Europe
+# writes it (1.599 €, 249,00 kr, 99 zł).
+_PRICE = re.compile(r"(?:A\$|AU\$|US\$|C\$|NZ\$|\$|€|£)\s?\d[\d,]*(?:\.\d{2})?"
+                    r"|(?<![\w.,])\d{1,3}(?:[.\s ]\d{3})*(?:,\d{2}|,-)?\s?(?:€|EUR|kr|zł|Kč|Ft|CHF|lei|лв)(?!\w)")
 _HREF = re.compile(r"""<a\b[^>]*?\bhref\s*=\s*["']([^"'#]+)""", re.I)
 _MARKDOWN_LINK = re.compile(r"\]\((https?://[^)\s#]+|/[^)\s#]*)")
 # An anchor with its attributes and inner HTML, and a markdown link with its text.
@@ -59,7 +69,7 @@ _ECHO_MENTIONS = 2
 def query_terms(url: str, expect_terms=()) -> list[str]:
     """Words the results of this search should mention, lightly stemmed."""
     values = [value for key, items in parse_qs(urlparse(url).query).items()
-              if key.lower() in QUERY_KEYS for value in items]
+              if _query_key(key) for value in items]
     terms = []
     for value in [*values, *expect_terms]:
         for word in _WORD.findall(str(value).lower()):
@@ -108,13 +118,15 @@ def relevance(url: str, result: dict, expect_terms=()) -> dict | None:
     relevant = sum(1 for blob in blobs.values() if any(term in blob for term in terms))
     mentions = sum(text.count(term) for term in terms)
     return {"terms": terms, "relevant_items": relevant, "mentions": mentions,
-            "off_query": relevant == 0 and mentions <= _ECHO_MENTIONS}
+            # No mention anywhere in the text and at most one matching link (often
+            # a menu entry) is a default feed too.
+            "off_query": (relevant == 0 and mentions <= _ECHO_MENTIONS) or (mentions == 0 and relevant <= 1)}
 
 
 def page_kind(url: str) -> str:
     parsed = urlparse(url)
     params = {key.lower() for key in parse_qs(parsed.query)}
-    if params & QUERY_KEYS or _SEARCH_PATH.search(parsed.path or "/"):
+    if any(_query_key(key) for key in params) or _SEARCH_PATH.search(parsed.path or "/"):
         return "search"
     if _ITEM_MARKER.search(parsed.path) or any(
             _LONG_ID.search(segment) or segment.count("-") >= 3
@@ -149,6 +161,37 @@ def item_links(html: str, base: str) -> int:
     return len(found)
 
 
+_ZERO_PRICE = re.compile(r"^\D*0+(?:[.,]0+|,-)?\D*$")
+# Template syntax and script values that leaked into the text before the page rendered.
+_UNRENDERED = re.compile(r"\{\{\s*[\w.$]+\s*\}\}|\$\{\s*[\w.]+\s*\}|\b(?:NaN|undefined)\b|\[object Object\]")
+
+
+_INTERACTION_GATE = re.compile(
+    r"(?i)\b(?:select|choose|pick|enter|add)\b[^.!?]{0,80}?\bto (?:see|view|get|show|check)\b"
+    r"[^.!?]{0,30}?\b(?:prices?|pricing|rates?|fares?|availability|cost|quotes?)\b")
+
+
+def _placeholder(text: str, zero_prices: int, prices: int) -> str | None:
+    """Why the text is an unrendered placeholder, or None."""
+    if zero_prices and not prices:
+        return f"{zero_prices} price(s) of 0 and no real price: the prices have not loaded"
+    leaks = len(_UNRENDERED.findall(text[:200_000]))
+    if leaks >= 3:
+        return f"{leaks} unrendered template values ({{{{ }}}}, NaN, undefined) in the text"
+    return None
+
+
+def _link_text_share(content: str, text: str) -> float:
+    """How much of the page's text sits inside links: near 1 for a page that
+    is only menus and footers."""
+    if not text:
+        return 0.0
+    linked = 0
+    for found in _ANCHOR.finditer(content[:2_000_000]):
+        linked += len(" ".join(_TAG.sub(" ", found.group(4)).split()))
+    return min(linked / max(len(" ".join(text.split())), 1), 1.0)
+
+
 def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
            min_text_chars: int = 1500, expect_terms=()) -> dict:
     """Score a page and say whether it looks complete for its kind of URL."""
@@ -159,8 +202,20 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
     if "html" not in content_type and "markdown" not in content_type:
         return {"kind": kind, "complete": True, "score": len(text), "reason": "not a document page"}
     items = item_links(content, result.get("url") or url)
-    prices = len(_PRICE.findall(text))
+    found_prices = _PRICE.findall(text)
+    # "$0" and "$ 0.00" are a price that has not loaded yet, not a price.
+    prices = sum(1 for price in found_prices if not _ZERO_PRICE.search(price))
     score = items * 100 + prices * 20 + min(len(text), 50_000) / 10
+    placeholder = _placeholder(text, len(found_prices) - prices, prices)
+    if placeholder:
+        return {"kind": kind, "complete": False, "score": score, "item_links": items, "prices": prices,
+                "text_chars": len(text), "reason": placeholder, "placeholder": True}
+    if kind != "search" and prices == 0 and "html" in content_type:
+        share = _link_text_share(content, text)
+        if share > 0.8 and len(text) >= 400:
+            return {"kind": kind, "complete": False, "score": score, "item_links": items, "prices": prices,
+                    "text_chars": len(text), "link_text_share": round(share, 2),
+                    "reason": f"{round(share * 100)}% of the text is links: menus, not the page"}
     if kind == "search":
         complete = items >= min_items or prices >= min_prices
         reason = None if complete else f"search page with {items} item links and {prices} prices"
@@ -172,6 +227,12 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
         reason = None if complete else f"page with {len(text)} characters of text"
     verdict = {"kind": kind, "complete": complete, "score": score, "item_links": items,
                "prices": prices, "text_chars": len(text), "reason": reason}
+    if not prices:
+        gate = _INTERACTION_GATE.search(text[:500_000])
+        if gate:
+            # Real page, but its prices wait for a choice (guests, dates, a
+            # postcode): no stronger read tool will show them.
+            verdict["needs_interaction"] = " ".join(gate.group(0).split())[:160]
     # Only a page that looks like results can be the wrong results; an
     # incomplete one may still be loading them, so it escalates as before.
     if kind == "search" and complete:

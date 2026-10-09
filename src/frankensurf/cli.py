@@ -216,7 +216,7 @@ async def run(args):
         result = _setup(args)
     elif args.operation == "module" and args.urls[0] == "discover":
         async with Runtime(state_dir=args.state) as web:
-            result = await web.discover_module(args.urls[1], save=args.save)
+            result = await web.discover_module(args.urls[1], save=args.save, query=args.query)
     elif args.operation == "module" and args.urls[0] == "repair":
         async with Runtime(state_dir=args.state) as web:
             result = await web.propose_module_repair(args.urls[1], _load_json(args.urls[2], "site module file"))
@@ -325,6 +325,7 @@ def build_parser():
         help="read: print each tool tried and what happened, then the page, instead of JSON")
     parser.add_argument("--no-stealth", action="store_true",
         help="setup: skip the free stealth providers (Camoufox, Scrapling, Patchright)")
+    parser.add_argument("--query", help="module discover: from a home page, search this and draft from the results")
     parser.add_argument("--save", action="store_true",
         help="module discover: save the best drafted module")
     parser.add_argument("--module", metavar="ID",

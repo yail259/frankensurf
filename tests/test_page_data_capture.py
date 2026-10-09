@@ -1,3 +1,4 @@
+import json
 import asyncio
 
 import pytest
@@ -63,3 +64,15 @@ def test_capture_strips_anti_hijacking_prefixes_from_mislabelled_json():
     assert result["items"][0]["data"]["data"]["marketplace_search"]
     assert result["items"][1]["data"] == [1, 2, 3]
     assert result["skipped"] == 1
+
+
+def test_full_capture_trades_config_for_a_feed_of_items():
+    capture = _JsonCapture(2, 1_000_000)
+    capture.add("https://shop.test/api/config", 200, "application/json", b'{"flag": true}')
+    capture.add("https://shop.test/api/toggle", 200, "application/json", b'{"other": 1}')
+    feed = {"data": {"hits": [{"name": f"Lamp {n}", "price": n} for n in range(6)]}}
+    capture.add("https://shop.test/api/search?q=lamp", 200, "application/json", json.dumps(feed).encode())
+    capture.add("https://shop.test/api/more-config", 200, "application/json", b'{"x": 2}')
+    urls = sorted(item["url"] for item in capture.items)
+    assert urls == ["https://shop.test/api/search?q=lamp", "https://shop.test/api/toggle"]
+    assert capture.skipped == 1
