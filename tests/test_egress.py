@@ -65,7 +65,11 @@ async def test_a_walled_read_tries_the_other_connections_and_remembers_the_one_t
         again = await web.read(url, policy_overrides=QUIET)
         off = await web.read(url + "?x", policy_overrides={**QUIET, "use_egress_pool": False})
     assert first["receipt"]["status"] == "observed"
-    assert first["receipt"]["egress"] == {"used": "far", "tried": ["near", "far"], "after": "BLOCKED"}
+    record = first["receipt"]["egress"]
+    assert {key: record[key] for key in ("used", "tried", "after")} == {
+        "used": "far", "tried": ["near", "far"], "after": "BLOCKED"}
+    # The walled direct read is linked, and the trace names the connection too.
+    assert record["direct_trace_id"] and record["direct_trace_id"] != first["receipt"]["trace_id"]
     # The direct connection first, then each connection with the vendor's best tool first.
     assert first_calls[:2] == [("http", "direct"), ("camoufox", "direct")]
     assert ("camoufox", "near") in first_calls and first_calls[-1] == ("camoufox", "far")
@@ -131,3 +135,37 @@ async def test_plain_http_goes_through_the_connection(tmp_path, monkeypatch):
     assert receipt["egress"]["used"] == "lab" and "ships in two days" in result["text"]
     with pytest.raises(ValueError):
         WebPolicy(egress_tools=("http", "http"))
+
+
+async def test_tools_that_cannot_carry_a_connection_never_make_a_pass(tmp_path, monkeypatch):
+    monkeypatch.setenv("FRANKENSURF_EGRESS", "far=http://127.0.0.1:10")
+    calls = []
+    registry = ProviderRegistry()
+    for identifier in ("http", "camoufox", "local"):
+        registry.register(far_only(identifier, calls))
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    async with Runtime(tmp_path) as web:
+        result = await web.read("https://walled.example.com/item/lamp-1",
+                                policy_overrides={**QUIET, "egress_tools": ["local", "camoufox"]})
+    # "local" takes its proxy when it starts, so it is left out of the pass.
+    assert ("local", "far") not in calls and ("camoufox", "far") in calls
+    assert result["receipt"]["egress"]["used"] == "far"
+
+
+async def test_a_site_cooling_down_still_gets_its_known_connection(tmp_path, monkeypatch):
+    monkeypatch.setenv("FRANKENSURF_EGRESS", "near=http://127.0.0.1:9, far=http://127.0.0.1:10")
+    monkeypatch.setattr(Runtime, "pacing_enabled", True)
+    calls = []
+    registry = ProviderRegistry()
+    for identifier in ("http", "camoufox"):
+        registry.register(far_only(identifier, calls))
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    url = "https://walled.example.com/item/lamp-2"
+    cooling = {**QUIET, "origin_cooldown_seconds": 900}
+    async with Runtime(tmp_path) as web:
+        await web.read(url, policy_overrides=cooling)  # Through "far"; the hint is kept.
+        await web.read(url, policy_overrides={**cooling, "use_egress_pool": False})  # Walled: cool-down.
+        calls.clear()
+        again = await web.read(url, policy_overrides=cooling)
+    assert again["receipt"]["status"] == "observed" and again["receipt"]["egress"]["from_hint"] is True
+    assert calls and all(egress == "far" for _tool, egress in calls)

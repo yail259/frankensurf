@@ -1626,6 +1626,10 @@ def proxy_settings(url: str | None) -> dict | None:
 
 # Tools that reach the site from this machine, so the owner's proxy applies.
 _PROXIED = frozenset({"http", "local", "steel", "camoufox", "scrapling", "scrapling_http", "patchright", "nodriver"})
+# Of those, the ones that take a connection per read (egress.py): plain HTTP and
+# the isolated stealth browsers. The shared local browser and Steel take their
+# proxy when they start, so a pass through the pool never uses them.
+_EGRESS_CAPABLE = frozenset({"http", "camoufox", "scrapling", "scrapling_http", "patchright", "nodriver"})
 
 
 def _browser_proxy(settings):
@@ -3606,6 +3610,7 @@ class Runtime:
     async def _read_paced(self, url, policy, provider, adapter, policy_overrides,
                           workload_assertions, effective):
         key = self._pacing_key(url, effective) if self.pacing_enabled and isinstance(url, str) else None
+        cooling = None  # The cool-down failure, when only the site's known connection may try.
         if key is not None and (effective.origin_min_interval_seconds or effective.origin_cooldown_seconds):
             entry = self._pacing_load().get(key) or {}
             now = time.time()
@@ -3630,32 +3635,54 @@ class Runtime:
                 code = entry.get("code") if entry.get("code") in effective.origin_cooldown_failures else "RATE_LIMITED"
                 failure = WebFailure(code, "Origin is cooling down after %s; retry after %d seconds"
                                      % (code, int(entry["cooldown_until"] - now) + 1))
-                return await self._read(url, replace(effective, provider=provider) if provider else effective,
-                                        adapter=adapter, _planning_failure=failure)
+                if not (self._egress_usable(url, provider, effective) and self._egress_hint(url, effective)):
+                    return await self._read(url, replace(effective, provider=provider) if provider else effective,
+                                            adapter=adapter, _planning_failure=failure)
+                # The pause protects this address; the connection that got through
+                # last time is another one, so it alone still gets a try.
+                cooling = failure
             delay = entry.get("next_at", 0) - now
             if delay > 0:
                 await asyncio.sleep(min(delay, effective.origin_min_interval_seconds))
+        egress_state = {}
         result = await self._egress_first(url, policy, provider, adapter, policy_overrides,
-                                          workload_assertions, effective)
+                                          workload_assertions, effective, egress_state)
+        if result is None and cooling is not None:
+            return await self._read(url, replace(effective, provider=provider) if provider else effective,
+                                    adapter=adapter, _planning_failure=cooling)
         if result is None:
             result = await self._hedged(url, policy, provider, adapter, policy_overrides,
                                         workload_assertions, effective)
         result = await self._warm_up_retry(url, result, policy, provider, adapter, policy_overrides,
                                            workload_assertions, effective)
-        result = await self._egress_retry(url, result, policy, provider, adapter, policy_overrides,
-                                          workload_assertions, effective)
         if not effective.identity and not effective.profile:
+            # Learned from what this machine's own address met, before another connection.
             try:
                 self._learn_wall(result.get("receipt") or {})
             except OSError:
                 pass
-        if _wants_second_opinion(result, effective, provider):
+        result = await self._egress_retry(url, result, policy, provider, adapter, policy_overrides,
+                                          workload_assertions, effective, egress_state)
+        egress = self._egress_named((result.get("receipt") or {}).get("egress"))
+        if egress is None and _wants_second_opinion(result, effective, provider):
             result = await self._second_opinion(url, result, policy, adapter, policy_overrides,
                                                 workload_assertions, effective)
         if (self.completeness_enabled and effective.completeness_escalation
                 and _automatic_observed(result, effective, provider)):
-            result = await self._ensure_complete(url, result, policy, adapter, policy_overrides,
-                                                 workload_assertions, effective)
+            if egress is None:
+                result = await self._ensure_complete(url, result, policy, adapter, policy_overrides,
+                                                     workload_assertions, effective)
+            else:
+                # The page came through another connection: so does any climb from it,
+                # with the tools that can carry that connection.
+                from .egress import CURRENT as EGRESS
+                scoped_policy, scoped_overrides, scoped = self._egress_scoped(policy, policy_overrides, effective)
+                token = EGRESS.set(egress)
+                try:
+                    result = await self._ensure_complete(url, result, scoped_policy, adapter, scoped_overrides,
+                                                         workload_assertions, scoped)
+                finally:
+                    EGRESS.reset(token)
         self._offer_try_harder(result, effective)
         if adapter is None:
             self._grade(url, result, effective)
@@ -3704,39 +3731,64 @@ class Runtime:
                     and not (provider or effective.provider or effective.provider_candidates is not None
                              or effective.identity or effective.profile))
 
-    def _egress_tools(self, vendor, effective):
-        """The tools an egress pass uses: egress_tools, the wall vendor's best first."""
+    def _egress_named(self, record):
+        """The configured connection a receipt's egress record names, or None."""
+        name = (record or {}).get("used") if isinstance(record, dict) else None
+        return next((egress for egress in self.egress_pool if egress["name"] == name), None)
+
+    def _egress_scoped(self, policy, policy_overrides, effective):
+        """The read's policy without tools that would ignore the connection."""
+        direct = tuple(sorted(_PROXIED - _EGRESS_CAPABLE))
+        excluded = tuple(dict.fromkeys(tuple(effective.exclude_providers) + direct))
+        scoped = replace(effective, exclude_providers=excluded)
+        if policy is not None:
+            return replace(policy, exclude_providers=excluded), None, scoped
+        return None, {**(policy_overrides or {}), "exclude_providers": list(excluded)}, scoped
+
+    def _egress_tools(self, vendor, effective, egress):
+        """The tools a pass through `egress` uses: egress_tools that can carry a
+        connection, the ones that got past this wall vendor more often than not first."""
         tools = [tool for tool in effective.egress_tools
-                 if tool not in effective.exclude_providers and self.providers.is_available(tool)
-                 and _allowed(self.providers, tool, effective)]
+                 if tool in _EGRESS_CAPABLE and tool not in effective.exclude_providers
+                 and not (tool == "http" and self._transport is not None)
+                 # nodriver's browser flags cannot carry a username and password.
+                 and not (tool == "nodriver" and egress.get("username"))
+                 and self.providers.is_available(tool) and _allowed(self.providers, tool, effective)]
         if vendor:
             stats, _ = self._vendor_stats(vendor, effective)
             rate = {tool: (stats[tool][0] + 1) / (stats[tool][1] + 2) for tool in tools if tool in stats}
-            tools.sort(key=lambda tool: -rate.get(tool, 0.5))
+            ahead = sorted((tool for tool in tools if rate.get(tool, 0) >= 0.5), key=lambda tool: -rate[tool])
+            tools = ahead + [tool for tool in tools if tool not in ahead]
         return tools
 
     def _egress_hints_path(self):
         return self.state_dir / "egress-routes.json"
+
+    def _egress_hints(self):
+        try:
+            data = json.loads(self._egress_hints_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
 
     def _egress_hint(self, url, effective):
         """The connection that last got through this origin, if still fresh and still configured."""
         if not effective.origin_route_hint_ttl_seconds:
             return None
         try:
-            entry = json.loads(self._egress_hints_path().read_text(encoding="utf-8")).get(
-                self._pacing_key(url, effective))
-        except (OSError, ValueError, AttributeError):
+            entry = self._egress_hints().get(self._pacing_key(url, effective))
+        except (ValueError, TypeError, AttributeError):
             return None
         names = {egress["name"] for egress in self.egress_pool}
         if (isinstance(entry, dict) and entry.get("egress") in names
-                and time.time() - entry.get("at", 0) <= effective.origin_route_hint_ttl_seconds):
+                and isinstance(entry.get("at"), (int, float))
+                and time.time() - entry["at"] <= effective.origin_route_hint_ttl_seconds):
             return entry["egress"]
         return None
 
     def _record_egress_hint(self, url, effective, name):
         try:
-            path = self._egress_hints_path()
-            data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            data = self._egress_hints()
             key = self._pacing_key(url, effective)
             if name is None:
                 data.pop(key, None)
@@ -3745,8 +3797,8 @@ class Runtime:
             fd, temporary = tempfile.mkstemp(prefix=".egress-routes-", dir=self.state_dir)
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 json.dump(data, stream, sort_keys=True)
-            os.replace(temporary, path)
-        except (OSError, ValueError):
+            os.replace(temporary, self._egress_hints_path())
+        except (OSError, ValueError, TypeError, AttributeError):
             pass
 
     async def _egress_pass(self, url, policy, adapter, policy_overrides, workload_assertions, egress, tools):
@@ -3763,27 +3815,38 @@ class Runtime:
         finally:
             EGRESS.reset(token)
 
+    def _egress_record(self, kept, record, replaced=None):
+        """Put the pool's record on the kept receipt (and its trace); a direct read it
+        replaced is linked, and its cost stays on the bill."""
+        receipt = kept["receipt"]
+        if replaced is not None:
+            record["direct_trace_id"] = replaced.get("trace_id")
+            costs = [receipt.get("cost_usd"), replaced.get("cost_usd")]
+            receipt["cost_usd"] = None if None in costs else _total_cost(costs)
+        receipt["egress"] = record
+        self._annotate_trace(receipt, "egress")
+        return kept
+
     async def _egress_first(self, url, policy, provider, adapter, policy_overrides,
-                            workload_assertions, effective):
+                            workload_assertions, effective, state):
         """A site whose hint names a connection is read through it first."""
         if not self._egress_usable(url, provider, effective):
             return None
         name = self._egress_hint(url, effective)
         egress = next((item for item in self.egress_pool if item["name"] == name), None)
-        tools = self._egress_tools(None, effective)
+        tools = self._egress_tools(None, effective, egress) if egress is not None else []
         if egress is None or not tools:
             return None
         result = await self._egress_pass(url, policy, adapter, policy_overrides, workload_assertions,
                                          egress, tools)
-        receipt = result.get("receipt") or {}
-        if receipt.get("status") == "observed":
-            receipt["egress"] = {"used": name, "from_hint": True}
-            return result
+        state["tried"] = [name]
+        if (result.get("receipt") or {}).get("status") == "observed":
+            return self._egress_record(result, {"used": name, "from_hint": True})
         self._record_egress_hint(url, effective, None)  # It stopped working; read as usual.
         return None
 
     async def _egress_retry(self, url, result, policy, provider, adapter, policy_overrides,
-                            workload_assertions, effective):
+                            workload_assertions, effective, state):
         """A read the direct connection ended at a wall (or a rate limit) gets one
         pass through each other connection; the first that gets through wins and
         becomes the site's hint."""
@@ -3791,20 +3854,22 @@ class Runtime:
         code = (receipt.get("failure") or {}).get("code")
         if code not in effective.egress_failures or not self._egress_usable(url, provider, effective):
             return result
-        tools = self._egress_tools(receipt.get("wall_vendor"), effective)
-        if not tools:
-            return result
-        tried = []
+        tried = list(state.get("tried") or ())
         for egress in self.egress_pool:
+            if egress["name"] in tried:
+                continue  # The site's hint already tried it in this read.
+            tools = self._egress_tools(receipt.get("wall_vendor"), effective, egress)
+            if not tools:
+                continue
             second = await self._egress_pass(url, policy, adapter, policy_overrides, workload_assertions,
                                              egress, tools)
             tried.append(egress["name"])
-            second_receipt = second.get("receipt") or {}
-            if second_receipt.get("status") == "observed":
-                second_receipt["egress"] = {"used": egress["name"], "tried": tried, "after": code}
+            if (second.get("receipt") or {}).get("status") == "observed":
                 self._record_egress_hint(url, effective, egress["name"])
-                return second
-        receipt["egress"] = {"used": None, "tried": tried, "after": code}
+                return self._egress_record(second, {"used": egress["name"], "tried": tried, "after": code},
+                                           replaced=receipt)
+        if tried:
+            self._egress_record(result, {"used": None, "tried": tried, "after": code})
         return result
 
     async def _warm_up_retry(self, url, result, policy, provider, adapter, policy_overrides,
@@ -5075,29 +5140,34 @@ class Runtime:
         except (OSError, ValueError):
             return {}
 
-    def _vendor_stats(self, vendor, policy):
-        """What got past this wall vendor: this machine's own reads, on top of the
-        bundled priors (a few reads' worth) when the policy uses them."""
+    def _vendor_stats(self, vendor, policy, fade=8):
+        """What got past this wall vendor: this machine's own reads, plus the bundled
+        priors when the policy uses them. A prior counts less with every local try
+        and nothing after `fade` of them, so local evidence replaces it."""
         local = self._wall_stats().get(vendor) or {}
         priors = (_wall_priors().get(vendor) or {}) if policy.use_wall_priors else {}
         stats = {}
         for tool in set(local) | set(priors):
             wins, tries = local.get(tool, [0, 0])
             prior_wins, prior_tries = priors.get(tool, [0, 0])
-            stats[tool] = [wins + prior_wins, tries + prior_tries]
-        return stats, bool(priors)
+            weight = max(0, fade - tries) / fade
+            stats[tool] = [wins + prior_wins * weight, tries + prior_tries * weight]
+        return stats, local
 
     def _route_by_vendor(self, vendor, order, plan_state, receipt, policy, minimum=3, hopeless=8):
         """Move the tools that got past this wall vendor most often to the front of
         what is left, and the ones that never have in `hopeless` tries to the back.
         Learned from this machine's own reads and measured priors, never from site names."""
-        stats, primed = self._vendor_stats(vendor, policy)
+        stats, local = self._vendor_stats(vendor, policy)
         remaining = order[plan_state["position"] + 1:]
-        rated = sorted(((tool, (stats[tool][0] + 1) / (stats[tool][1] + 2)) for tool in remaining
-                        if tool in stats and stats[tool][1] >= minimum), key=lambda pair: -pair[1])
-        ahead = [tool for tool, rate in rated if rate >= 0.5]
-        last = [tool for tool in remaining if tool in stats and stats[tool][0] == 0
-                and stats[tool][1] >= hopeless]
+
+        def plan(counts):
+            rated = sorted(((tool, (counts[tool][0] + 1) / (counts[tool][1] + 2)) for tool in remaining
+                            if tool in counts and counts[tool][1] >= minimum), key=lambda pair: -pair[1])
+            return ([tool for tool, rate in rated if rate >= 0.5],
+                    [tool for tool in remaining if tool in counts and counts[tool][0] == 0
+                     and counts[tool][1] >= hopeless])
+        ahead, last = plan(stats)
         plan_state["hopeless"] = set(last)
         if ahead or last:
             order[plan_state["position"] + 1:] = ahead + [
@@ -5107,8 +5177,8 @@ class Runtime:
                 learned["first"] = ahead[0]
             if last:
                 learned["last"] = last
-            if primed:
-                learned["priors"] = True
+            if (ahead, last) != plan(local):
+                learned["priors"] = True  # The bundled priors changed this order.
             receipt.setdefault("routing", {})["learned_for"] = learned
 
     def _learn_wall(self, receipt):
@@ -5546,7 +5616,8 @@ class Runtime:
                             response, policy, candidate, candidate_version,
                             candidate_binding_id, attempt_started, _recipe,
                             attempt_cost, cost_reported)
-                        if self.proxy and candidate in _PROXIED:
+                        from .egress import CURRENT as EGRESS
+                        if self.proxy and candidate in _PROXIED and EGRESS.get() is None:
                             receipt["via_proxy"] = True
                         receipt.update(
                             status="observed", observed_at=utcnow(),

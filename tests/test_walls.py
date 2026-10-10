@@ -191,3 +191,21 @@ def test_the_bundled_priors_name_vendors_and_tools_only():
     priors = _wall_priors()
     assert priors and set(priors) <= set(WALL_VENDORS)
     assert all(0 <= wins <= tries <= 8 for tools in priors.values() for wins, tries in tools.values())
+
+
+async def test_priors_fade_as_this_machines_own_reads_come_in(tmp_path):
+    from frankensurf import runtime
+    async with Runtime(tmp_path) as web:
+        import json
+        (web.state_dir / "wall-stats.json").write_text(json.dumps({"cloudflare": {
+            "buried": [0, 8], "recovered": [3, 3]}}))
+        original = runtime._wall_priors
+        runtime._wall_priors = lambda: {"cloudflare": {"buried": [2, 8], "recovered": [0, 8]}}
+        try:
+            stats, _ = web._vendor_stats("cloudflare", WebPolicy())
+        finally:
+            runtime._wall_priors = original
+    # Eight local failures outweigh the prior entirely: the tool goes last.
+    assert stats["buried"] == [0, 8]
+    # Three local wins: the prior's eight failures count for five, so it is not buried.
+    assert stats["recovered"][0] == 3 and stats["recovered"][1] == 8

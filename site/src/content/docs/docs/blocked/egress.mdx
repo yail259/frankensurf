@@ -12,8 +12,9 @@ your direct connection walled gets one more pass through each of them.
 
 ## Set it up
 
-List your connections in `FRANKENSURF_EGRESS` (in the environment or
-`~/.config/frankensurf/.env`), comma- or newline-separated, as `name=url`:
+List your connections in `FRANKENSURF_EGRESS`, as `name=url`, separated by
+commas (newlines work in the environment, but not in
+`~/.config/frankensurf/.env`, which reads one line per setting):
 
 ```bash
 # A VPS you can SSH to is a free second connection:
@@ -22,29 +23,42 @@ export FRANKENSURF_EGRESS="vps=socks5://127.0.0.1:1080, phone=http://192.168.1.2
 ```
 
 Any HTTP or SOCKS5 proxy works: an SSH tunnel to a VPS, a proxy app on your
-phone's hotspot, a residential pool. SOCKS needs `pip install "frankensurf[socks]"`.
-The pool comes from your configuration only: receipts, traces and hints name a
-connection (`vps`), never its address or credentials.
+phone's hotspot, a residential pool. SOCKS needs the socks extra:
+`pip install "frankensurf[socks]"`, or `uv tool install "frankensurf[mcp,socks]"`
+for a tool install. The pool comes from your configuration only: receipts,
+traces and hints name a connection (`vps`), never its address or credentials.
 
 ## What happens
 
 1. A read starts on your direct connection, as always.
 2. If it ends at a wall or a rate limit (`egress_failures`: `BLOCKED`,
    `CAPTCHA`, `RATE_LIMITED`), each connection in the pool gets one pass with
-   `egress_tools` (Camoufox, Scrapling and plain HTTP by default), the tool
-   that best gets past this [wall vendor](/docs/blocked/escalation/#skipping-ahead) first.
+   `egress_tools` (Camoufox, Scrapling and plain HTTP by default). Tools that
+   got past this [wall vendor](/docs/blocked/escalation/#skipping-ahead) more
+   often than not go first. Only tools that take a connection per read count:
+   plain HTTP and the isolated stealth browsers (Camoufox, Scrapling,
+   Patchright, nodriver without a password). The local browser and Steel take
+   their proxy when they start, so they are left out.
+   If the page then needs a stronger read, that climb goes through the same
+   connection, with the same tools.
 3. The first connection that gets the page wins, and becomes the site's hint
    for a day (`origin_route_hint_ttl_seconds`): the next read of that site
    goes through it first, and falls back to the usual route if it stops working.
+   A site cooling down after a wall ([pacing](/docs/blocked/escalation/#pacing))
+   still gets its known connection, and only that.
 
-`receipt.egress` says what happened: `used` (the connection's name, or `null`),
-`tried`, and `after` (the failure that started it), or `from_hint: true` when
-the site's hint chose the connection.
+`receipt.egress` appears whenever the pool was tried: `used` (the connection's
+name, or `null` when none got through), `tried`, `after` (the failure that
+started it) and `direct_trace_id` (the walled direct read, whose cost stays on
+the bill), or `from_hint: true` when the site's hint chose the connection. The
+read's trace records it too.
 
 <Aside type="note">
   `FRANKENSURF_PROXY` is different: it sends every read from your machine
-  through one proxy, always. The pool is a fallback, used only after a wall.
-  Set `use_egress_pool: false` on a read to keep it on the direct connection.
+  through one proxy. The pool is a fallback, used only after a wall; a pass
+  through a pool connection uses that connection instead, and its receipt has
+  no `via_proxy`. Set `use_egress_pool: false` on a read to keep it on the
+  direct connection.
 </Aside>
 
 ## Options
@@ -54,4 +68,4 @@ the site's hint chose the connection.
 | `FRANKENSURF_EGRESS` | unset | Your other connections, `name=url`, comma- or newline-separated. |
 | `use_egress_pool` | `true` | Let a walled read try the pool. |
 | `egress_failures` | `BLOCKED`, `CAPTCHA`, `RATE_LIMITED` | Failures that start a pass through the pool. |
-| `egress_tools` | `camoufox`, `scrapling`, `http` | Tools a pass uses; the wall vendor's best goes first. |
+| `egress_tools` | `camoufox`, `scrapling`, `http` | Tools a pass uses (only those that take a connection per read); the wall vendor's best go first. |

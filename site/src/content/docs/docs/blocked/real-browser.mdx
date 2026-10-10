@@ -7,8 +7,8 @@ import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
 
 Some walls recognise automated browsers, however stealthy. A real browser,
 the Chrome or Edge you browse with, looks like what it is. Turn this on and a
-read that keeps meeting walls tries the page in your real browser, in a
-visible window, before giving up.
+read that keeps meeting walls tries the page in your real browser (a real,
+non-headless window, kept off your screen) before giving up.
 
 - **Opt-in.** Off unless a call allows it (`allow_real_browser`) or you set
   `FRANKENSURF_REAL_BROWSER=1` for every read.
@@ -20,11 +20,14 @@ visible window, before giving up.
   waited out, up to `real_browser_wait_seconds` (15). One that needs a person
   still fails as a wall, and a [handoff](/docs/blocked/handoff/) can follow.
 - **Out of your way.** On Linux and WSL it runs on a private virtual display
-  (Xvfb, when installed): a real, non-headless browser that never appears on
-  your screen or takes your cursor or focus, and that works on a server with no
-  display too. On macOS and Windows the window opens off-screen. Set
+  (Xvfb: `sudo apt install xvfb`): a real, non-headless browser that never
+  appears on your screen or takes your cursor or focus, and that works on a
+  server with no display too. Without Xvfb, and on macOS and Windows, the
+  window opens off-screen on your display. Set
   `FRANKENSURF_REAL_BROWSER_WINDOW=visible` to watch it on your screen (on a
-  virtual display it draws without your GPU, which a few walls notice).
+  virtual display it draws without your GPU, which a few walls notice). A
+  browser you attach with `FRANKENSURF_REAL_BROWSER_CDP` is yours to place:
+  its windows show wherever that browser runs.
 - **One page at a time** per profile, in a window that opens and closes. A
   read that finds the profile busy (another read, or another FrankenSurf
   process) skips the real browser rather than waiting.

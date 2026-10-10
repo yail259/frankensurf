@@ -356,3 +356,14 @@ def test_results_on_the_sites_own_subdomains_count():
     # Another site's links still don't count, nor does the same path twice on one host.
     assert item_links(page.replace("substack.example", "other.example", 10), url) == 0
     assert _same_site("shop.example.co.uk", "www.example.co.uk") and not _same_site("example.co.uk", "other.co.uk")
+    # Never a service subdomain, never a sibling tenant of a shared platform.
+    assert not _same_site("help.substack.example", "substack.example")
+    assert not _same_site("bob.github.io", "alice.github.io")
+    help_links = "".join(f'<a href="https://help.substack.example/hc/articles/36000123456{n}-track-order">Help {n}</a>'
+                         for n in range(12))
+    assert item_links("<html><body>" + help_links + "</body></html>", url) == 0
+    # A language switcher's copies of one page are one page, and never the page itself.
+    page_url = "https://en.market.example/c/10045678-laptops"
+    switcher = "".join(f'<a href="https://{lang}.market.example/c/10045678-laptops">{lang}</a>'
+                       for lang in ("fr", "de", "es", "it", "nl"))
+    assert item_links("<html><body>" + switcher + "</body></html>", page_url) == 0

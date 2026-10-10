@@ -28,7 +28,13 @@ def hosts_in(path: Path) -> set[str]:
 
 def main():
     used = set()
-    for path in list((ROOT / "scripts").glob("toolbench-heldout*.json")) + list((ROOT / "benchmarks").rglob("*.json*")):
+    # Earlier sets, every benchmark row and spot check, the tuned corpora, and the
+    # sites the package ships route seeds for. Never the candidates of a set being built.
+    sources = [path for path in (ROOT / "scripts").glob("*.json")
+               if not path.name.startswith("heldout") and path.name != "toolbench-heldout6.json"]
+    sources += list((ROOT / "benchmarks").rglob("*.json*"))
+    sources += [ROOT / "src/frankensurf/bundled_route_seeds.json", ROOT / "src/frankensurf/bundled_routes.json"]
+    for path in sources:
         used |= hosts_in(path)
     # Hosts that every set links to (services, tools) are not sites under test.
     json.dump(sorted(used), sys.stdout, indent=0)

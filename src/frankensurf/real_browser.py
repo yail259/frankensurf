@@ -2,7 +2,8 @@
 
 With ``allow_real_browser`` (or ``FRANKENSURF_REAL_BROWSER=1`` for every read), a
 read that keeps meeting walls tries the Google Chrome installed on this machine,
-or Microsoft Edge when there is no Chrome, in a visible window. A real browser's
+or Microsoft Edge when there is no Chrome, in a real (non-headless) window kept
+off your screen (see below). A real browser's
 own fingerprint gets past walls that recognise automated ones.
 
 It uses FrankenSurf's own persistent profile under

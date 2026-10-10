@@ -1,6 +1,6 @@
 {
  "schema": "frankensurf.toolbench-heldout/v1",
- "note": "Sixth held-out set, 10 October 2026: sites chosen from general knowledge before any of their pages was read (proposed and checked by agents without web access), none on an earlier set or spot check (669 hosts and their brands excluded automatically). Same rules as before: 800+ characters and the expect pattern at least 3 times. Some URLs may be dead or wrong; that counts against every arm alike. Use once.",
+ "note": "Sixth held-out set, 10 October 2026: sites chosen from general knowledge before any of their pages was read (proposed and checked by agents without web access), none on an earlier set or spot check (677 hosts and their brands excluded automatically). Same rules as before: 800+ characters and the expect pattern at least 3 times. Some URLs may be dead or wrong; that counts against every arm alike. Use once.",
  "cases": [
   {
    "site": "napaonline",
@@ -9,10 +9,10 @@
    "expect": "brake"
   },
   {
-   "site": "depop",
+   "site": "chrono24",
    "wall": "classifieds",
-   "url": "https://www.depop.com/search/?q=nike",
-   "expect": "nike"
+   "url": "https://www.chrono24.com/search/index.htm?dosearch=true&query=submariner",
+   "expect": "submariner"
   },
   {
    "site": "hex-pm",
@@ -99,10 +99,10 @@
    "expect": "brake"
   },
   {
-   "site": "chrono24",
+   "site": "catawiki",
    "wall": "classifieds",
-   "url": "https://www.chrono24.com/search/index.htm?dosearch=true&query=submariner",
-   "expect": "submariner"
+   "url": "https://www.catawiki.com/en/s?q=rolex",
+   "expect": "rolex"
   },
   {
    "site": "metacpan",
@@ -189,10 +189,10 @@
    "expect": "spark"
   },
   {
-   "site": "catawiki",
+   "site": "tradera",
    "wall": "classifieds",
-   "url": "https://www.catawiki.com/en/s?q=rolex",
-   "expect": "rolex"
+   "url": "https://www.tradera.com/search?q=lego",
+   "expect": "lego"
   },
   {
    "site": "libraries-io",
@@ -279,10 +279,10 @@
    "expect": "brake"
   },
   {
-   "site": "tradera",
+   "site": "kupujemprodajem",
    "wall": "classifieds",
-   "url": "https://www.tradera.com/search?q=lego",
-   "expect": "lego"
+   "url": "https://www.kupujemprodajem.com/pretraga?keywords=bicikl",
+   "expect": "bicikl"
   },
   {
    "site": "mvnrepository",
@@ -369,10 +369,10 @@
    "expect": "porsche"
   },
   {
-   "site": "kupujemprodajem",
+   "site": "bolha",
    "wall": "classifieds",
-   "url": "https://www.kupujemprodajem.com/pretraga?keywords=bicikl",
-   "expect": "bicikl"
+   "url": "https://www.bolha.com/?ctl=search_ads&keywords=playstation",
+   "expect": "playstation"
   },
   {
    "site": "hackage",
@@ -459,10 +459,10 @@
    "expect": "mustang"
   },
   {
-   "site": "bolha",
+   "site": "skelbiu",
    "wall": "classifieds",
-   "url": "https://www.bolha.com/?ctl=search_ads&keywords=playstation",
-   "expect": "playstation"
+   "url": "https://www.skelbiu.lt/skelbimai/?keywords=iphone",
+   "expect": "iphone"
   },
   {
    "site": "luarocks",
@@ -549,9 +549,9 @@
    "expect": "mustang"
   },
   {
-   "site": "skelbiu",
+   "site": "ikman",
    "wall": "classifieds",
-   "url": "https://www.skelbiu.lt/skelbimai/?keywords=iphone",
+   "url": "https://ikman.lk/en/ads/sri-lanka?query=iphone",
    "expect": "iphone"
   },
   {
@@ -639,10 +639,10 @@
    "expect": "camry"
   },
   {
-   "site": "ikman",
+   "site": "bikroy",
    "wall": "classifieds",
-   "url": "https://ikman.lk/en/ads/sri-lanka?query=iphone",
-   "expect": "iphone"
+   "url": "https://bikroy.com/en/ads/bangladesh?query=laptop",
+   "expect": "laptop"
   },
   {
    "site": "clojars",
@@ -729,10 +729,10 @@
    "expect": "camry"
   },
   {
-   "site": "bikroy",
+   "site": "enjoei",
    "wall": "classifieds",
-   "url": "https://bikroy.com/en/ads/bangladesh?query=laptop",
-   "expect": "laptop"
+   "url": "https://www.enjoei.com.br/s?q=vestido",
+   "expect": "vestido"
   },
   {
    "site": "ctan",
@@ -819,10 +819,10 @@
    "expect": "toyota"
   },
   {
-   "site": "enjoei",
+   "site": "rebuy-de",
    "wall": "classifieds",
-   "url": "https://www.enjoei.com.br/s?q=vestido",
-   "expect": "vestido"
+   "url": "https://www.rebuy.de/kaufen/suchen?q=kindle",
+   "expect": "kindle"
   },
   {
    "site": "debian-packages",
