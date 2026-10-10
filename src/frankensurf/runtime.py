@@ -130,6 +130,11 @@ class WebPolicy:
     # one read pinned to the first free tool on completeness_ladder starts too;
     # a complete page from either wins and the other is cancelled. 0 turns it off.
     hedge_after_seconds: float = 10.0
+    # Lightning mode: the read and up to two different free tools (the first
+    # ones on completeness_ladder) start at once, the first complete page wins,
+    # and escalation races four tools. Faster first reads, but a site sees up to
+    # three requests at once. FRANKENSURF_LIGHTNING=1 turns it on for every read.
+    lightning: bool = False
     # A search page that passes with fewer item links than this (and few
     # prices) also gets one read from the first allowed ladder tool.
     completeness_borderline_items: int = 20
@@ -293,6 +298,12 @@ class WebPolicy:
     # because it waits for someone, up to handoff_timeout_seconds.
     allow_handoff: bool = False
     handoff_timeout_seconds: float = 300.0
+    # Your real Chrome or Edge (see real_browser.py), opt-in: it joins an
+    # automatic read's route and moves ahead once walls do (escalate_after_walls).
+    # FRANKENSURF_REAL_BROWSER=1 turns it on for every read.
+    allow_real_browser: bool = False
+    # How long the real browser lets a challenge clear by itself; it never clicks.
+    real_browser_wait_seconds: float = 15.0
     # PDFs are read with pypdf; text from at most this many pages is returned.
     pdf_max_pages: int = 50
     capture_json_max_items: int = 20
@@ -379,6 +390,10 @@ class WebPolicy:
         _require(_is_int(self.completeness_parallel, 1) and self.completeness_parallel <= 4,
                  "completeness_parallel must be an integer from 1 to 4")
         _require(_is_number(self.hedge_after_seconds), "hedge_after_seconds must be finite and nonnegative")
+        _require(type(self.lightning) is bool, "lightning must be a boolean")
+        _require(type(self.allow_real_browser) is bool, "allow_real_browser must be a boolean")
+        _require(_is_number(self.real_browser_wait_seconds),
+                 "real_browser_wait_seconds must be finite and nonnegative")
         _require(_is_number(self.completeness_deadline_seconds, positive=True),
                  "completeness_deadline_seconds must be positive and finite")
         _require(_is_number(self.handoff_timeout_seconds, positive=True),
@@ -1706,6 +1721,10 @@ class Runtime:
         # appears in policies, receipts or traces (receipts say via_proxy).
         self.proxy = proxy_settings(os.getenv("FRANKENSURF_PROXY"))
         self.local_cdp_url = local_cdp_url or os.getenv("FRANKENSURF_LOCAL_CDP")
+        # Opt-ins the owner can set once for every read (an MCP server, say).
+        from .real_browser import enabled_by_environment
+        self.real_browser_default = enabled_by_environment()
+        self.lightning_default = os.getenv("FRANKENSURF_LIGHTNING", "").lower() in ("1", "true", "yes")
         if self.steel_api_url:
             p = urlparse(self.steel_api_url)
             if p.scheme not in {"http", "https"} or not p.hostname:
@@ -3684,6 +3703,92 @@ class Runtime:
             return identifier
         return None
 
+    def _lightning_tools(self, url, effective, adapter, count=2):
+        """Lightning's racers: the first free, available tools on the completeness
+        ladder (a reader that fetches from elsewhere and a stealth browser, by
+        default), leaving out the tool this site's hint already starts with."""
+        paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
+        hinted = self._origin_hint(url, effective)
+        tools = []
+        for identifier in effective.completeness_ladder:
+            if (identifier in paid or identifier == hinted or identifier in effective.exclude_providers
+                    or not self.providers.is_available(identifier)):
+                continue
+            try:
+                self.providers.require_enabled(identifier, effective,
+                                               operation="extract" if adapter else "read")
+            except WebFailure:
+                continue
+            tools.append(identifier)
+            if len(tools) == count:
+                break
+        return tools
+
+    async def _lightning(self, url, policy, provider, adapter, policy_overrides,
+                         workload_assertions, effective, racers):
+        """Lightning mode: the read and its racers start together, half a second
+        apart. The first complete page wins and the rest are cancelled. When none
+        is complete, the main read's page stands; when the main read fails, the
+        most complete page a racer brought back does."""
+        from .completeness import assess
+
+        async def pinned(tool, delay):
+            await asyncio.sleep(delay)
+            if policy is not None:
+                return await self._read_unpaced(url, replace(policy, provider_candidates=(tool,)), None,
+                                                 adapter, workload_assertions=workload_assertions)
+            return await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                **(policy_overrides or {}), "provider_candidates": [tool]},
+                workload_assertions=workload_assertions)
+        main = asyncio.ensure_future(self._read_unpaced(
+            url, policy, provider, adapter, policy_overrides=policy_overrides,
+            workload_assertions=workload_assertions))
+        tasks = {asyncio.ensure_future(pinned(tool, 0.5 * (index + 1))): tool
+                 for index, tool in enumerate(racers)}
+        record = {"lightning": True, "provider": racers[0], "providers": list(racers),
+                  "after_seconds": 0, "won": False, "tried": []}
+        pending = {main, *tasks}
+        main_result, best, best_score = None, None, None
+        try:
+            while pending:
+                done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in done:
+                    try:
+                        result = task.result()
+                    except Exception:
+                        continue
+                    if task is main:
+                        main_result = result
+                    else:
+                        record["tried"].append(tasks[task])
+                    receipt = result.get("receipt") or {}
+                    if receipt.get("status") != "observed":
+                        continue
+                    verdict = assess(url, result, expect_terms=effective.expect_terms)
+                    if verdict.get("complete"):
+                        if task is not main:
+                            record.update(won=True, status="observed", trace_id=receipt.get("trace_id"))
+                        receipt["hedge"] = record
+                        return result
+                    if task is not main and (best_score is None or verdict["score"] > best_score):
+                        best, best_score = result, verdict["score"]
+            failed = (main_result or {}).get("receipt") or {}
+            if failed.get("status") != "observed" and best is not None:
+                second = best["receipt"]
+                record.update(won=True, status="observed", trace_id=second.get("trace_id"),
+                              after_failure=(failed.get("failure") or {}).get("code"))
+                second["hedge"] = record
+                return best
+            if main_result is None:
+                return await main
+            failed["hedge"] = record
+            return main_result
+        finally:
+            for task in (main, *tasks):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(main, *tasks, return_exceptions=True)
+
     async def _hedged(self, url, policy, provider, adapter, policy_overrides,
                       workload_assertions, effective):
         """The read, with a hedge when it is slow.
@@ -3694,13 +3799,19 @@ class Runtime:
         first wins; an incomplete hedge page replaces the main read only when
         the main read fails. Free tools only, so a hedge never costs money.
         """
+        automatic = (isinstance(url, str) and self.completeness_enabled
+                     and not (provider or effective.provider or effective.provider_candidates is not None
+                              or effective.identity or effective.profile))
+        if automatic and (effective.lightning or self.lightning_default):
+            racers = self._lightning_tools(url, effective, adapter)
+            if racers:
+                return await self._lightning(url, policy, provider, adapter, policy_overrides,
+                                             workload_assertions, effective, racers)
         main = asyncio.ensure_future(self._read_unpaced(
             url, policy, provider, adapter, policy_overrides=policy_overrides,
             workload_assertions=workload_assertions))
         hedge_tool = None
-        if (effective.hedge_after_seconds and isinstance(url, str) and self.completeness_enabled
-                and not (provider or effective.provider or effective.provider_candidates is not None
-                         or effective.identity or effective.profile)):
+        if effective.hedge_after_seconds and automatic:
             hedge_tool = self._hedge_tool(effective, adapter)
         if hedge_tool is None:
             return await main
@@ -3864,6 +3975,7 @@ class Runtime:
         tried = {attempt.get("provider") for attempt in receipt.get("attempts") or ()}
         tried.add((receipt.get("second_opinion") or {}).get("other"))
         tried.update((receipt.get("hedge") or {}).get("walled") or ())
+        tried.update((receipt.get("hedge") or {}).get("tried") or ())
         ladder = []
         from .profiles import ACTIVE
         carriers = ACTIVE.get().carriers() if effective.profile and ACTIVE.get() else None
@@ -3955,7 +4067,7 @@ class Runtime:
         # rest are cancelled. A paid tool always runs alone, so racing never
         # spends twice. Starts are staggered so a site sees at most a couple of
         # reads at once.
-        width = effective.completeness_parallel
+        width = 4 if (effective.lightning or self.lightning_default) else effective.completeness_parallel
         pause = min(effective.origin_min_interval_seconds, 1.0)
         finished = False
         while queue and not finished and time.monotonic() <= deadline:
@@ -4388,6 +4500,12 @@ class Runtime:
             candidates = seeded + [
                 identifier for identifier in candidates
                 if identifier not in seeded]
+            if ((policy.allow_real_browser or self.real_browser_default)
+                    and policy.allow_local_browser and "real_browser" not in candidates
+                    and "real_browser" not in policy.exclude_providers
+                    and self.providers.is_available("real_browser")):
+                # Opt-in: tried after the rest, or sooner once walls move it ahead.
+                candidates.append("real_browser")
             if (policy.allow_handoff and "handoff" not in candidates
                     and self.providers.is_available("handoff")):
                 candidates.append("handoff")
@@ -4710,10 +4828,14 @@ class Runtime:
                     plan_state["elsewhere"] = True
             if (not plan_state["escalated"]
                     and plan_state["walls"] >= policy.escalate_after_walls):
-                paid = [item for item in order[plan_state["position"] + 1:]
-                        if manifests.get(item, {}).get("paid") and item not in hopeless]
-                if paid:
-                    move_ahead(paid)
+                # The owner's real browser first (free, and walls rarely tell it
+                # from a person), then allowed paid tools.
+                ahead = [item for item in order[plan_state["position"] + 1:]
+                         if item == "real_browser" and item not in hopeless]
+                ahead += [item for item in order[plan_state["position"] + 1:]
+                          if manifests.get(item, {}).get("paid") and item not in hopeless]
+                if ahead:
+                    move_ahead(ahead)
                     plan_state["escalated"] = True
         return "stop" if (resolved or terminal or candidate == order[-1]) else "next"
 
@@ -4922,6 +5044,9 @@ class Runtime:
         elif candidate == "handoff":
             policy_for_candidate = replace(policy, timeout_seconds=max(
                 policy.timeout_seconds, policy.handoff_timeout_seconds))
+        elif candidate == "real_browser":
+            policy_for_candidate = replace(policy, timeout_seconds=max(
+                policy.timeout_seconds, policy.real_browser_wait_seconds + 30))
         elif candidate in AGENT_PROVIDERS:
             policy_for_candidate = replace(policy, timeout_seconds=max(
                 policy.timeout_seconds, policy.agent_provider_timeout_seconds))

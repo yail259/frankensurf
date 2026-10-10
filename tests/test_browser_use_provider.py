@@ -422,3 +422,15 @@ async def test_worker_packet_rejection_preserves_valid_spend(monkeypatch, tmp_pa
     assert caught.value.code == expected
     assert caught.value.cost_usd == (None if override.get("cost_usd") is True else 0.02)
     assert caught.value._public_failure_evidence == []
+
+
+def test_browser_use_runs_when_a_call_names_it_not_in_every_read(monkeypatch):
+    from frankensurf.hosted_providers import AGENT_PROVIDERS
+    from frankensurf.providers import ProviderRegistry
+    monkeypatch.setattr(BrowserUseProvider, "available", lambda self, configured: True)
+    registry = ProviderRegistry()
+    registry.register(BrowserUseProvider())
+    # A model-driven agent takes tens of seconds a page: named reads, tasks and
+    # repair only, and each attempt gets an agent's time.
+    assert "browser_use" not in registry.candidates(WebPolicy())
+    assert "browser_use" in AGENT_PROVIDERS

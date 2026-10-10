@@ -33,7 +33,8 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
                expect_terms: list[str] | None = None, card_images: bool | None = None,
                module: str | None = None, module_override: dict | None = None,
                allow_archive: bool | None = None, items: bool | None = None,
-               main_content: bool | None = None,
+               main_content: bool | None = None, lightning: bool | None = None,
+               allow_real_browser: bool | None = None,
                acquisition_policy: dict | None = None) -> dict:
     """Retrieve evidence. Omitted settings use runtime defaults and operator public routes.
 
@@ -41,6 +42,12 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     operational settings. Content does not certify live or sold state.
     allow_handoff=True lets a person clear a CAPTCHA, sign-in or 2FA wall in a
     visible browser when every automatic route fails; the call waits for them.
+    lightning=True starts the read and two other tools at once and keeps the
+    first complete page: faster first reads of slow or walled sites, at the cost
+    of up to three requests to the site at once.
+    allow_real_browser=True lets the owner's real Chrome (or Edge) try a page that
+    keeps meeting walls, in a visible window with FrankenSurf's own profile. It
+    never clicks; a wall that needs a person still fails.
     main_content=True returns the article without menus, footers or banners as
     text (receipt.main_content says how it was cut; full_text_chars is the size
     of the whole page's text). Use it for articles and news.
@@ -69,7 +76,8 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
         "identity": identity, "allow_handoff": allow_handoff, "profile": profile,
         "expect_terms": tuple(expect_terms) if expect_terms else None,
         "card_images": card_images, "allow_archive": allow_archive, "auto_items": items,
-        "main_content": main_content})
+        "main_content": main_content, "lightning": lightning,
+        "allow_real_browser": allow_real_browser})
     # Agents read text: ask servers for markdown first (T0). Callers can pass
     # acquisition_policy={"prefer_markdown": false} for raw HTML structure.
     options.setdefault("prefer_markdown", True)
