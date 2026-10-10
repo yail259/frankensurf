@@ -1,0 +1,115 @@
+---
+title: Your real browser
+description: When walls keep stopping automated browsers, let your installed Chrome or Edge try the page.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+Some walls recognise automated browsers, however stealthy. A real browser,
+the Chrome or Edge you browse with, looks like what it is. Turn this on and a
+read that keeps meeting walls tries the page in your real browser, in a
+visible window, before giving up.
+
+- **Opt-in.** Off unless a call allows it (`allow_real_browser`) or you set
+  `FRANKENSURF_REAL_BROWSER=1` for every read.
+- **Never your profile.** It uses FrankenSurf's own browser profile, so your
+  cookies, history and sign-ins stay yours. Cookies that profile earns (a
+  challenge it passed) are kept, as in a person's browser, so later visits get
+  through more easily.
+- **Never clicks.** A challenge that clears by itself ("Just a moment...") is
+  waited out, up to `real_browser_wait_seconds` (15). One that needs a person
+  fails as a wall, unless the call allows a [handoff](#with-a-person): then you
+  clear it in that same window.
+- **One page at a time** per profile, in a window that opens and closes. A
+  read that finds the profile busy (another read, or another FrankenSurf
+  process) skips the real browser rather than waiting.
+
+## When it runs
+
+It joins the end of an automatic read's route (before an archived copy, when
+that is allowed too). Once the read has met walls
+(`escalate_after_walls`, 4), it moves to the front of what is left, ahead of any
+[paid tools](/docs/blocked/paid-tools/): it is free, and walls rarely tell it
+from a person. The receipt says so: `receipt.method` is `real_browser`, and
+`receipt.routing.escalated_to` names it when walls moved it ahead.
+
+A walled site pauses other reads for 15 minutes ([pacing](/docs/blocked/escalation/#pacing)),
+but not this one: a read that allows the real browser while the site is
+cooling down goes straight to it. So an agent can retry a walled page with
+`allow_real_browser` and get a real attempt.
+
+## With a person
+
+When the call also allows a [handoff](/docs/blocked/handoff/), a wall that
+doesn't clear by itself is handed to you in that same window: you clear it, and
+the read goes on there. The profile keeps what you earned (the challenge's
+cookies), so the next automatic reads of that site usually get through without
+you. No second handoff window opens.
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+# Try your real browser when walls keep blocking
+page = await web.read(url, policy_overrides={"allow_real_browser": True})
+
+# Straight to your real browser
+page = await web.read(url, provider="real_browser")
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read https://example.com/item/123 --real-browser
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://example.com/item/123", "allow_real_browser": true } }
+```
+
+</TabItem>
+</Tabs>
+
+## Which browser
+
+FrankenSurf looks for Google Chrome, then Microsoft Edge, where they install
+themselves on Linux, macOS and Windows. Point it elsewhere with
+`FRANKENSURF_REAL_BROWSER_PATH` (any Chromium-based browser, such as Brave).
+
+To use a browser that is already running, start it with remote debugging and a
+profile of its own, and set `FRANKENSURF_REAL_BROWSER_CDP`:
+
+```bash
+google-chrome --remote-debugging-port=9222 --user-data-dir="$HOME/.frankensurf-chrome"
+export FRANKENSURF_REAL_BROWSER_CDP=http://127.0.0.1:9222
+```
+
+Each read then opens a fresh private window there and closes it afterwards:
+no cookies go in or out, so the browser's own sign-ins never reach a read.
+Chrome refuses remote debugging on your everyday profile, which is why it needs
+its own.
+
+<Aside type="note">
+  It needs a display, or `FRANKENSURF_REAL_BROWSER_CDP`. Without either it
+  reports itself unavailable and is skipped. In WSL, a Linux Chrome inside WSL
+  opens through WSLg; a Windows browser is reachable only through
+  `FRANKENSURF_REAL_BROWSER_CDP`, and only when WSL can reach Windows'
+  localhost (mirrored networking).
+</Aside>
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `allow_real_browser` | `false` | Let your real browser join automatic reads. |
+| `real_browser_wait_seconds` | `15` | How long a challenge gets to clear by itself. |
+| `FRANKENSURF_REAL_BROWSER` | unset | `1` turns it on for every read (an MCP server, say). |
+| `FRANKENSURF_REAL_BROWSER_PATH` | Chrome, then Edge | The browser to launch. |
+| `FRANKENSURF_REAL_BROWSER_PROFILE` | `~/.local/share/frankensurf/real-browser-profile` | FrankenSurf's own profile for it. |
+| `FRANKENSURF_REAL_BROWSER_CDP` | none | Open tabs in a real browser you already run. |

@@ -1722,9 +1722,9 @@ class Runtime:
         self.proxy = proxy_settings(os.getenv("FRANKENSURF_PROXY"))
         self.local_cdp_url = local_cdp_url or os.getenv("FRANKENSURF_LOCAL_CDP")
         # Opt-ins the owner can set once for every read (an MCP server, say).
-        from .real_browser import enabled_by_environment
-        self.real_browser_default = enabled_by_environment()
-        self.lightning_default = os.getenv("FRANKENSURF_LIGHTNING", "").lower() in ("1", "true", "yes")
+        from .hosted_providers import _setting
+        self.real_browser_default = (_setting("real_browser") or "").lower() in ("1", "true", "yes")
+        self.lightning_default = (_setting("lightning") or "").lower() in ("1", "true", "yes")
         if self.steel_api_url:
             p = urlparse(self.steel_api_url)
             if p.scheme not in {"http", "https"} or not p.hostname:
@@ -3197,6 +3197,12 @@ class Runtime:
         ``items`` and the receipt gains ``module``; raw page data is unchanged.
         """
         from .site_modules import ACTIVE as ACTIVE_MODULE, SiteModule, SiteModuleError
+        if policy is None and (self.lightning_default or self.real_browser_default):
+            # The owner's switches for every read (FRANKENSURF_LIGHTNING,
+            # FRANKENSURF_REAL_BROWSER) are defaults: anything the call sets wins.
+            policy_overrides = {**({"lightning": True} if self.lightning_default else {}),
+                                **({"allow_real_browser": True} if self.real_browser_default else {}),
+                                **(policy_overrides or {})}
         selected, source = None, None
         try:
             if module_override is not None:
@@ -3471,6 +3477,7 @@ class Runtime:
             return
         tried = {attempt.get("provider") for attempt in receipt.get("attempts") or ()}
         tried |= {step.get("provider") for step in (receipt.get("completeness") or {}).get("escalations") or ()}
+        tried |= set((receipt.get("hedge") or {}).get("tried") or ()) | set((receipt.get("hedge") or {}).get("walled") or ())
         tried |= set(policy.exclude_providers)
         untried = [i for i in policy.completeness_ladder
                    if i not in tried and self.providers.is_available(i) and _allowed(self.providers, i, policy)]
@@ -3490,6 +3497,7 @@ class Runtime:
             raise ValueError("Unknown trace_id for retry_of") from None
         tried = [attempt.get("provider") for attempt in receipt.get("attempts") or ()]
         tried += [step.get("provider") for step in (receipt.get("completeness") or {}).get("escalations") or ()]
+        tried += list((receipt.get("hedge") or {}).get("tried") or ()) + list((receipt.get("hedge") or {}).get("walled") or ())
         tried.append((receipt.get("second_opinion") or {}).get("other"))
         # A retry of a retry also skips what the earlier rounds skipped.
         tried += (receipt.get("try_harder") or {}).get("excluded") or []
@@ -3555,10 +3563,18 @@ class Runtime:
             hinted = self._origin_hint(url, effective)
             # Unblockers reach the site through their own network, and a
             # handoff is a person clearing the wall, so a cool-down holds neither.
-            unblocker = ((provider or effective.provider) in UNBLOCKERS | {"handoff"}
+            unblocker = ((provider or effective.provider) in UNBLOCKERS | {"handoff", "real_browser"}
                          or (hinted in UNBLOCKERS and effective.allow_paid_fallbacks
                              and not effective.provider
                              and self.providers.is_available(hinted)))
+            if (entry.get("cooldown_until", 0) > now and not unblocker and not (provider or effective.provider)
+                    and effective.allow_real_browser and effective.allow_local_browser
+                    and "real_browser" not in effective.exclude_providers
+                    and effective.provider_candidates is None and not effective.identity and not effective.profile
+                    and self.providers.is_available("real_browser")):
+                # The site walled the other tools minutes ago; the owner's real
+                # browser, which walls rarely tell from a person, still gets a try.
+                provider, unblocker = "real_browser", True
             if entry.get("cooldown_until", 0) > now and not unblocker:
                 code = entry.get("code") if entry.get("code") in effective.origin_cooldown_failures else "RATE_LIMITED"
                 failure = WebFailure(code, "Origin is cooling down after %s; retry after %d seconds"
@@ -3727,9 +3743,10 @@ class Runtime:
     async def _lightning(self, url, policy, provider, adapter, policy_overrides,
                          workload_assertions, effective, racers):
         """Lightning mode: the read and its racers start together, half a second
-        apart. The first complete page wins and the rest are cancelled. When none
-        is complete, the main read's page stands; when the main read fails, the
-        most complete page a racer brought back does."""
+        apart, and the main read leaves the racers' tools to them. The first
+        complete page wins and the rest are cancelled. When none is complete, the
+        more complete of the main read's page and the racers' best stands; when
+        the main read fails, the racers' best does."""
         from .completeness import assess
 
         async def pinned(tool, delay):
@@ -3740,15 +3757,31 @@ class Runtime:
             return await self._read_unpaced(url, None, None, adapter, policy_overrides={
                 **(policy_overrides or {}), "provider_candidates": [tool]},
                 workload_assertions=workload_assertions)
-        main = asyncio.ensure_future(self._read_unpaced(
-            url, policy, provider, adapter, policy_overrides=policy_overrides,
-            workload_assertions=workload_assertions))
+        # The main read leaves the racers' tools to the racers: one tool never
+        # reads the same page twice at once.
+        if policy is not None:
+            main_read = self._read_unpaced(url, replace(policy, exclude_providers=tuple(
+                dict.fromkeys(tuple(policy.exclude_providers) + tuple(racers)))), provider, adapter,
+                workload_assertions=workload_assertions)
+        else:
+            excluded = list(dict.fromkeys(list((policy_overrides or {}).get("exclude_providers") or ())
+                                          + list(racers)))
+            main_read = self._read_unpaced(url, None, provider, adapter, policy_overrides={
+                **(policy_overrides or {}), "exclude_providers": excluded},
+                workload_assertions=workload_assertions)
+        main = asyncio.ensure_future(main_read)
         tasks = {asyncio.ensure_future(pinned(tool, 0.5 * (index + 1))): tool
                  for index, tool in enumerate(racers)}
         record = {"lightning": True, "provider": racers[0], "providers": list(racers),
                   "after_seconds": 0, "won": False, "tried": []}
         pending = {main, *tasks}
-        main_result, best, best_score = None, None, None
+        main_result, main_score, best, best_score, best_tool = None, None, None, None, None
+
+        def won(result, tool, **extra):
+            receipt = result["receipt"]
+            record.update(won=True, provider=tool, status="observed", trace_id=receipt.get("trace_id"), **extra)
+            receipt["hedge"] = record
+            return result
         try:
             while pending:
                 done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
@@ -3766,19 +3799,23 @@ class Runtime:
                         continue
                     verdict = assess(url, result, expect_terms=effective.expect_terms)
                     if verdict.get("complete"):
-                        if task is not main:
-                            record.update(won=True, status="observed", trace_id=receipt.get("trace_id"))
-                        receipt["hedge"] = record
-                        return result
-                    if task is not main and (best_score is None or verdict["score"] > best_score):
-                        best, best_score = result, verdict["score"]
+                        if task is main:
+                            receipt["hedge"] = record
+                            return result
+                        return won(result, tasks[task])
+                    if task is main:
+                        main_score = verdict["score"]
+                    elif best_score is None or verdict["score"] > best_score:
+                        best, best_score, best_tool = result, verdict["score"], tasks[task]
             failed = (main_result or {}).get("receipt") or {}
             if failed.get("status") != "observed" and best is not None:
-                second = best["receipt"]
-                record.update(won=True, status="observed", trace_id=second.get("trace_id"),
-                              after_failure=(failed.get("failure") or {}).get("code"))
-                second["hedge"] = record
-                return best
+                return won(best, best_tool, after_failure=(failed.get("failure") or {}).get("code"),
+                           walled=sorted({item["provider"] for item in failed.get("attempts") or ()
+                                          if isinstance(item, dict) and item.get("provider")
+                                          and item.get("failure") in effective.escalation_failures}))
+            if best is not None and main_score is not None and best_score > main_score:
+                # Neither is complete; the racer's page is the more complete one.
+                return won(best, best_tool)
             if main_result is None:
                 return await main
             failed["hedge"] = record
@@ -3802,7 +3839,8 @@ class Runtime:
         automatic = (isinstance(url, str) and self.completeness_enabled
                      and not (provider or effective.provider or effective.provider_candidates is not None
                               or effective.identity or effective.profile))
-        if automatic and (effective.lightning or self.lightning_default):
+        from .site_modules import ACTIVE as ACTIVE_MODULE
+        if automatic and effective.lightning and adapter is None and ACTIVE_MODULE.get() is None:
             racers = self._lightning_tools(url, effective, adapter)
             if racers:
                 return await self._lightning(url, policy, provider, adapter, policy_overrides,
@@ -3913,6 +3951,8 @@ class Runtime:
         chosen, other = (second, first) if rendered_wins else (first, second)
         other_receipt = other.get("receipt") or {}
         receipt = chosen["receipt"]
+        if rendered_wins and (first.get("receipt") or {}).get("hedge") and "hedge" not in receipt:
+            receipt["hedge"] = first["receipt"]["hedge"]
         receipt["second_opinion"] = {
             "kept": receipt.get("method"), "other": other_receipt.get("method"),
             "other_status": other_receipt.get("status"),
@@ -4067,7 +4107,7 @@ class Runtime:
         # rest are cancelled. A paid tool always runs alone, so racing never
         # spends twice. Starts are staggered so a site sees at most a couple of
         # reads at once.
-        width = 4 if (effective.lightning or self.lightning_default) else effective.completeness_parallel
+        width = 4 if effective.lightning else effective.completeness_parallel
         pause = min(effective.origin_min_interval_seconds, 1.0)
         finished = False
         while queue and not finished and time.monotonic() <= deadline:
@@ -4500,13 +4540,17 @@ class Runtime:
             candidates = seeded + [
                 identifier for identifier in candidates
                 if identifier not in seeded]
-            if ((policy.allow_real_browser or self.real_browser_default)
-                    and policy.allow_local_browser and "real_browser" not in candidates
-                    and "real_browser" not in policy.exclude_providers
-                    and self.providers.is_available("real_browser")):
-                # Opt-in: tried after the rest, or sooner once walls move it ahead.
-                candidates.append("real_browser")
-            if (policy.allow_handoff and "handoff" not in candidates
+            real_browser = (policy.allow_real_browser and policy.allow_local_browser
+                            and "real_browser" not in candidates
+                            and "real_browser" not in policy.exclude_providers
+                            and self.providers.is_available("real_browser"))
+            if real_browser:
+                # Opt-in: tried after the rest (but before a stored copy), or
+                # sooner once walls move it ahead.
+                archive = {item["id"] for item in self.providers.inspect() if item.get("archive")}
+                at = next((index for index, item in enumerate(candidates) if item in archive), len(candidates))
+                candidates.insert(at, "real_browser")
+            if (policy.allow_handoff and not real_browser and "handoff" not in candidates
                     and self.providers.is_available("handoff")):
                 candidates.append("handoff")
             if policy.profile:
@@ -5046,7 +5090,8 @@ class Runtime:
                 policy.timeout_seconds, policy.handoff_timeout_seconds))
         elif candidate == "real_browser":
             policy_for_candidate = replace(policy, timeout_seconds=max(
-                policy.timeout_seconds, policy.real_browser_wait_seconds + 30))
+                policy.timeout_seconds, policy.real_browser_wait_seconds + 30
+                + (policy.handoff_timeout_seconds if policy.allow_handoff else 0)))
         elif candidate in AGENT_PROVIDERS:
             policy_for_candidate = replace(policy, timeout_seconds=max(
                 policy.timeout_seconds, policy.agent_provider_timeout_seconds))

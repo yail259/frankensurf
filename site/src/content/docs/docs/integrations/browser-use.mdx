@@ -39,7 +39,10 @@ import { Tabs, TabItem } from "@astrojs/starlight/components";
 
 ## Use it
 
-It joins the default route by itself once set up. To use it on its own:
+It runs when a call names it, never as a step of ordinary reads: a model-driven
+agent takes tens of seconds a page (about 40 s for a simple page on a local 9B
+model), where FrankenSurf's own browsers take a few. Each attempt gets an
+agent's time (`agent_provider_timeout_seconds`, 300 s). To use it:
 
 <Tabs syncKey="lang">
 <TabItem label="Python">

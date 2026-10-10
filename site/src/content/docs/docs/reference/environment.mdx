@@ -16,6 +16,8 @@ description: Every environment variable and file Frankensurf reads.
 | `FRANKENSURF_BROWSER_USE_PYTHON`, `FRANKENSURF_BROWSER_USE_BROWSER`, `FRANKENSURF_BROWSER_USE_MODEL_FACTORY`, `FRANKENSURF_BROWSER_USE_BILLING`, `FRANKENSURF_BROWSER_USE_BINDING_REVISION` | The Browser Use agent. |
 | `FRANKENSURF_SIGNATURE_AGENT`, `FRANKENSURF_BOT_AUTH_KEY_FILE` | [Signed requests](/docs/blocked/signed-requests/). |
 | `FRANKENSURF_HANDOFF_PROFILE`, `FRANKENSURF_HANDOFF_CDP_URL` | [Handoff](/docs/blocked/handoff/). |
+| `FRANKENSURF_REAL_BROWSER`, `FRANKENSURF_REAL_BROWSER_PATH`, `FRANKENSURF_REAL_BROWSER_PROFILE`, `FRANKENSURF_REAL_BROWSER_CDP` | [Your real browser](/docs/blocked/real-browser/): `1` turns it on for every read. |
+| `FRANKENSURF_LIGHTNING` | `1` turns [lightning mode](/docs/read/lightning/) on for every read. Both switches also work in `~/.config/frankensurf/.env`, and both are defaults: a call that sets the field itself wins. |
 | `FRANKENSURF_<SERVICE>_API_KEY` and rate settings | Paid services. See [Keys and costs](/docs/blocked/paid-tools/). |
 
 ## Files

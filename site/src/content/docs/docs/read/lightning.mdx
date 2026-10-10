@@ -1,0 +1,69 @@
+---
+title: Lightning mode
+description: Start three tools at once on a page and keep the first complete one.
+---
+
+import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+
+An ordinary read starts with the cheapest tool and climbs only when it has to,
+one tool at a time. That is polite and usually fast, but a walled or
+script-heavy site can take several tools in turn. Lightning mode starts the
+read and two other tools at once and keeps the first complete page.
+
+- The racers are the first free tools on the
+  [completeness ladder](/docs/blocked/escalation/#completeness): by default
+  Jina Reader, which fetches from its own network, and Scrapling, a stealth
+  browser. They start half a second apart, after the read itself, and the read
+  leaves those two tools to them, so no tool reads the page twice.
+- The first [complete](/docs/blocked/escalation/#completeness) page wins; the
+  other reads are cancelled.
+- When no page is complete, the more complete of the read's page and the
+  racers' best stands; when the read failed, the racers' best does.
+- An incomplete page then escalates, racing up to four of the tools not tried
+  yet instead of two.
+- Free tools only: lightning never starts a paid tool.
+- A read shaped by a [site module](/docs/read/site-modules/) is not raced: the
+  module reads the page from its own kind of source.
+
+<Aside type="caution">
+  A site sees up to three requests at once from you instead of one. Keep it for
+  reads where time matters, and use [batch](/docs/read/batch/) rather than
+  lightning for many pages on one site.
+</Aside>
+
+## Usage
+
+<Tabs syncKey="lang">
+<TabItem label="Python">
+
+```python
+page = await web.read(url, policy_overrides={"lightning": True})
+```
+
+</TabItem>
+<TabItem label="CLI">
+
+```bash
+frankensurf read "https://www.bandcamp.com/search?q=jazz" --lightning
+```
+
+</TabItem>
+<TabItem label="MCP">
+
+```json
+{ "tool": "read", "arguments": { "url": "https://www.bandcamp.com/search?q=jazz", "lightning": true } }
+```
+
+</TabItem>
+</Tabs>
+
+Set `FRANKENSURF_LIGHTNING=1` (in the environment or `~/.config/frankensurf/.env`)
+to turn it on for every read, for example on an MCP server where every answer is
+waited on. It is a default: a call that sets `lightning: false` reads normally.
+
+## The receipt
+
+`receipt.hedge` describes the race: `lightning: true`, the racers in
+`providers`, the ones that finished in `tried`, and `won: true` with the winning
+racer in `provider` when a racer's page was kept. A racer that wins becomes the site's route hint, so the next read
+of that site starts with it.

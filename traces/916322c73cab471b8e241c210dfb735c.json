@@ -1,0 +1,88 @@
+{
+  "url": null,
+  "title": null,
+  "content_type": "",
+  "headers": {},
+  "structured": null,
+  "image_urls": [],
+  "images": [],
+  "field_status": {
+    "availability": "unknown",
+    "transaction_price": "unknown"
+  },
+  "receipt": {
+    "trace_id": "916322c73cab471b8e241c210dfb735c",
+    "status": "failed",
+    "operation": "read",
+    "action_class": "READ_PUBLIC",
+    "acquisition_context": "43ba7165236153999a7fbcb6ecb74f6ac1554d6e1b90f7e398ad1252e59a8c84",
+    "adapter": null,
+    "observed_at": "2026-10-10T01:02:16.560807+00:00",
+    "freshness_seconds": 0,
+    "cache_hit": false,
+    "method": null,
+    "identity": null,
+    "http_status": null,
+    "failure": {
+      "code": "BLOCKED",
+      "message": "Origin is cooling down after BLOCKED; retry after 899 seconds"
+    },
+    "requested_url": null,
+    "final_url": null,
+    "confidence": null,
+    "cost_usd": 0,
+    "cost_basis": "self-hosted software; excludes electricity/hardware",
+    "evidence": [],
+    "attempts": [],
+    "routing": {
+      "provider_plan": {
+        "ordered": [
+          "http",
+          "local",
+          "steel",
+          "camoufox",
+          "scrapling",
+          "scrapling_http",
+          "patchright",
+          "nodriver",
+          "crawl4ai",
+          "jina_reader",
+          "real_browser"
+        ],
+        "preferred": null,
+        "execution": "sequential",
+        "basis": "registration order; insufficient exact-scope evidence",
+        "evidence": [],
+        "reliability": null,
+        "scope": {
+          "operation": "read",
+          "adapter": null,
+          "adapter_version": null,
+          "adapter_binding_id": null,
+          "identity_class": "public",
+          "acquisition_context": "43ba7165236153999a7fbcb6ecb74f6ac1554d6e1b90f7e398ad1252e59a8c84"
+        }
+      }
+    },
+    "latency_ms": 0,
+    "recovery": {
+      "status": "available",
+      "executed": false,
+      "operation": "repair",
+      "requires_explicit_invocation": true,
+      "next_step": "agent_browser_diagnosis",
+      "instruction": "Inspect the exact public page in an authorized browser, diagnose access and native navigation, then propose a reusable provider or adapter repair.",
+      "trace_id": "916322c73cab471b8e241c210dfb735c",
+      "attempts": [],
+      "local_artifacts": [],
+      "repair_input": {
+        "path": "/home/yail/Documents/Codex/2026-09-30/frankensurf-public/repairs/inputs/916322c73cab471b8e241c210dfb735c.json",
+        "sha256": "58e7892c6aca58786de92775d27c1af15676dd0ea645dfec5b390008f4bf0708",
+        "bytes": 5151
+      },
+      "failure_stage": null,
+      "authority": "public_read",
+      "validation_required": "Core replays original assertions against retained fixtures and browser truth; independent live canary, performance comparison and explicit hash-bound promotion remain required."
+    }
+  }
+}

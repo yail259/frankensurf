@@ -129,3 +129,53 @@ async def test_lightning_can_be_switched_on_for_every_read(tmp_path, install, mo
     assert result["receipt"]["hedge"]["lightning"] is True
     with pytest.raises(ValueError):
         WebPolicy(lightning="yes")
+
+
+PARTIAL = ("<html><title>Search</title><body>" + CHROME
+           + "".join(f'<a href="/product/brass-desk-lamp-{n}/SKU{n:06d}">Lamp {n}</a>' for n in range(6))
+           + "</body></html>")
+
+
+async def test_an_explicit_no_beats_the_switch_and_no_tool_reads_the_page_twice(tmp_path, install, monkeypatch):
+    log = []
+    monkeypatch.setenv("FRANKENSURF_LIGHTNING", "1")
+    install(tool("slow_main", RESULTS, 1, log), tool("reader", RESULTS, 3, log, rendering=True),
+            tool("stealth", RESULTS, 3, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        declined = await web.read(SEARCH, policy_overrides={**POLICY, "lightning": False})
+        log.clear()
+        raced = await web.read(SEARCH + "&p=2", policy_overrides=POLICY)
+    assert "hedge" not in declined["receipt"]
+    # The main read leaves the racers' tools to the racers.
+    assert raced["receipt"]["hedge"]["lightning"] is True
+    assert log.count(("start", "reader")) <= 1 and log.count(("start", "stealth")) <= 1
+
+
+async def test_when_nothing_is_complete_the_more_complete_page_stands(tmp_path, install):
+    log = []
+    install(tool("main", SHELL, 0, log), tool("reader", PARTIAL, 0.2, log, rendering=True),
+            tool("stealth", SHELL, 0, log, rendering=True))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={**POLICY, "lightning": True,
+                                                          "completeness_escalation": False})
+    hedge = result["receipt"]["hedge"]
+    assert result["receipt"]["method"] == "reader" and hedge["won"] is True and hedge["provider"] == "reader"
+
+
+async def test_a_site_module_read_is_not_raced(tmp_path, install):
+    from frankensurf.site_modules import ACTIVE
+    log = []
+    install(tool("slow_main", RESULTS, 0.5, log), tool("reader", RESULTS, 0, log, rendering=True),
+            tool("stealth", RESULTS, 0, log, rendering=True))
+    class Module:
+        """Stands in for the site module a read is shaped by."""
+        def invalid_page(self, *args):
+            return False
+    token = ACTIVE.set(Module())
+    try:
+        async with Runtime(tmp_path) as web:
+            result = await web.read(SEARCH, policy_overrides={**POLICY, "lightning": True,
+                                                              "completeness_escalation": False}, module=False)
+    finally:
+        ACTIVE.reset(token)
+    assert result["receipt"]["method"] == "slow_main" and ("start", "reader") not in log

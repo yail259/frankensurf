@@ -40,7 +40,8 @@ def registry(monkeypatch):
 
 
 POLICY = dict(origin_route_hint_ttl_seconds=0, provider_max_attempts_per_candidate=1,
-              warm_up_on_wall=False, hedge_after_seconds=0)
+              warm_up_on_wall=False, hedge_after_seconds=0, origin_min_interval_seconds=0,
+              origin_cooldown_seconds=0)
 
 
 def tried(result):
@@ -65,9 +66,45 @@ async def test_the_real_browser_goes_before_paid_tools_and_can_be_switched_on_by
     registry(provider("w1", "BLOCKED"), provider("w2", "BLOCKED"), provider("paid_ok", "ok", paid=True),
              provider("real_browser", "CAPTCHA", scope=True))
     async with Runtime(tmp_path) as web:
-        result = await web.read(URL, WebPolicy(escalate_after_walls=2, allow_paid_fallbacks=True, **POLICY))
+        result = await web.read(URL, policy_overrides=dict(escalate_after_walls=2, allow_paid_fallbacks=True,
+                                                           **POLICY))
+        # The switch is a default: a call that says no wins, and a whole
+        # WebPolicy fixes every field itself.
+        declined = await web.read(URL + "?b", policy_overrides=dict(escalate_after_walls=2, allow_real_browser=False,
+                                                                     **POLICY))
+        whole = await web.read(URL + "?c", WebPolicy(escalate_after_walls=2, **POLICY))
     assert tried(result) == ["w1", "w2", "real_browser", "paid_ok"]
     assert result["receipt"]["status"] == "observed"
+    assert "real_browser" not in tried(declined) and "real_browser" not in tried(whole)
+
+
+async def test_a_site_cooling_down_after_walls_still_gets_the_real_browser(tmp_path, registry, monkeypatch):
+    monkeypatch.delenv("FRANKENSURF_REAL_BROWSER", raising=False)
+    monkeypatch.setattr(Runtime, "pacing_enabled", True)
+    registry(provider("w1", "BLOCKED"), provider("real_browser", "ok", scope=True))
+    cooling = {**POLICY, "origin_cooldown_seconds": 900}
+    async with Runtime(tmp_path) as web:
+        first = await web.read(URL, policy_overrides=cooling)
+        refused = await web.read(URL, policy_overrides=cooling)
+        retried = await web.read(URL, policy_overrides={**cooling, "allow_real_browser": True})
+    assert first["receipt"]["failure"]["code"] == "BLOCKED"
+    assert tried(refused) == [] and refused["receipt"]["failure"]["code"] == "BLOCKED"
+    # An agent that retries a walled page with the real browser gets it, alone.
+    assert tried(retried) == ["real_browser"] and retried["receipt"]["status"] == "observed"
+
+
+async def test_a_busy_profile_skips_the_real_browser(tmp_path, monkeypatch):
+    from frankensurf import real_browser
+    fake = tmp_path / "chrome"
+    fake.write_text("")
+    profile = tmp_path / "profile"
+    monkeypatch.setenv("FRANKENSURF_REAL_BROWSER_PATH", str(fake))
+    monkeypatch.setenv("FRANKENSURF_REAL_BROWSER_PROFILE", str(profile))
+    monkeypatch.setattr(real_browser, "_has_display", lambda: True)
+    async with Runtime(tmp_path / "state") as web:
+        with real_browser._claim(profile):
+            result = await web.read("https://example.com/item", WebPolicy(provider="real_browser"))
+    assert result["receipt"]["failure"]["code"] == "PROVIDER_UNAVAILABLE"
 
 
 def test_the_real_browser_is_found_where_it_installs_or_where_you_point(tmp_path, monkeypatch):
@@ -91,12 +128,20 @@ CHALLENGE = """<html><head><title>Just a moment...</title></head><body><p>Checki
   document.body.innerHTML = '<h1>Brass lamp</h1>' + '<p>A brass lamp, $49, ships in two days.</p>'.repeat(30);
 }, 2000);</script></body></html>"""
 STUCK = """<html><head><title>Just a moment...</title></head><body><p>Checking your browser.</p></body></html>"""
+# A challenge served as 403 that reloads into the page, as managed challenges do.
+RELOADS = """<html><head><title>Just a moment...</title></head><body><p>Checking your browser.</p>
+<script>setTimeout(() => location.replace('/cleared'), 1500);</script></body></html>"""
+CLEARED = "<html><head><title>Brass lamp</title></head><body>" + "<p>A brass lamp, $49, ships in two days.</p>" * 30 + "</body></html>"
+SLOW = CHALLENGE.replace("2000", "4000")
+PAGES = {"/stuck": (200, STUCK), "/reloads": (403, RELOADS), "/cleared": (200, CLEARED),
+         "/empty403": (403, ""), "/slow": (200, SLOW)}
 
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = (STUCK if self.path.startswith("/stuck") else CHALLENGE).encode()
-        self.send_response(200)
+        status, text = PAGES.get(self.path.split("?")[0], (200, CHALLENGE))
+        body = text.encode()
+        self.send_response(status)
         self.send_header("content-type", "text/html")
         self.send_header("content-length", str(len(body)))
         self.end_headers()
@@ -144,3 +189,33 @@ async def test_a_challenge_that_needs_a_person_fails_as_a_wall(tmp_path, site, r
         result = await web.read(site + "/stuck", WebPolicy(provider="real_browser", settle_ms=0,
                                                            real_browser_wait_seconds=2))
     assert result["receipt"]["failure"]["code"] == "CAPTCHA"
+
+
+async def test_a_403_challenge_that_reloads_into_the_page_is_read(tmp_path, site, real):
+    async with Runtime(tmp_path / "state") as web:
+        result = await web.read(site + "/reloads", WebPolicy(provider="real_browser", settle_ms=0,
+                                                             real_browser_wait_seconds=10))
+    receipt = result["receipt"]
+    assert receipt["status"] == "observed", receipt.get("failure")
+    assert receipt["http_status"] == 200 and "ships in two days" in result["text"]
+
+
+async def test_a_bare_403_is_a_wall_not_the_browsers_error_page(tmp_path, site, real):
+    async with Runtime(tmp_path / "state") as web:
+        result = await web.read(site + "/empty403", WebPolicy(provider="real_browser", settle_ms=0,
+                                                              provider_max_attempts_per_candidate=1))
+    assert result["receipt"]["failure"]["code"] == "BLOCKED"
+
+
+async def test_with_handoff_allowed_a_person_clears_the_wall_in_the_same_window(tmp_path, site, real):
+    # The page clears after 4 s; the real browser alone waits 1 s. With a handoff
+    # allowed, the same window waits for the person (here, the page itself).
+    async with Runtime(tmp_path / "state") as web:
+        alone = await web.read(site + "/slow", WebPolicy(provider="real_browser", settle_ms=0,
+                                                         real_browser_wait_seconds=1,
+                                                         provider_max_attempts_per_candidate=1))
+        helped = await web.read(site + "/slow?2", WebPolicy(provider="real_browser", settle_ms=0,
+                                                             real_browser_wait_seconds=1, allow_handoff=True,
+                                                             handoff_timeout_seconds=20))
+    assert alone["receipt"]["failure"]["code"] == "CAPTCHA"
+    assert helped["receipt"]["status"] == "observed" and "ships in two days" in helped["text"]

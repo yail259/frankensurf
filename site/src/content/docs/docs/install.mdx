@@ -103,6 +103,20 @@ Chromium and the stealth browsers. No account or key. On the 152-site benchmark
 it reads 73.7% of sites; adding the [paid tools](/docs/blocked/paid-tools/)
 takes it to 89.5%. Skip the stealth browsers with `frankensurf setup --no-stealth`.
 
+## As a command-line tool
+
+The package installs a `frankensurf` command (and `frankensurf-mcp` for agents).
+To have it on your PATH without managing a virtual environment, install it as a
+tool with [uv](https://docs.astral.sh/uv/) or [pipx](https://pipx.pypa.io/):
+
+```bash
+uv tool install "frankensurf[mcp]"     # or: pipx install "frankensurf[mcp]"
+frankensurf setup
+frankensurf read "https://news.ycombinator.com" --explain
+```
+
+`uv tool upgrade frankensurf` (or `pipx upgrade frankensurf`) updates it.
+
 Working on Frankensurf itself? Install from a clone instead:
 `git clone https://github.com/yail259/frankensurf.git`, then
 `pip install -e '.[test,mcp]'` and `frankensurf setup`.

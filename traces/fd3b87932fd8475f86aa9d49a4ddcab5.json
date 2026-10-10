@@ -1,0 +1,58 @@
+{
+  "url": null,
+  "title": null,
+  "content_type": "",
+  "headers": {},
+  "structured": null,
+  "image_urls": [],
+  "images": [],
+  "field_status": {
+    "availability": "unknown",
+    "transaction_price": "unknown"
+  },
+  "receipt": {
+    "trace_id": "fd3b87932fd8475f86aa9d49a4ddcab5",
+    "status": "failed",
+    "operation": "read",
+    "action_class": "READ_PUBLIC",
+    "acquisition_context": "61aeb9425546a98e6206a0d8e1bfbf3f9aed4e5b5cb8105e28bd688f1b54c912",
+    "adapter": null,
+    "observed_at": "2026-10-10T01:02:16.576416+00:00",
+    "freshness_seconds": 0,
+    "cache_hit": false,
+    "method": null,
+    "identity": null,
+    "http_status": null,
+    "failure": {
+      "code": "BLOCKED",
+      "message": "Origin is cooling down after BLOCKED; retry after 899 seconds"
+    },
+    "requested_url": null,
+    "final_url": null,
+    "confidence": null,
+    "cost_usd": 0,
+    "cost_basis": "self-hosted software; excludes electricity/hardware",
+    "evidence": [],
+    "attempts": [],
+    "latency_ms": 0,
+    "recovery": {
+      "status": "available",
+      "executed": false,
+      "operation": "repair",
+      "requires_explicit_invocation": true,
+      "next_step": "agent_browser_diagnosis",
+      "instruction": "Inspect the exact public page in an authorized browser, diagnose access and native navigation, then propose a reusable provider or adapter repair.",
+      "trace_id": "fd3b87932fd8475f86aa9d49a4ddcab5",
+      "attempts": [],
+      "local_artifacts": [],
+      "repair_input": {
+        "path": "/home/yail/Documents/Codex/2026-09-30/frankensurf-public/repairs/inputs/fd3b87932fd8475f86aa9d49a4ddcab5.json",
+        "sha256": "e3053e0c3283a76567691518748e62196a4c9e17c565f5f8da9cfa6cc59f79eb",
+        "bytes": 5038
+      },
+      "failure_stage": null,
+      "authority": "public_read",
+      "validation_required": "Core replays original assertions against retained fixtures and browser truth; independent live canary, performance comparison and explicit hash-bound promotion remain required."
+    }
+  }
+}

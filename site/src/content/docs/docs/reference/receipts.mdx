@@ -31,7 +31,7 @@ linked to the receipt by hash.
     {"provider": "local", "status": "observed", "latency_ms": 2176}
   ],
   "routing": {"provider_plan": {
-    "ordered": ["http", "local", "camoufox", "scrapling", "scrapling_http", "browser_use", "crawl4ai", "jina_reader"],
+    "ordered": ["http", "local", "camoufox", "scrapling", "scrapling_http", "crawl4ai", "jina_reader"],
     "basis": "registration order; insufficient exact-scope evidence"
   }}
 }
@@ -64,9 +64,11 @@ read planned, after skipping anything unavailable.
   challenge page. `routing.learned_for` shows when that vendor's past results
   on this machine [reordered the ladder](/docs/blocked/escalation/#skipping-ahead),
   and `routing.escalated_to` names the tool that failed tries moved ahead (one
-  that fetches from its own network) or walls moved ahead (a paid one).
-- **`hedge`** appears when a slow read started a second read beside it:
-  `provider`, `won`, and when its page stood in for a failed main read,
+  that fetches from its own network) or walls moved ahead (your
+  [real browser](/docs/blocked/real-browser/) when allowed, else a paid one).
+- **`hedge`** appears when a slow read started a second read beside it, or
+  a [lightning](/docs/read/lightning/) read raced others (`lightning`,
+  `providers`, `tried`): `provider`, `won`, and when its page stood in for a failed main read,
   `after_failure` and the `walled` tools.
 - Cookies, keys and credential URL parameters never appear.
 
