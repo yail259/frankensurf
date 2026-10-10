@@ -62,6 +62,9 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `handoff_timeout_seconds` | `300.0` | How long a handoff waits for a person. |
 | `allow_real_browser` | `False` | Let your real Chrome or Edge join automatic reads; it moves ahead once walls do. |
 | `real_browser_wait_seconds` | `15.0` | How long the real browser lets a challenge clear by itself (it never clicks). |
+| `use_egress_pool` | `True` | Let a walled read try your other connections (FRANKENSURF_EGRESS). |
+| `egress_failures` | `BLOCKED`, `CAPTCHA`, `RATE_LIMITED` | Failures that start a pass through your other connections. |
+| `egress_tools` | `camoufox`, `scrapling`, `http` | Tools a pass through another connection uses; the wall vendor's best goes first. |
 | `allow_archive` | `False` | A stored copy (Internet Archive) as the very last resort; the result says when it was taken. |
 | `block_private_network` | `False` | Refuse loopback, private and link-local addresses, names that resolve to them, and redirects into them. |
 | `exclude_providers` | `()` | Skip these providers (the agent's try-harder lever). |
@@ -74,6 +77,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `escalate_after_walls` | `4` | Walls in one read before paid providers move ahead, and failed tries of any kind before free tools that fetch from their own network do; 0 turns both off. |
 | `escalation_failures` | `BLOCKED`, `CAPTCHA` | Failures that count as walls. |
 | `use_route_memory` | `True` | Let route memory reorder providers. |
+| `use_wall_priors` | `True` | Start wall-vendor routing from measured priors on a fresh install; your own reads outweigh them. |
 | `route_memory_ttl_seconds` | `3600` | How far back route memory looks. |
 | `route_memory_min_samples` | `3` | Clean reads in a row before a provider is promoted. |
 | `origin_route_hint_ttl_seconds` | `86400.0` | How long a site hint lasts. |

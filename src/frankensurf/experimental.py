@@ -195,7 +195,8 @@ async def read_public(runtime, url, policy, provider):
         raise WebFailure("IDENTITY_PROVIDER_DENIED", "Experimental providers cannot execute named identities")
     if not policy.allow_local_browser and provider != "scrapling_http":
         raise WebFailure("POLICY_DENIED", "Local browser disabled")
-    runtime_proxy.value = getattr(runtime, "proxy", None)
+    from .egress import CURRENT as EGRESS
+    runtime_proxy.value = EGRESS.get() or getattr(runtime, "proxy", None)
     try:
         packet = await _packet(url, policy, provider)
     finally:

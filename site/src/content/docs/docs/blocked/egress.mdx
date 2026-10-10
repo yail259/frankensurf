@@ -1,0 +1,57 @@
+---
+title: More than one connection
+description: When a site blocks your address, let a walled read try your other connections.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Some walls block an address, not a browser. Once a site has seen enough reads
+from one connection, every tool on that machine meets the wall, however
+stealthy. If you have other connections, FrankenSurf can use them: a read that
+your direct connection walled gets one more pass through each of them.
+
+## Set it up
+
+List your connections in `FRANKENSURF_EGRESS` (in the environment or
+`~/.config/frankensurf/.env`), comma- or newline-separated, as `name=url`:
+
+```bash
+# A VPS you can SSH to is a free second connection:
+ssh -N -D 1080 you@your-vps &
+export FRANKENSURF_EGRESS="vps=socks5://127.0.0.1:1080, phone=http://192.168.1.20:8080"
+```
+
+Any HTTP or SOCKS5 proxy works: an SSH tunnel to a VPS, a proxy app on your
+phone's hotspot, a residential pool. SOCKS needs `pip install "frankensurf[socks]"`.
+The pool comes from your configuration only: receipts, traces and hints name a
+connection (`vps`), never its address or credentials.
+
+## What happens
+
+1. A read starts on your direct connection, as always.
+2. If it ends at a wall or a rate limit (`egress_failures`: `BLOCKED`,
+   `CAPTCHA`, `RATE_LIMITED`), each connection in the pool gets one pass with
+   `egress_tools` (Camoufox, Scrapling and plain HTTP by default), the tool
+   that best gets past this [wall vendor](/docs/blocked/escalation/#skipping-ahead) first.
+3. The first connection that gets the page wins, and becomes the site's hint
+   for a day (`origin_route_hint_ttl_seconds`): the next read of that site
+   goes through it first, and falls back to the usual route if it stops working.
+
+`receipt.egress` says what happened: `used` (the connection's name, or `null`),
+`tried`, and `after` (the failure that started it), or `from_hint: true` when
+the site's hint chose the connection.
+
+<Aside type="note">
+  `FRANKENSURF_PROXY` is different: it sends every read from your machine
+  through one proxy, always. The pool is a fallback, used only after a wall.
+  Set `use_egress_pool: false` on a read to keep it on the direct connection.
+</Aside>
+
+## Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `FRANKENSURF_EGRESS` | unset | Your other connections, `name=url`, comma- or newline-separated. |
+| `use_egress_pool` | `true` | Let a walled read try the pool. |
+| `egress_failures` | `BLOCKED`, `CAPTCHA`, `RATE_LIMITED` | Failures that start a pass through the pool. |
+| `egress_tools` | `camoufox`, `scrapling`, `http` | Tools a pass uses; the wall vendor's best goes first. |

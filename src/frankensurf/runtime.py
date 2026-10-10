@@ -307,6 +307,12 @@ class WebPolicy:
     allow_real_browser: bool = False
     # How long the real browser lets a challenge clear by itself; it never clicks.
     real_browser_wait_seconds: float = 15.0
+    # More than one connection (see egress.py): with FRANKENSURF_EGRESS set, a
+    # read the direct connection ended at one of egress_failures gets one pass
+    # through each other connection, with these tools (the wall vendor's best first).
+    use_egress_pool: bool = True
+    egress_failures: tuple[str, ...] = ("BLOCKED", "CAPTCHA", "RATE_LIMITED")
+    egress_tools: tuple[str, ...] = ("camoufox", "scrapling", "http")
     # PDFs are read with pypdf; text from at most this many pages is returned.
     pdf_max_pages: int = 50
     capture_json_max_items: int = 20
@@ -396,6 +402,9 @@ class WebPolicy:
         _require(type(self.lightning) is bool, "lightning must be a boolean")
         _require(type(self.use_wall_priors) is bool, "use_wall_priors must be a boolean")
         _require(type(self.allow_real_browser) is bool, "allow_real_browser must be a boolean")
+        _require(type(self.use_egress_pool) is bool, "use_egress_pool must be a boolean")
+        _require(_is_codes(self.egress_failures), "egress_failures must be a tuple of nonempty codes")
+        _require(_is_provider_ids(self.egress_tools), "egress_tools must be distinct provider IDs")
         _require(_is_number(self.real_browser_wait_seconds),
                  "real_browser_wait_seconds must be finite and nonnegative")
         _require(_is_number(self.completeness_deadline_seconds, positive=True),
@@ -1746,6 +1755,10 @@ class Runtime:
         # Opt-ins the owner can set once for every read (an MCP server, say).
         from .hosted_providers import _setting
         self.real_browser_default = (_setting("real_browser") or "").lower() in ("1", "true", "yes")
+        # Other connections the owner configured (FRANKENSURF_EGRESS); never logged.
+        from .egress import pool as _egress_pool
+        self.egress_pool = _egress_pool()
+        self._egress_http = {}
         self.lightning_default = (_setting("lightning") or "").lower() in ("1", "true", "yes")
         if self.steel_api_url:
             p = urlparse(self.steel_api_url)
@@ -1844,6 +1857,12 @@ class Runtime:
                 try:
                     await self._http.post(self.steel_api_url.rstrip("/") + "/v1/sessions/" + self._steel_session + "/release", timeout=10)
                 except httpx.HTTPError: pass
+            for client in self._egress_http.values():
+                try:
+                    await client.aclose()
+                except Exception:
+                    pass
+            self._egress_http.clear()
             if self._http:
                 await self._http.aclose()
         finally:
@@ -1976,6 +1995,9 @@ class Runtime:
             signing = SIGNER.set(current_signer() if policy.sign_requests else None)
             profile = ACTIVE.get() if policy.profile else None
             client = self._http
+            from .egress import CURRENT as EGRESS
+            if EGRESS.get() is not None and self._transport is None:
+                client = self._egress_client(EGRESS.get())
             if profile is not None:
                 from .bot_auth import sign_hop
                 headers = dict(headers or {})
@@ -1986,7 +2008,7 @@ class Runtime:
                     headers["User-Agent"] = profile.fingerprint["user_agent"]
                 client = httpx.AsyncClient(follow_redirects=True, transport=self._transport,
                                            event_hooks={"request": [sign_hop]})
-            async with _closing(client, client is not self._http), client.stream(
+            async with _closing(client, client is not self._http and client not in self._egress_http.values()), client.stream(
                     "GET", url, timeout=policy.timeout_seconds, headers=headers) as response:
                 final_url = str(response.url)
                 _validate_url(final_url)
@@ -3613,10 +3635,15 @@ class Runtime:
             delay = entry.get("next_at", 0) - now
             if delay > 0:
                 await asyncio.sleep(min(delay, effective.origin_min_interval_seconds))
-        result = await self._hedged(url, policy, provider, adapter, policy_overrides,
-                                    workload_assertions, effective)
+        result = await self._egress_first(url, policy, provider, adapter, policy_overrides,
+                                          workload_assertions, effective)
+        if result is None:
+            result = await self._hedged(url, policy, provider, adapter, policy_overrides,
+                                        workload_assertions, effective)
         result = await self._warm_up_retry(url, result, policy, provider, adapter, policy_overrides,
                                            workload_assertions, effective)
+        result = await self._egress_retry(url, result, policy, provider, adapter, policy_overrides,
+                                          workload_assertions, effective)
         if not effective.identity and not effective.profile:
             try:
                 self._learn_wall(result.get("receipt") or {})
@@ -3655,6 +3682,129 @@ class Runtime:
                 entry["code"] = code
             data[key] = entry
             self._pacing_save(data)
+        return result
+
+    def _egress_client(self, egress):
+        """A plain-HTTP client through one configured connection (kept for the Runtime)."""
+        client = self._egress_http.get(egress["name"])
+        if client is None:
+            from .bot_auth import sign_hop
+            try:
+                client = httpx.AsyncClient(follow_redirects=True, proxy=egress["url"],
+                                           headers={"User-Agent": _user_agent()},
+                                           event_hooks={"request": [sign_hop, _guard_hop]})
+            except ImportError:
+                raise WebFailure("PROVIDER_UNAVAILABLE",
+                                 "A SOCKS connection needs httpx's socks extra: pip install 'frankensurf[socks]'") from None
+            self._egress_http[egress["name"]] = client
+        return client
+
+    def _egress_usable(self, url, provider, effective):
+        return bool(self.egress_pool and effective.use_egress_pool and isinstance(url, str)
+                    and not (provider or effective.provider or effective.provider_candidates is not None
+                             or effective.identity or effective.profile))
+
+    def _egress_tools(self, vendor, effective):
+        """The tools an egress pass uses: egress_tools, the wall vendor's best first."""
+        tools = [tool for tool in effective.egress_tools
+                 if tool not in effective.exclude_providers and self.providers.is_available(tool)
+                 and _allowed(self.providers, tool, effective)]
+        if vendor:
+            stats, _ = self._vendor_stats(vendor, effective)
+            rate = {tool: (stats[tool][0] + 1) / (stats[tool][1] + 2) for tool in tools if tool in stats}
+            tools.sort(key=lambda tool: -rate.get(tool, 0.5))
+        return tools
+
+    def _egress_hints_path(self):
+        return self.state_dir / "egress-routes.json"
+
+    def _egress_hint(self, url, effective):
+        """The connection that last got through this origin, if still fresh and still configured."""
+        if not effective.origin_route_hint_ttl_seconds:
+            return None
+        try:
+            entry = json.loads(self._egress_hints_path().read_text(encoding="utf-8")).get(
+                self._pacing_key(url, effective))
+        except (OSError, ValueError, AttributeError):
+            return None
+        names = {egress["name"] for egress in self.egress_pool}
+        if (isinstance(entry, dict) and entry.get("egress") in names
+                and time.time() - entry.get("at", 0) <= effective.origin_route_hint_ttl_seconds):
+            return entry["egress"]
+        return None
+
+    def _record_egress_hint(self, url, effective, name):
+        try:
+            path = self._egress_hints_path()
+            data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+            key = self._pacing_key(url, effective)
+            if name is None:
+                data.pop(key, None)
+            else:
+                data[key] = {"egress": name, "at": time.time()}
+            fd, temporary = tempfile.mkstemp(prefix=".egress-routes-", dir=self.state_dir)
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(data, stream, sort_keys=True)
+            os.replace(temporary, path)
+        except (OSError, ValueError):
+            pass
+
+    async def _egress_pass(self, url, policy, adapter, policy_overrides, workload_assertions, egress, tools):
+        """One read pinned to `tools`, through one configured connection."""
+        from .egress import CURRENT as EGRESS
+        token = EGRESS.set(egress)
+        try:
+            if policy is not None:
+                return await self._read_unpaced(url, replace(policy, provider_candidates=tuple(tools)), None,
+                                                adapter, workload_assertions=workload_assertions)
+            return await self._read_unpaced(url, None, None, adapter, policy_overrides={
+                **(policy_overrides or {}), "provider_candidates": list(tools)},
+                workload_assertions=workload_assertions)
+        finally:
+            EGRESS.reset(token)
+
+    async def _egress_first(self, url, policy, provider, adapter, policy_overrides,
+                            workload_assertions, effective):
+        """A site whose hint names a connection is read through it first."""
+        if not self._egress_usable(url, provider, effective):
+            return None
+        name = self._egress_hint(url, effective)
+        egress = next((item for item in self.egress_pool if item["name"] == name), None)
+        tools = self._egress_tools(None, effective)
+        if egress is None or not tools:
+            return None
+        result = await self._egress_pass(url, policy, adapter, policy_overrides, workload_assertions,
+                                         egress, tools)
+        receipt = result.get("receipt") or {}
+        if receipt.get("status") == "observed":
+            receipt["egress"] = {"used": name, "from_hint": True}
+            return result
+        self._record_egress_hint(url, effective, None)  # It stopped working; read as usual.
+        return None
+
+    async def _egress_retry(self, url, result, policy, provider, adapter, policy_overrides,
+                            workload_assertions, effective):
+        """A read the direct connection ended at a wall (or a rate limit) gets one
+        pass through each other connection; the first that gets through wins and
+        becomes the site's hint."""
+        receipt = result.get("receipt") or {}
+        code = (receipt.get("failure") or {}).get("code")
+        if code not in effective.egress_failures or not self._egress_usable(url, provider, effective):
+            return result
+        tools = self._egress_tools(receipt.get("wall_vendor"), effective)
+        if not tools:
+            return result
+        tried = []
+        for egress in self.egress_pool:
+            second = await self._egress_pass(url, policy, adapter, policy_overrides, workload_assertions,
+                                             egress, tools)
+            tried.append(egress["name"])
+            second_receipt = second.get("receipt") or {}
+            if second_receipt.get("status") == "observed":
+                second_receipt["egress"] = {"used": egress["name"], "tried": tried, "after": code}
+                self._record_egress_hint(url, effective, egress["name"])
+                return second
+        receipt["egress"] = {"used": None, "tried": tried, "after": code}
         return result
 
     async def _warm_up_retry(self, url, result, policy, provider, adapter, policy_overrides,

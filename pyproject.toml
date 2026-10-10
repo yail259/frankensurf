@@ -30,6 +30,7 @@ test = ["pytest>=9,<10", "pytest-asyncio>=1,<2"]
 mcp = ["mcp>=1.2,<2"]
 # Better main-content extraction (read main_content=True); a built-in extractor works without it.
 main = ["trafilatura>=2,<3"]
+socks = ["httpx[socks]>=0.28,<1"]
 
 [project.urls]
 Homepage = "https://frankensurf.dev"

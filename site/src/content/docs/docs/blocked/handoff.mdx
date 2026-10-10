@@ -29,6 +29,9 @@ connection, 70.5% from a cloud VM, 74.8% with Steel running beside it. Three thi
   stealth browsers all go through it. Hosted readers already use their own
   networks. It comes from the environment only: it never appears in policies,
   receipts or traces, and a read that used it says `receipt.via_proxy`.
+- **Give it other connections.** With `FRANKENSURF_EGRESS`, a read the
+  server's address got walled on tries your other connections
+  ([More than one connection](/docs/blocked/egress/)).
 - **Keep paid fallbacks for the hardest walls.**
 
 ## Servers: refuse internal addresses
