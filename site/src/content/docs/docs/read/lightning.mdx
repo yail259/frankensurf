@@ -25,6 +25,14 @@ read and two other tools at once and keeps the first complete page.
 - A read shaped by a [site module](/docs/read/site-modules/) is not raced: the
   module reads the page from its own kind of source.
 
+Measured on 40 sites from the 150-site held-out set, one read at a time, with
+the order of the two modes shuffled per site: the same 35 sites read either
+way, the median read fell from 5.0 to 1.9 seconds, and reads that took over 10
+seconds normally came back in 2.7 (median). The slowest tenth stayed about the
+same (14.9 against 15.7 seconds): when the read's own page is incomplete and
+the racers are slow, lightning waits for them. With many reads running at once
+on one machine, the extra browsers compete for its CPU and the gain shrinks.
+
 <Aside type="caution">
   A site sees up to three requests at once from you instead of one. Keep it for
   reads where time matters, and use [batch](/docs/read/batch/) rather than

@@ -188,3 +188,42 @@ result links (Bandcamp, Substack, Twitch, Croma: their results load from
 scripts; pub.dev: 10 package links, but only 2 names contain the query, too
 few to tell them from a menu). The climb tries four tools and keeps the best,
 20 to 50 s, bounded by `completeness_deadline_seconds`.
+
+## Lightning mode (v0.31)
+
+Lightning starts the read and two free tools (Jina Reader and Scrapling by
+default) at once and keeps the first complete page.
+
+`toolbench-heldout5-lightning-fair.jsonl`: 40 sites spread over the set, one
+read at a time, both modes on every site in a shuffled order. Fresh state.
+
+| | Sites read | Median (read) | p75 | p90 | Total time |
+|---|---|---|---|---|---|
+| Normal | 35/40 | 5.0 s | 10.6 s | 14.9 s | 353 s |
+| Lightning | 35/40 | 1.9 s | 5.8 s | 15.7 s | 325 s |
+
+The 8 sites that took normal mode over 10 s came back in a median of 2.7 s
+(12.5 s normally): StudentAid 18.6 to 1.0 s, Jobindex 14.9 to 1.1 s, Sports
+Direct 12.0 to 2.0 s. Lightning was slower on 7 sites, most on Bon Appetit
+(7.3 to 19.8 s) and AlternativeTo (5.7 to 15.7 s): the read's own page was
+incomplete and the racers were slow, so it waited for them. OpenTable was read
+only normally and Sierra only with lightning.
+
+`toolbench-heldout5-lightning-4workers.jsonl` is the full set with four reads
+at a time on one machine: 124/150 as in iteration 5, p75 9.4 s against 11.4 s
+and p90 20.3 s against 24.3 s, but a median of 5.3 s against 4.0 s. Three
+browsers per read across four parallel reads compete for the CPU; one read at
+a time is what an agent waiting on a page sees.
+
+## The real browser (v0.31)
+
+Google Chrome 155, installed in WSL and found by itself, read alone
+(`provider="real_browser"`) the 8 sites that walled every free tool in
+iteration 5: none came through. Mighty Ape and Immobiliare blocked it and Bass
+Pro answered with a challenge, all within 5 s; Carousell, PrimeLocation, Jiji
+and Avito showed challenges that did not clear by themselves in 15 s (they
+want a click or a press-and-hold, which the real browser never does); B&Q
+still refused connections. Four of these (Mighty Ape, Carousell,
+PrimeLocation, Jiji) only paid unblockers have ever read, and this machine's
+address had met each of them in about eight runs that day. The option is for
+walls that recognise automated browsers rather than an address.
