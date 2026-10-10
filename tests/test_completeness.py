@@ -343,3 +343,16 @@ def test_results_are_recognised_by_shape_when_their_links_mention_the_query():
     verdict = assess(url, {"content": "<html><body>" + links + menu + "</body></html>",
                            "text": "json tool " * 200, "content_type": "text/html"})
     assert verdict["complete"] and verdict["item_links"] >= 10
+
+
+def test_results_on_the_sites_own_subdomains_count():
+    from frankensurf.completeness import _same_site, item_links, result_group
+    url = "https://substack.example/search/film%20photography"
+    posts = "".join(f'<a href="https://writer{n}.substack.example/p/film-photography-notes-{n}">Film photography notes {n}</a>'
+                    for n in range(10))
+    page = "<html><body>" + "<p>Home About Sign in Subscribe Explore Leaderboard</p>" * 20 + posts + "</body></html>"
+    assert result_group(page, url, ["film", "photography"]) == 10
+    assert item_links(page, url) == 10
+    # Another site's links still don't count, nor does the same path twice on one host.
+    assert item_links(page.replace("substack.example", "other.example", 10), url) == 0
+    assert _same_site("shop.example.co.uk", "www.example.co.uk") and not _same_site("example.co.uk", "other.co.uk")

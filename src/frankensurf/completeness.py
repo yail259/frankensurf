@@ -72,6 +72,23 @@ _PATH_GENERIC = frozenset({"search", "s", "q", "jobs", "job", "results", "result
                            "homes", "products", "product", "items", "all", "new", "used", "in", "near", "w"})
 
 
+_SECOND_LEVEL = frozenset({"co", "com", "org", "net", "gov", "govt", "ac", "edu"})
+
+
+def _site(host: str) -> str:
+    """The site a host belongs to: example.com for shop.example.com, and
+    example.co.uk for www.example.co.uk."""
+    labels = (host or "").lower().removeprefix("www.").split(".")
+    keep = 3 if len(labels) >= 3 and labels[-2] in _SECOND_LEVEL else 2
+    return ".".join(labels[-keep:])
+
+
+def _same_site(link_host: str | None, base_host: str | None) -> bool:
+    """A link on the page's own site, its subdomains included: results that live on
+    artist.bandcamp.com or name.substack.com are that site's results."""
+    return bool(link_host) and _site(link_host) == _site(base_host or "")
+
+
 def query_terms(url: str, expect_terms=()) -> list[str]:
     """Words the results of this search should mention, lightly stemmed."""
     values = [value for key, items in parse_qs(urlparse(url).query).items()
@@ -107,13 +124,14 @@ def _item_blobs(html: str, base: str) -> dict[str, str]:
         parsed = urlparse(urljoin(base, href.replace("&amp;", "&")))
         if parsed.scheme not in ("http", "https"):
             continue
-        if (parsed.hostname or "").removeprefix("www.") != host or parsed.path == base_path:
+        link_host = (parsed.hostname or "").removeprefix("www.")
+        if not _same_site(link_host, host) or (link_host == host and parsed.path == base_path):
             continue
         if not _item_like(parsed.path):
             continue
         labels = " ".join(_LABEL.findall(raw))
         text = html_lib.unescape(_TAG.sub(" ", raw) + " " + labels + " " + parsed.path)
-        key = parsed.path.rstrip("/")
+        key = (link_host if link_host != host else "") + parsed.path.rstrip("/")
         blobs[key] = (blobs.get(key, "") + " " + text.lower())[:2000]
     return blobs
 
@@ -164,16 +182,21 @@ def result_group(html: str, base: str, terms) -> int:
     host = (urlparse(base).hostname or "").removeprefix("www.")
     base_path = urlparse(base).path.rstrip("/")
     groups: dict[str, dict[str, str]] = {}
-    for _before, href, _after, inner in _ANCHOR.findall(html[:4_000_000]):
+    pairs = [(href, inner) for _before, href, _after, inner in _ANCHOR.findall(html[:4_000_000])]
+    pairs += [(href, text) for text, href in _MARKDOWN_ANCHOR.findall(html[:4_000_000])]
+    for href, inner in pairs:
         parsed = urlparse(urljoin(base, href.replace("&amp;", "&")))
-        if parsed.scheme not in ("http", "https") or (parsed.hostname or "").removeprefix("www.") != host:
+        link_host = (parsed.hostname or "").removeprefix("www.")
+        if parsed.scheme not in ("http", "https") or not _same_site(link_host, host):
             continue
         path = parsed.path.rstrip("/")
-        if not path or path == base_path or _NOT_ITEM.search(path) or "/" not in path.strip("/"):
+        if (not path or (link_host == host and path == base_path) or _NOT_ITEM.search(path)
+                or "/" not in path.strip("/")):
             continue
         prefix, leaf = path.rsplit("/", 1)
         text = html_lib.unescape(_TAG.sub(" ", inner) + " " + leaf).lower()
-        groups.setdefault(prefix, {})[leaf] = text
+        # Results on subdomains share a path prefix (/p/<post>) across hosts.
+        groups.setdefault(prefix, {})[(link_host if link_host != host else "") + "/" + leaf] = text
     best = 0
     for leaves in groups.values():
         if len(leaves) < 8:
@@ -194,10 +217,11 @@ def item_links(html: str, base: str) -> int:
         parsed = urlparse(absolute)
         if parsed.scheme not in ("http", "https"):
             continue
-        if (parsed.hostname or "").removeprefix("www.") != host or parsed.path == base_path:
+        link_host = (parsed.hostname or "").removeprefix("www.")
+        if not _same_site(link_host, host) or (link_host == host and parsed.path == base_path):
             continue
         if _item_like(parsed.path):
-            found.add(parsed.path.rstrip("/"))
+            found.add((link_host if link_host != host else "") + parsed.path.rstrip("/"))
     return len(found)
 
 
@@ -471,11 +495,11 @@ def cards(html: str, base: str, *, limit: int = 200, structured=None) -> list[di
 
     def item_path(href):
         parsed = urlparse(urljoin(base, href.replace("&amp;", "&")))
-        if (parsed.scheme not in ("http", "https")
-                or (parsed.hostname or "").removeprefix("www.") != host
-                or parsed.path == base_path or not _item_like(parsed.path)):
+        link_host = (parsed.hostname or "").removeprefix("www.")
+        if (parsed.scheme not in ("http", "https") or not _same_site(link_host, host)
+                or (link_host == host and parsed.path == base_path) or not _item_like(parsed.path)):
             return None, None
-        return parsed.path.rstrip("/"), parsed.geturl()
+        return (link_host if link_host != host else "") + parsed.path.rstrip("/"), parsed.geturl()
 
     found: dict[str, dict] = {}
     for anchor in soup.select("a[href]"):
