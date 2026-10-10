@@ -23,7 +23,8 @@ non-headless window, kept off your screen) before giving up.
   (Xvfb: `sudo apt install xvfb`): a real, non-headless browser that never
   appears on your screen or takes your cursor or focus, and that works on a
   server with no display too. Without Xvfb, and on macOS and Windows, the
-  window opens off-screen on your display. Set
+  window opens off-screen on your display: out of sight, but it may still take
+  focus there. Set
   `FRANKENSURF_REAL_BROWSER_WINDOW=visible` to watch it on your screen (on a
   virtual display it draws without your GPU, which a few walls notice). A
   browser you attach with `FRANKENSURF_REAL_BROWSER_CDP` is yours to place:

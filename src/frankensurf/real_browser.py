@@ -18,7 +18,8 @@ each page opens in a fresh private window of a real browser you started yourself
 It stays out of your way. On Linux (and WSL) it runs on a private virtual
 display (Xvfb) when one can be started: a real, non-headless browser that never
 appears on your screen or takes your cursor or focus, and that also works on a
-server with no display. Elsewhere the window opens off-screen.
+server with no display. Elsewhere the window opens off-screen, which keeps it
+out of sight but may still take focus on macOS and Windows.
 ``FRANKENSURF_REAL_BROWSER_WINDOW=visible`` shows it on your screen instead (on a
 virtual display the browser draws without your GPU, which a few walls notice).
 
@@ -81,48 +82,86 @@ def _window_mode():
     return "visible" if (_setting("real_browser_window") or "").lower() == "visible" else "hidden"
 
 
-def _virtual_display():
-    """A private Xvfb display for this process (started once), or None where there is none."""
-    if sys.platform in ("win32", "darwin") or _window_mode() == "visible":
+def _die_with_parent():
+    """In the child, before exec: end when FrankenSurf's process ends (Linux)."""
+    try:
+        import ctypes
+        import signal
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except Exception:
+        pass
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+async def _virtual_display():
+    """A private Xvfb display for this process (started once), or None where none can start."""
+    import asyncio
+    if sys.platform in ("win32", "darwin") or _window_mode() == "visible" or _VIRTUAL.get("failed"):
         return None
     process = _VIRTUAL.get("process")
-    if process is not None and process.poll() is None:
+    if process is not None and _alive(process.pid):
         return _VIRTUAL["display"]
     server = shutil.which("Xvfb")
     if not server:
+        _VIRTUAL["failed"] = True
         return None
-    try:
-        # -displayfd: Xvfb picks a free display number and writes it to stdout.
-        process = subprocess.Popen([server, "-displayfd", "1", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
-                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
-        number = process.stdout.readline().decode().strip()
-    except OSError:
-        return None
-    if not number.isdigit():
+    # WSLg (and some containers) mount /tmp/.X11-unix read-only: then Xvfb can
+    # listen on the abstract socket only, which X clients on Linux try first.
+    sockets = "/tmp/.X11-unix"
+    unix = not os.path.isdir(sockets) or os.access(sockets, os.W_OK)
+    for number in range(99, 140):
+        if os.path.exists(f"{sockets}/X{number}") or os.path.exists(f"/tmp/.X{number}-lock"):
+            continue
+        args = [server, f":{number}", "-displayfd", "1", "-screen", "0", "1920x1080x24", "-nolisten", "tcp"]
+        if not unix:
+            args += ["-nolisten", "unix"]
+        try:
+            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                       preexec_fn=_die_with_parent)
+        except OSError:
+            break
+        try:
+            # -displayfd writes the number once the display is ready, or nothing if it fails.
+            ready = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), 15)
+        except (TimeoutError, asyncio.TimeoutError):
+            ready = b""
+        if ready.decode().strip() == str(number):
+            _VIRTUAL.update(process=process, display=f":{number}")
+            atexit.register(lambda pid=process.pid: _alive(pid) and os.kill(pid, 9))
+            return _VIRTUAL["display"]
         process.kill()
-        return None
-    _VIRTUAL.update(process=process, display=":" + number)
-    atexit.register(process.kill)
-    return _VIRTUAL["display"]
+        process.wait()
+    _VIRTUAL["failed"] = True
+    print("FrankenSurf: no private display could start (Xvfb); the real browser opens off-screen on yours.",
+          file=sys.stderr)
+    return None
 
 
 def _has_display():
     if sys.platform in ("win32", "darwin"):
         return True
-    if _window_mode() == "hidden" and shutil.which("Xvfb"):
+    if _window_mode() == "hidden" and shutil.which("Xvfb") and not _VIRTUAL.get("failed"):
         return True
     return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
-def _launch_options():
+async def _launch_options():
     """Where the window goes: a private display, off-screen, or (asked for) your screen."""
     if _window_mode() == "visible":
         return {"args": []}
-    display = _virtual_display()
+    display = await _virtual_display()
     if display:
+        # X11 on the private display, whatever the desktop runs (Wayland included).
         env = {key: value for key, value in os.environ.items() if key != "WAYLAND_DISPLAY"}
-        env["DISPLAY"] = display
-        return {"args": ["--window-size=1366,900"], "env": env}
+        env.update(DISPLAY=display, XDG_SESSION_TYPE="x11")
+        return {"args": ["--window-size=1366,900", "--ozone-platform=x11"], "env": env}
     return {"args": ["--window-position=-32000,-32000", "--window-size=1366,900"] + _UNTHROTTLED}
 
 
@@ -230,7 +269,7 @@ class RealBrowserProvider:
                 else:
                     # A real browser as a person runs it: its own window and
                     # profile, without the automation switch.
-                    options = _launch_options()
+                    options = await _launch_options()
                     owned = await playwright.chromium.launch_persistent_context(
                         str(profile), executable_path=str(browser_path), headless=False,
                         ignore_default_args=["--enable-automation"],
