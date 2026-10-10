@@ -192,6 +192,10 @@ starts there. On the 139-site held-out set,
 reads that used to take about 50 seconds (Michaels, Naukri, Anthropologie,
 Urban Outfitters) came back in 8 to 17.
 
+For reads where time matters more than politeness,
+[lightning mode](/docs/read/lightning/) starts the read and two other tools at
+once instead of waiting 10 seconds.
+
 ## Skipping ahead
 
 Four things reorder the ladder so repeat visits are fast:
@@ -199,7 +203,7 @@ Four things reorder the ladder so repeat visits are fast:
 | | What it does | Setting |
 | --- | --- | --- |
 | **Wall vendors** | A wall's response names the bot-defence service behind it (`receipt.wall_vendor`: Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, AWS WAF, Vercel or Sucuri). Frankensurf counts which tools got past each vendor on this machine; once a tool has at least 3 tries and even odds, later reads that meet the same vendor on any site try it next, and a tool that has never got past it in 8 tries goes last (`receipt.routing.learned_for`). Learned from your own reads, never from site names. | `state_dir/wall-stats.json` |
-| **Escalation** | After 4 failed tries in one read, free tools that fetch from their own network (Jina Reader) move ahead: a wall that blocks by address stops every tool on this machine alike, and some pages none of them render. After 4 walls, allowed paid tools move ahead of those. | `escalate_after_walls` |
+| **Escalation** | After 4 failed tries in one read, free tools that fetch from their own network (Jina Reader) move ahead: a wall that blocks by address stops every tool on this machine alike, and some pages none of them render. After 4 walls, [your real browser](/docs/blocked/real-browser/) (when allowed) and then allowed paid tools move ahead of those. | `escalate_after_walls` |
 | **Site hints** | When a read succeeds only after earlier tools failed, the tool that got through goes first on that site for 24 hours. | `origin_route_hint_ttl_seconds` |
 | **Route memory** | After 3 clean reads in a row on the same path pattern, that tool goes first for that path. | `route_memory_min_samples` |
 
@@ -218,8 +222,9 @@ Frankensurf is polite by default.
   (`origin_min_interval_seconds`).
 - A `BLOCKED`, `CAPTCHA` or `RATE_LIMITED` answer pauses direct reads of that
   site for 15 minutes (`origin_cooldown_seconds`).
-- Paid unblockers and handoff aren't held by the pause: a different service or a
-  person is handling the wall.
+- Paid unblockers, handoff and [your real browser](/docs/blocked/real-browser/)
+  aren't held by the pause: a different service, a person or a real browser is
+  handling the wall.
 
 ## Choosing yourself
 

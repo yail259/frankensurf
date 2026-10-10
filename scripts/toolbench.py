@@ -57,7 +57,7 @@ HELDOUT = {"heldout": Path(__file__).with_name("toolbench-heldout.json"),
            "heldout3": Path(__file__).with_name("toolbench-heldout3.json"),
            "heldout4": Path(__file__).with_name("toolbench-heldout4.json"),
            "heldout5": Path(__file__).with_name("toolbench-heldout5.json")}
-COMMON = {"origin_cooldown_seconds": 0, "freshness": "now"}
+COMMON = {"origin_cooldown_seconds": 0, "freshness": "now", "lightning": False, "allow_real_browser": False}
 ARMS = {
     "http": {"provider": "http"},
     "jina_reader": {"provider": "jina_reader"},
@@ -70,12 +70,14 @@ ARMS = {
     "zyte": {"provider": "zyte", "allow_paid_fallbacks": True},
     "patchright": {"provider": "patchright"},
     "stitched_free": {},
+    # The free router in lightning mode: the read and two other tools start at once.
+    "stitched_lightning": {"lightning": True},
     "stitched_paid": {"allow_paid_fallbacks": True},
     # The router plus a calling agent: a model reads each result and, when it is
     # not the page that was asked for, retries with the next stronger provider.
     "stitched_agent": {"allow_paid_fallbacks": True},
 }
-STITCHED = {"stitched_free", "stitched_paid", "stitched_agent"}
+STITCHED = {"stitched_free", "stitched_lightning", "stitched_paid", "stitched_agent"}
 AGENT_LADDER = ("scrapling", "camoufox", "firecrawl", "zyte", "scrapfly", "zenrows", "patchright")
 AGENT_RETRIES = 2
 JUDGE_MODEL = os.environ.get("TOOLBENCH_JUDGE_MODEL", "google/gemini-3.5-flash-lite")
@@ -287,10 +289,14 @@ def main(argv=None):
     parser.add_argument("--only-set", nargs="*", choices=["main", "heldout", "heldout2", "heldout3", "heldout4", "heldout5"])
     parser.add_argument("--label", default="run")
     parser.add_argument("--resume", type=Path, help="rows file to continue; finished (arm, URL) pairs are skipped")
+    parser.add_argument("--sample", type=int, help="read only this many cases, spread evenly over the set")
     args = parser.parse_args(argv)
     cases = frozen_main(args.rows) + heldout()
     if args.only_set:
         cases = [case for case in cases if case["set"] in args.only_set]
+    if args.sample and args.sample < len(cases):
+        step = len(cases) / args.sample
+        cases = [cases[int(index * step)] for index in range(args.sample)]
     EVALS.mkdir(parents=True, exist_ok=True)
     out = args.resume or EVALS / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + args.label + ".jsonl")
     previous = [json.loads(line) for line in out.read_text().splitlines()] if args.resume else []

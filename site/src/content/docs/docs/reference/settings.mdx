@@ -60,6 +60,8 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `max_cost_usd` | `None` | Cap on measured provider cost for the whole operation. |
 | `allow_handoff` | `False` | Try `handoff` after every automatic provider fails. |
 | `handoff_timeout_seconds` | `300.0` | How long a handoff waits for a person. |
+| `allow_real_browser` | `False` | Let your real Chrome or Edge join automatic reads; it moves ahead once walls do. |
+| `real_browser_wait_seconds` | `15.0` | How long the real browser lets a challenge clear by itself (it never clicks). |
 | `allow_archive` | `False` | A stored copy (Internet Archive) as the very last resort; the result says when it was taken. |
 | `block_private_network` | `False` | Refuse loopback, private and link-local addresses, names that resolve to them, and redirects into them. |
 | `exclude_providers` | `()` | Skip these providers (the agent's try-harder lever). |
@@ -97,6 +99,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `completeness_settle_ms` | `5000` | Minimum settle time for escalation reads. |
 | `completeness_deadline_seconds` | `150.0` | Time allowed for the whole escalation. |
 | `hedge_after_seconds` | `10.0` | After this long, a slow read gets a second read beside it from the first free ladder tool; 0 turns it off. |
+| `lightning` | `False` | Start the read and two other free tools at once and keep the first complete page; escalation races four. |
 | `interact_on_escalation` | `True` | Pages that need a choice or show only a consent notice get one local-browser read with the safe actions first. |
 | `warm_up_on_wall` | `True` | A public read that ends at a wall gets one more try through the site's home page. |
 | `site_session_hours` | `24.0` | Hours the local browser keeps each site's cookies; 0 turns it off. |

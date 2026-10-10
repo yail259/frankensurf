@@ -787,7 +787,7 @@ def search_url(transport, query, limit, options=None):
 UNBLOCKERS = frozenset({"zenrows", "scrapfly", "brightdata_unlocker", "firecrawl", "zyte"})
 
 # Agent providers run a whole browser task, so an attempt gets minutes.
-AGENT_PROVIDERS = frozenset({"skyvern"})
+AGENT_PROVIDERS = frozenset({"skyvern", "browser_use"})
 
 
 HOSTED_PROVIDERS = (JinaReaderProvider, CloudflareBrowserRunProvider, FirecrawlProvider,

@@ -26,6 +26,8 @@ _POLICY_ARGUMENTS = {
     "markdown": "prefer_markdown",
     "main": "main_content",
     "handoff": "allow_handoff",
+    "lightning": "lightning",
+    "real_browser": "allow_real_browser",
     "profile": "profile",
     "expect": "expect_terms",
     "card_images": "card_images",
@@ -408,6 +410,12 @@ def build_parser():
         help="profile-login: seconds to wait for the window to close")
     parser.add_argument("--handoff", action="store_true", default=None,
         help="If every automatic route fails, open the page for you to clear, then resume")
+    parser.add_argument("--lightning", action="store_true", default=None,
+        help="Start the read and two other tools at once and keep the first complete page"
+             " (faster; up to three requests to the site at once)")
+    parser.add_argument("--real-browser", action="store_true", default=None,
+        help="When walls keep blocking, try your real Chrome or Edge in a visible window"
+             " (FrankenSurf's own profile, never yours; it never clicks)")
     parser.add_argument("--capture-json", action="store_true", default=None,
         help="Capture JSON the page's own frontend fetched (rendered and identity reads)")
     parser.add_argument("--max-pages", type=int)

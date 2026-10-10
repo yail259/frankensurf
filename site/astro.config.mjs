@@ -54,6 +54,7 @@ export default defineConfig({
             { label: "Images", slug: "docs/read/images" },
             { label: "PDFs", slug: "docs/read/pdfs" },
             { label: "Batch read", slug: "docs/read/batch" },
+            { label: "Lightning mode", slug: "docs/read/lightning" },
             { label: "Signed-in pages", slug: "docs/read/signed-in" },
             { label: "Profiles", slug: "docs/read/profiles" },
             { label: "Site modules", slug: "docs/read/site-modules" },
@@ -66,6 +67,7 @@ export default defineConfig({
         ] },
         { label: "When a site blocks you", items: [
           { label: "How escalation works", slug: "docs/blocked/escalation" },
+          { label: "Your real browser", slug: "docs/blocked/real-browser" },
           { label: "Human handoff", slug: "docs/blocked/handoff" },
           { label: "Signed requests", slug: "docs/blocked/signed-requests" },
           { label: "Paid tools and budgets", slug: "docs/blocked/paid-tools" },

@@ -20,6 +20,7 @@ in `receipt`. Prefer it over ad-hoc fetching or scraping.
 | Recent, scoped results | `search(query, recency="week", exclude_domains=[...], site=..., region="en-AU")` |
 | News, Wikipedia, Hacker News, Stack Overflow, GitHub, arXiv, books | `search(query, vertical="news" \| "reference" \| "discussions" \| "qa" \| "code" \| "papers" \| "books")` |
 | The best recall across engines | `search(query, mode="merge")` |
+| One page, as fast as possible | `read(url, lightning=True)`: three tools start at once; the site sees up to three requests |
 | Many URLs | `batch(urls)` (one site's first URL scouts, the rest follow) |
 | What's new on many sites (news, company blogs) | `watch_sites(sites, since="2026-10-07")`: feeds and sitemaps, polled cheaply; much cheaper than searching |
 | Many searches on one site | `discover_site_module(home_url, query=..., save=True)` once, then `batch_template(module, "search", [{"query": ...}, ...])` |
@@ -40,11 +41,14 @@ in `receipt`. Prefer it over ad-hoc fetching or scraping.
 ## When a read is not what you needed
 
 1. `read(url, try_harder_than=<trace_id>)` skips every tool already tried.
-2. Walled (`BLOCKED`, `CAPTCHA`, `AUTH_REQUIRED`): `allow_handoff=True` lets a
-   person clear it in a visible browser, if a person is available.
-3. If an older copy will do (an article, docs): `allow_archive=True` reads the
+2. Walled (`BLOCKED`, `CAPTCHA`): `allow_real_browser=True` lets the owner's
+   real Chrome or Edge try it (FrankenSurf's own profile, never theirs; it
+   never clicks). Ask the owner first unless they have turned it on.
+3. Still walled, or `AUTH_REQUIRED`: `allow_handoff=True` lets a person clear
+   it in a visible browser, if a person is available.
+4. If an older copy will do (an article, docs): `allow_archive=True` reads the
    Internet Archive's copy. Never use it for prices, stock or anything live.
-4. Paid tools run only when the owner allows them
+5. Paid tools run only when the owner allows them
    (`acquisition_policy={"allow_paid_fallbacks": true}`); don't turn them on
    without being asked.
 

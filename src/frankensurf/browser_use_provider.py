@@ -93,10 +93,12 @@ class BrowserUseProvider:
     def manifest(self):
         from .providers import ProviderManifest
         version, paid = config.manifest_metadata()
+        # Route scope: a model-driven agent takes tens of seconds a page, so
+        # it runs when a call names it (tasks, repair), not in ordinary reads.
         return ProviderManifest("browser_use", version, rendering=True,
                                 requires_local_browser=True, paid=paid,
                                 navigation=False, cost_bounded=True,
-                                diagnosis=True)
+                                diagnosis=True, route_scope_required=True)
 
     def available(self, configured):
         return config.configured()

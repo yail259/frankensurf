@@ -1791,5 +1791,7 @@ DEFAULT_PROVIDERS.register(Crawl4AIProvider())
 
 from .handoff import HandoffProvider  # noqa: E402
 DEFAULT_PROVIDERS.register(HandoffProvider())
+from .real_browser import RealBrowserProvider  # noqa: E402
+DEFAULT_PROVIDERS.register(RealBrowserProvider())
 from .hosted_providers import register as _register_hosted  # noqa: E402
 _register_hosted(DEFAULT_PROVIDERS)
