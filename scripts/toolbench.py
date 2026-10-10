@@ -13,6 +13,8 @@ content checks:
   heldout4 scripts/toolbench-heldout4.json: 139 more, chosen before launch
   heldout5 scripts/toolbench-heldout5.json: 150 more, chosen after v0.29 for
            fresh accuracy figures (scripts/make_heldout5.py)
+  heldout6 scripts/toolbench-heldout6.json: 150 more, chosen blind after v0.31
+           and read first from a cloud VM (scripts/make_heldout6.py)
   heldout3 scripts/toolbench-heldout3.json: 152 sites chosen before any was
            read, after the completeness escalation was designed
 
@@ -56,7 +58,8 @@ HELDOUT = {"heldout": Path(__file__).with_name("toolbench-heldout.json"),
            "heldout2": Path(__file__).with_name("toolbench-heldout2.json"),
            "heldout3": Path(__file__).with_name("toolbench-heldout3.json"),
            "heldout4": Path(__file__).with_name("toolbench-heldout4.json"),
-           "heldout5": Path(__file__).with_name("toolbench-heldout5.json")}
+           "heldout5": Path(__file__).with_name("toolbench-heldout5.json"),
+           "heldout6": Path(__file__).with_name("toolbench-heldout6.json")}
 COMMON = {"origin_cooldown_seconds": 0, "freshness": "now", "lightning": False, "allow_real_browser": False}
 ARMS = {
     "http": {"provider": "http"},
@@ -286,7 +289,8 @@ def main(argv=None):
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--gap", type=float, default=2.0, help="seconds between arms on one URL")
     parser.add_argument("--arms", nargs="*", default=list(ARMS))
-    parser.add_argument("--only-set", nargs="*", choices=["main", "heldout", "heldout2", "heldout3", "heldout4", "heldout5"])
+    parser.add_argument("--only-set", nargs="*", choices=["main", "heldout", "heldout2", "heldout3", "heldout4", "heldout5",
+                                                         "heldout6"])
     parser.add_argument("--label", default="run")
     parser.add_argument("--resume", type=Path, help="rows file to continue; finished (arm, URL) pairs are skipped")
     parser.add_argument("--sample", type=int, help="read only this many cases, spread evenly over the set")

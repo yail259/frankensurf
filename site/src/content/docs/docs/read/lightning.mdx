@@ -33,6 +33,10 @@ same (14.9 against 15.7 seconds): when the read's own page is incomplete and
 the racers are slow, lightning waits for them. With many reads running at once
 on one machine, the extra browsers compete for its CPU and the gain shrinks.
 
+On a fresh blind set of 150 sites, read from a cloud VM, lightning read 124
+(82.7%) at a median of 1.7 seconds, against 118 (78.7%) and 5.9 seconds for
+ordinary reads four at a time ([benchmarks](/docs/more/benchmarks/)).
+
 <Aside type="caution">
   A site sees up to three requests at once from you instead of one. Keep it for
   reads where time matters, and use [batch](/docs/read/batch/) rather than

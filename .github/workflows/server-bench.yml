@@ -40,13 +40,22 @@ jobs:
       - name: Held-out sites, free tools
         run: |
           mkdir -p out /tmp/tb
-          SET="${BENCH_SET:-heldout5}"
+          SET="${BENCH_SET:-heldout6}"
           touch out/$SET-free-server.jsonl
           PYTHONPATH=.:src python scripts/toolbench.py --state /tmp/tb \
             --rows benchmarks/2026-10-06/sitebench-paid-v0.14.jsonl --only-set $SET \
             --arms stitched_free --workers 4 --label $SET-free-server \
             --resume out/$SET-free-server.jsonl > out/toolbench.log 2>&1 || true
           tail -3 out/toolbench.log
+      - name: Held-out sites, lightning mode, one read at a time
+        run: |
+          SET="${BENCH_SET:-heldout6}"
+          touch out/$SET-lightning-server.jsonl
+          PYTHONPATH=.:src python scripts/toolbench.py --state /tmp/tb-lightning \
+            --rows benchmarks/2026-10-06/sitebench-paid-v0.14.jsonl --only-set $SET \
+            --arms stitched_lightning --workers 1 --label $SET-lightning-server \
+            --resume out/$SET-lightning-server.jsonl > out/toolbench-lightning.log 2>&1 || true
+          tail -3 out/toolbench-lightning.log
       - name: 108 news and company articles, free tools, main content
         run: |
           PYTHONPATH=src python scripts/article_eval.py read benchmarks/2026-10-09/articles-108.json \

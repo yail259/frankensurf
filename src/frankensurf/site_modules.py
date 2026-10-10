@@ -519,6 +519,8 @@ def _jsonld_blocks(structured):
 
 
 def _types(node):
+    if not isinstance(node, dict):
+        return set()  # A row's "item" may be a plain string, not a node.
     kind = node.get("@type")
     return {kind} if isinstance(kind, str) else set(kind) if isinstance(kind, list) else set()
 

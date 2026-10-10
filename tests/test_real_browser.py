@@ -177,9 +177,11 @@ def _chromium():
 @pytest.fixture
 def real(monkeypatch, tmp_path):
     pytest.importorskip("playwright")
+    import shutil
     chromium = _chromium()
-    if not chromium or not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        pytest.skip("needs a Chromium build and a display")
+    if not chromium or not shutil.which("Xvfb"):
+        pytest.skip("needs a Chromium build and Xvfb (the real browser runs hidden on a virtual display)")
+    monkeypatch.delenv("FRANKENSURF_REAL_BROWSER_WINDOW", raising=False)
     # Playwright's own Chromium stands in for Chrome: the same code path.
     monkeypatch.setenv("FRANKENSURF_REAL_BROWSER_PATH", chromium)
     monkeypatch.setenv("FRANKENSURF_REAL_BROWSER_PROFILE", str(tmp_path / "profile"))
@@ -215,3 +217,52 @@ async def test_a_bare_403_is_a_wall_not_the_browsers_error_page(tmp_path, site, 
         result = await web.read(site + "/empty403", WebPolicy(provider="real_browser", settle_ms=0,
                                                               provider_max_attempts_per_candidate=1))
     assert result["receipt"]["failure"]["code"] == "BLOCKED"
+
+
+async def test_the_window_stays_off_your_screen_unless_you_ask(monkeypatch):
+    from frankensurf import real_browser
+    monkeypatch.delenv("FRANKENSURF_REAL_BROWSER_WINDOW", raising=False)
+
+    async def private():
+        return ":97"
+
+    async def none():
+        return None
+    monkeypatch.setattr(real_browser, "_virtual_display", private)
+    hidden = await real_browser._launch_options()
+    assert hidden["env"]["DISPLAY"] == ":97" and "WAYLAND_DISPLAY" not in hidden["env"]
+    assert hidden["env"]["XDG_SESSION_TYPE"] == "x11" and "--ozone-platform=x11" in hidden["args"]
+    monkeypatch.setattr(real_browser, "_virtual_display", none)
+    assert "--window-position=-32000,-32000" in (await real_browser._launch_options())["args"]
+    monkeypatch.setenv("FRANKENSURF_REAL_BROWSER_WINDOW", "visible")
+    assert await real_browser._launch_options() == {"args": []}
+
+
+async def test_a_private_display_starts_where_the_socket_folder_is_read_only(monkeypatch):
+    """WSLg mounts /tmp/.X11-unix read-only: Xvfb then listens on the abstract socket only."""
+    import io
+    from frankensurf import real_browser
+    started = []
+
+    class Fake:
+        pid = 4242
+
+        def __init__(self, args, **kwargs):
+            started.append(args)
+            self.stdout = io.BytesIO((args[1][1:] + "\n").encode())
+
+        def kill(self):
+            pass
+
+        def wait(self):
+            pass
+    monkeypatch.delenv("FRANKENSURF_REAL_BROWSER_WINDOW", raising=False)
+    monkeypatch.setattr(real_browser, "_VIRTUAL", {})
+    monkeypatch.setattr(real_browser.shutil, "which", lambda name: "/usr/bin/Xvfb")
+    monkeypatch.setattr(real_browser.os, "access", lambda path, mode: False)
+    monkeypatch.setattr(real_browser.os.path, "isdir", lambda path: True)
+    monkeypatch.setattr(real_browser.os.path, "exists", lambda path: path.endswith("X99"))
+    monkeypatch.setattr(real_browser.subprocess, "Popen", Fake)
+    monkeypatch.setattr(real_browser.atexit, "register", lambda *args: None)
+    assert await real_browser._virtual_display() == ":100"
+    assert started[0][1] == ":100" and started[0][-2:] == ["-nolisten", "unix"]

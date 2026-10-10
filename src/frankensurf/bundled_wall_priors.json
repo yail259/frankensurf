@@ -1,0 +1,190 @@
+{
+ "schema": "frankensurf.wall-priors/v1",
+ "note": "Measured on 10 October 2026: which free tools got past each wall vendor across seven runs of held-out sets 4 and 5 from one home connection. Counts are scaled to at most 8 tries per tool, so a machine's own reads (state_dir/wall-stats.json) outweigh them quickly. Vendors, not sites.",
+ "vendors": {
+  "akamai": {
+   "camoufox": [
+    1,
+    8
+   ],
+   "crawl4ai": [
+    0,
+    8
+   ],
+   "jina_reader": [
+    4,
+    8
+   ],
+   "local": [
+    1,
+    8
+   ],
+   "nodriver": [
+    1,
+    8
+   ],
+   "patchright": [
+    0,
+    8
+   ],
+   "scrapling": [
+    2,
+    8
+   ],
+   "scrapling_http": [
+    0,
+    8
+   ],
+   "steel": [
+    3,
+    8
+   ]
+  },
+  "cloudflare": {
+   "camoufox": [
+    2,
+    8
+   ],
+   "crawl4ai": [
+    0,
+    8
+   ],
+   "jina_reader": [
+    2,
+    8
+   ],
+   "local": [
+    0,
+    8
+   ],
+   "nodriver": [
+    0,
+    8
+   ],
+   "patchright": [
+    0,
+    8
+   ],
+   "scrapling": [
+    1,
+    8
+   ],
+   "scrapling_http": [
+    0,
+    8
+   ],
+   "steel": [
+    5,
+    8
+   ]
+  },
+  "datadome": {
+   "camoufox": [
+    5,
+    8
+   ],
+   "crawl4ai": [
+    0,
+    8
+   ],
+   "jina_reader": [
+    0,
+    8
+   ],
+   "local": [
+    0,
+    8
+   ],
+   "nodriver": [
+    0,
+    8
+   ],
+   "patchright": [
+    0,
+    8
+   ],
+   "scrapling": [
+    0,
+    8
+   ],
+   "scrapling_http": [
+    0,
+    8
+   ],
+   "steel": [
+    2,
+    8
+   ]
+  },
+  "imperva": {
+   "camoufox": [
+    0,
+    8
+   ],
+   "jina_reader": [
+    7,
+    7
+   ],
+   "local": [
+    0,
+    8
+   ],
+   "scrapling": [
+    1,
+    1
+   ],
+   "steel": [
+    0,
+    8
+   ]
+  },
+  "perimeterx": {
+   "camoufox": [
+    0,
+    3
+   ],
+   "crawl4ai": [
+    0,
+    3
+   ],
+   "jina_reader": [
+    1,
+    6
+   ],
+   "local": [
+    0,
+    3
+   ],
+   "nodriver": [
+    0,
+    3
+   ],
+   "patchright": [
+    0,
+    3
+   ],
+   "scrapling": [
+    0,
+    3
+   ],
+   "scrapling_http": [
+    0,
+    3
+   ],
+   "steel": [
+    0,
+    3
+   ]
+  },
+  "vercel": {
+   "jina_reader": [
+    6,
+    6
+   ],
+   "local": [
+    4,
+    8
+   ]
+  }
+ }
+}

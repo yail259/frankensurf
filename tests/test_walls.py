@@ -108,7 +108,7 @@ async def test_the_router_learns_which_tool_gets_past_a_wall_vendor(tmp_path, re
                 raise failure
         return Plugin()
     registry(walled("http"), walled("slow_a"), walled("slow_b"), walled("stealthy"))
-    policy = {**POLICY, "warm_up_on_wall": False}
+    policy = {**POLICY, "warm_up_on_wall": False, "use_wall_priors": False}
     async with Runtime(tmp_path) as web:
         for n in range(4):
             result = await web.read(f"https://shop{n}.example.com/p/item-{n}", policy_overrides=policy)
@@ -140,10 +140,72 @@ async def test_tools_that_never_got_past_a_vendor_go_last(tmp_path, registry):
                 raise failure
         return Plugin()
     registry(tool("http"), tool("never_a"), tool("never_b"), tool("untried"), tool("sometimes", wins=True))
-    policy = {**POLICY, "warm_up_on_wall": False}
+    policy = {**POLICY, "warm_up_on_wall": False, "use_wall_priors": False}
     async with Runtime(tmp_path) as web:
         (web.state_dir / "wall-stats.json").write_text(json.dumps({"cloudflare": {
             "never_a": [0, 9], "never_b": [0, 12], "sometimes": [1, 4]}}))
         result = await web.read("https://shop.example.com/p/item-1", policy_overrides=policy)
     assert calls == ["http", "untried", "sometimes"]
     assert result["receipt"]["routing"]["learned_for"] == {"vendor": "cloudflare", "last": ["never_a", "never_b"]}
+
+
+async def test_a_fresh_install_starts_from_the_bundled_priors(tmp_path, registry, monkeypatch):
+    from frankensurf import runtime
+    calls = []
+
+    def tool(identifier, wins=False):
+        class Plugin:
+            def __init__(self):
+                self.manifest = ProviderManifest(identifier, "1", rendering=identifier != "http")
+
+            def available(self, configured):
+                return True
+
+            async def acquire(self, request, services):
+                calls.append(identifier)
+                if wins:
+                    return {"url": request.url, "content": PAGE, "content_type": "text/html", "http_status": 200}
+                failure = WebFailure("BLOCKED", "fixture wall")
+                failure.wall_vendor = "datadome"
+                raise failure
+        return Plugin()
+    monkeypatch.setattr(runtime, "_wall_priors", lambda: {"datadome": {"stealthy": [5, 8], "never": [0, 8]}})
+    registry(tool("http"), tool("never"), tool("plain"), tool("stealthy", wins=True))
+    policy = {**POLICY, "warm_up_on_wall": False}
+    async with Runtime(tmp_path) as web:
+        primed = await web.read("https://shop.example.com/p/item-1", policy_overrides=policy)
+        first = list(calls)
+        calls.clear()
+        plain = await web.read("https://shop2.example.com/p/item-2",
+                               policy_overrides={**policy, "use_wall_priors": False})
+    assert first == ["http", "stealthy"]
+    assert primed["receipt"]["routing"]["learned_for"] == {
+        "vendor": "datadome", "first": "stealthy", "last": ["never"], "priors": True}
+    # Without priors, the first read on a fresh machine climbs in catalogue order.
+    assert calls == ["http", "never", "plain", "stealthy"]
+    assert "learned_for" not in (plain["receipt"].get("routing") or {})
+
+
+def test_the_bundled_priors_name_vendors_and_tools_only():
+    from frankensurf.runtime import WALL_VENDORS, _wall_priors
+    priors = _wall_priors()
+    assert priors and set(priors) <= set(WALL_VENDORS)
+    assert all(0 <= wins <= tries <= 8 for tools in priors.values() for wins, tries in tools.values())
+
+
+async def test_priors_fade_as_this_machines_own_reads_come_in(tmp_path):
+    from frankensurf import runtime
+    async with Runtime(tmp_path) as web:
+        import json
+        (web.state_dir / "wall-stats.json").write_text(json.dumps({"cloudflare": {
+            "buried": [0, 8], "recovered": [3, 3]}}))
+        original = runtime._wall_priors
+        runtime._wall_priors = lambda: {"cloudflare": {"buried": [2, 8], "recovered": [0, 8]}}
+        try:
+            stats, _ = web._vendor_stats("cloudflare", WebPolicy())
+        finally:
+            runtime._wall_priors = original
+    # Eight local failures outweigh the prior entirely: the tool goes last.
+    assert stats["buried"] == [0, 8]
+    # Three local wins: the prior's eight failures count for five, so it is not buried.
+    assert stats["recovered"][0] == 3 and stats["recovered"][1] == 8

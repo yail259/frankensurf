@@ -68,6 +68,7 @@ export default defineConfig({
         { label: "When a site blocks you", items: [
           { label: "How escalation works", slug: "docs/blocked/escalation" },
           { label: "Your real browser", slug: "docs/blocked/real-browser" },
+          { label: "More than one connection", slug: "docs/blocked/egress" },
           { label: "Human handoff", slug: "docs/blocked/handoff" },
           { label: "Signed requests", slug: "docs/blocked/signed-requests" },
           { label: "Paid tools and budgets", slug: "docs/blocked/paid-tools" },

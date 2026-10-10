@@ -46,8 +46,9 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     first complete page: faster first reads of slow or walled sites, at the cost
     of up to three requests to the site at once.
     allow_real_browser=True lets the owner's real Chrome (or Edge) try a page that
-    keeps meeting walls, in a visible window with FrankenSurf's own profile. It
-    never clicks; a wall that needs a person still fails.
+    keeps meeting walls: a real, non-headless window kept off the owner's
+    screen, with FrankenSurf's own profile. It never clicks; a wall that needs a
+    person still fails.
     main_content=True returns the article without menus, footers or banners as
     text (receipt.main_content says how it was cut; full_text_chars is the size
     of the whole page's text). Use it for articles and news.

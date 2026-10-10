@@ -343,3 +343,27 @@ def test_results_are_recognised_by_shape_when_their_links_mention_the_query():
     verdict = assess(url, {"content": "<html><body>" + links + menu + "</body></html>",
                            "text": "json tool " * 200, "content_type": "text/html"})
     assert verdict["complete"] and verdict["item_links"] >= 10
+
+
+def test_results_on_the_sites_own_subdomains_count():
+    from frankensurf.completeness import _same_site, item_links, result_group
+    url = "https://substack.example/search/film%20photography"
+    posts = "".join(f'<a href="https://writer{n}.substack.example/p/film-photography-notes-{n}">Film photography notes {n}</a>'
+                    for n in range(10))
+    page = "<html><body>" + "<p>Home About Sign in Subscribe Explore Leaderboard</p>" * 20 + posts + "</body></html>"
+    assert result_group(page, url, ["film", "photography"]) == 10
+    assert item_links(page, url) == 10
+    # Another site's links still don't count, nor does the same path twice on one host.
+    assert item_links(page.replace("substack.example", "other.example", 10), url) == 0
+    assert _same_site("shop.example.co.uk", "www.example.co.uk") and not _same_site("example.co.uk", "other.co.uk")
+    # Never a service subdomain, never a sibling tenant of a shared platform.
+    assert not _same_site("help.substack.example", "substack.example")
+    assert not _same_site("bob.github.io", "alice.github.io")
+    help_links = "".join(f'<a href="https://help.substack.example/hc/articles/36000123456{n}-track-order">Help {n}</a>'
+                         for n in range(12))
+    assert item_links("<html><body>" + help_links + "</body></html>", url) == 0
+    # A language switcher's copies of one page are one page, and never the page itself.
+    page_url = "https://en.market.example/c/10045678-laptops"
+    switcher = "".join(f'<a href="https://{lang}.market.example/c/10045678-laptops">{lang}</a>'
+                       for lang in ("fr", "de", "es", "it", "nl"))
+    assert item_links("<html><body>" + switcher + "</body></html>", page_url) == 0

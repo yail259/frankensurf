@@ -74,7 +74,10 @@ It looks at the page's shape:
   don't look like product links still count when they look like results: 8 or
   more links under one path prefix (`/packages/<name>`, `/project/<name>`), at
   least a third of which mention the query. A menu shares a prefix too, but
-  not the query.
+  not the query. Links to the page's own subdomains count as its results
+  (posts on `name.substack.com`, albums on `artist.bandcamp.com`), but never
+  service subdomains (`help.`, `blog.`, `careers.` and the like) or other sites
+  on a shared platform.
 - **Item pages** need a price or 1,500 characters of text.
 - **Other pages** need 1,500 characters, or 400 without scripts.
 
@@ -202,7 +205,7 @@ Four things reorder the ladder so repeat visits are fast:
 
 | | What it does | Setting |
 | --- | --- | --- |
-| **Wall vendors** | A wall's response names the bot-defence service behind it (`receipt.wall_vendor`: Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, AWS WAF, Vercel or Sucuri). Frankensurf counts which tools got past each vendor on this machine; once a tool has at least 3 tries and even odds, later reads that meet the same vendor on any site try it next, and a tool that has never got past it in 8 tries goes last (`receipt.routing.learned_for`). Learned from your own reads, never from site names. | `state_dir/wall-stats.json` |
+| **Wall vendors** | A wall's response names the bot-defence service behind it (`receipt.wall_vendor`: Cloudflare, Akamai, DataDome, PerimeterX, Imperva, Kasada, AWS WAF, Vercel or Sucuri). Frankensurf counts which tools got past each vendor on this machine; once a tool has at least 3 tries and even odds, later reads that meet the same vendor on any site try it next, and a tool that has never got past it in 8 tries goes last (`receipt.routing.learned_for`). A fresh install starts from measured priors (`bundled_wall_priors.json`, worth up to 8 tries per tool), which count less with each of your own reads and not at all after 8 (`use_wall_priors`). Vendors, never site names. | `state_dir/wall-stats.json` |
 | **Escalation** | After 4 failed tries in one read, free tools that fetch from their own network (Jina Reader) move ahead: a wall that blocks by address stops every tool on this machine alike, and some pages none of them render. After 4 walls, [your real browser](/docs/blocked/real-browser/) (when allowed) and then allowed paid tools move ahead of those. | `escalate_after_walls` |
 | **Site hints** | When a read succeeds only after earlier tools failed, the tool that got through goes first on that site for 24 hours. | `origin_route_hint_ttl_seconds` |
 | **Route memory** | After 3 clean reads in a row on the same path pattern, that tool goes first for that path. | `route_memory_min_samples` |

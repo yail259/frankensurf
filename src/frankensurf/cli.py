@@ -414,8 +414,8 @@ def build_parser():
         help="Start the read and two other tools at once and keep the first complete page"
              " (faster; up to three requests to the site at once)")
     parser.add_argument("--real-browser", action="store_true", default=None,
-        help="When walls keep blocking, try your real Chrome or Edge in a visible window"
-             " (FrankenSurf's own profile, never yours; it never clicks)")
+        help="When walls keep blocking, try your real Chrome or Edge (a real window kept off your"
+             " screen; FrankenSurf's own profile, never yours; it never clicks)")
     parser.add_argument("--capture-json", action="store_true", default=None,
         help="Capture JSON the page's own frontend fetched (rendered and identity reads)")
     parser.add_argument("--max-pages", type=int)

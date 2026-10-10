@@ -227,3 +227,41 @@ still refused connections. Four of these (Mighty Ape, Carousell,
 PrimeLocation, Jiji) only paid unblockers have ever read, and this machine's
 address had met each of them in about eight runs that day. The option is for
 walls that recognise automated browsers rather than an address.
+
+## Held-out set 6 (blind), v0.32 code
+
+`scripts/toolbench-heldout6.json` (built by `scripts/make_heldout6.py`): 150
+sites, 10 in each of 15 categories, proposed per category by agents working from
+memory with no web access and checked by a second agent the same way
+(`scripts/heldout6-candidates.json`). Every host and brand on an earlier set,
+row file, spot check, tuned corpus or route seed (`scripts/used_hosts.py`) was
+left out. Our arms ran first on a fresh GitHub-hosted Azure VM (Dulles,
+Virginia: a data-centre address, which sites wall more than a home one), so no
+page of the set was read from the home connection; Firecrawl fetches from its
+own network.
+
+| Arm | Where | Sites read | Median (read) | p75 | p90 | Cost |
+|---|---|---|---|---|---|---|
+| FrankenSurf free, lightning, one read at a time | Azure VM | 124/150 (82.7%) | 1.7 s | 4.8 s | 13.3 s | $0 |
+| FrankenSurf free, four reads at a time | Azure VM | 118/150 (78.7%) | 5.9 s | 15.8 s | 25.1 s | $0 |
+| Firecrawl alone | its network | 128/150 (85.3%) | 4.8 s | 7.7 s | 11.3 s | $0.54 |
+
+`toolbench-heldout6-lightning-azure.jsonl`, `toolbench-heldout6-free-azure.jsonl`,
+`toolbench-heldout6-firecrawl.jsonl` (Firecrawl's API rate-limited 120 pages at
+four at a time; those were re-read one at a time).
+
+- 143 sites were read by at least one arm. FrankenSurf (either mode) read 15
+  that Firecrawl missed; Firecrawl read 19 that FrankenSurf missed.
+- The free arm's misses were mostly `BLOCKED` (16): walls that refuse a
+  data-centre address. Lightning read 6 more: four through Jina Reader, which
+  fetches from its own network (Houzz, Udemy, Petstock, Blibli), and CB2 and
+  Summit Racing through Camoufox and Steel (the four-at-a-time run ended at a
+  wall on both). Neither a proxy nor the new connection
+  pool (`FRANKENSURF_EGRESS`) was configured on the VM.
+- Every site the four-at-a-time free arm read, lightning read too; on the 118
+  both read, lightning's median was 1.6 s faster.
+- No paid arm: the VM has no keys.
+
+The same VM read the 108 news and company articles of
+`benchmarks/2026-10-09/articles-108.json` (`articles-108-azure-v0.32.jsonl`):
+103 read and the article present on 100, as on Azure before v0.32.
