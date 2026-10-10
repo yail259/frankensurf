@@ -107,6 +107,17 @@ async def test_a_busy_profile_skips_the_real_browser(tmp_path, monkeypatch):
     assert result["receipt"]["failure"]["code"] == "PROVIDER_UNAVAILABLE"
 
 
+async def test_trying_harder_still_reaches_the_real_browser(tmp_path, registry, monkeypatch):
+    monkeypatch.delenv("FRANKENSURF_REAL_BROWSER", raising=False)
+    registry(provider("w1", "BLOCKED"), provider("real_browser", "ok", scope=True))
+    async with Runtime(tmp_path) as web:
+        first = await web.read(URL, policy_overrides=POLICY)
+        harder = await web.read(URL, policy_overrides={**POLICY, "allow_real_browser": True},
+                                retry_of=first["receipt"]["trace_id"])
+    assert first["receipt"]["status"] == "failed"
+    assert tried(harder) == ["real_browser"] and harder["receipt"]["status"] == "observed"
+
+
 def test_the_real_browser_is_found_where_it_installs_or_where_you_point(tmp_path, monkeypatch):
     from frankensurf import real_browser
     fake = tmp_path / "chrome"
@@ -132,9 +143,8 @@ STUCK = """<html><head><title>Just a moment...</title></head><body><p>Checking y
 RELOADS = """<html><head><title>Just a moment...</title></head><body><p>Checking your browser.</p>
 <script>setTimeout(() => location.replace('/cleared'), 1500);</script></body></html>"""
 CLEARED = "<html><head><title>Brass lamp</title></head><body>" + "<p>A brass lamp, $49, ships in two days.</p>" * 30 + "</body></html>"
-SLOW = CHALLENGE.replace("2000", "4000")
 PAGES = {"/stuck": (200, STUCK), "/reloads": (403, RELOADS), "/cleared": (200, CLEARED),
-         "/empty403": (403, ""), "/slow": (200, SLOW)}
+         "/empty403": (403, "")}
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -205,17 +215,3 @@ async def test_a_bare_403_is_a_wall_not_the_browsers_error_page(tmp_path, site, 
         result = await web.read(site + "/empty403", WebPolicy(provider="real_browser", settle_ms=0,
                                                               provider_max_attempts_per_candidate=1))
     assert result["receipt"]["failure"]["code"] == "BLOCKED"
-
-
-async def test_with_handoff_allowed_a_person_clears_the_wall_in_the_same_window(tmp_path, site, real):
-    # The page clears after 4 s; the real browser alone waits 1 s. With a handoff
-    # allowed, the same window waits for the person (here, the page itself).
-    async with Runtime(tmp_path / "state") as web:
-        alone = await web.read(site + "/slow", WebPolicy(provider="real_browser", settle_ms=0,
-                                                         real_browser_wait_seconds=1,
-                                                         provider_max_attempts_per_candidate=1))
-        helped = await web.read(site + "/slow?2", WebPolicy(provider="real_browser", settle_ms=0,
-                                                             real_browser_wait_seconds=1, allow_handoff=True,
-                                                             handoff_timeout_seconds=20))
-    assert alone["receipt"]["failure"]["code"] == "CAPTCHA"
-    assert helped["receipt"]["status"] == "observed" and "ships in two days" in helped["text"]

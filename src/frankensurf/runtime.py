@@ -3460,10 +3460,16 @@ class Runtime:
             remaining += [i for i in effective.completeness_ladder
                           if i not in effective.exclude_providers and self.providers.is_available(i)
                           and _allowed(self.providers, i, effective)]
+            # Route-scoped tools the call allows still count.
+            remaining += [i for i, allowed in (("real_browser", effective.allow_real_browser
+                                                 and effective.allow_local_browser),
+                                                ("handoff", effective.allow_handoff))
+                          if allowed and i not in effective.exclude_providers and self.providers.is_available(i)]
             if not remaining:
                 return await self._read(url, effective, adapter=adapter, _planning_failure=WebFailure(
                     "PROVIDER_UNAVAILABLE", "Every allowed tool was already tried; allow paid tools,"
-                    " use a profile, or ask for handoff (allow_handoff=True)"))
+                    " your real browser (allow_real_browser=True), use a profile, or ask for handoff"
+                    " (allow_handoff=True)"))
         if effective.profile:
             return await self._read_with_profile(url, policy, provider, adapter, policy_overrides,
                                                  workload_assertions, effective)
@@ -3568,6 +3574,7 @@ class Runtime:
                              and not effective.provider
                              and self.providers.is_available(hinted)))
             if (entry.get("cooldown_until", 0) > now and not unblocker and not (provider or effective.provider)
+                    and entry.get("code") in ("BLOCKED", "CAPTCHA")
                     and effective.allow_real_browser and effective.allow_local_browser
                     and "real_browser" not in effective.exclude_providers
                     and effective.provider_candidates is None and not effective.identity and not effective.profile
@@ -3780,6 +3787,10 @@ class Runtime:
         def won(result, tool, **extra):
             receipt = result["receipt"]
             record.update(won=True, provider=tool, status="observed", trace_id=receipt.get("trace_id"), **extra)
+            if main_result is not None:
+                # The main read finished (and may have paid): its cost stays on the bill.
+                costs = [receipt.get("cost_usd"), (main_result.get("receipt") or {}).get("cost_usd")]
+                receipt["cost_usd"] = None if None in costs else _total_cost(costs)
             receipt["hedge"] = record
             return result
         try:
@@ -4550,7 +4561,7 @@ class Runtime:
                 archive = {item["id"] for item in self.providers.inspect() if item.get("archive")}
                 at = next((index for index, item in enumerate(candidates) if item in archive), len(candidates))
                 candidates.insert(at, "real_browser")
-            if (policy.allow_handoff and not real_browser and "handoff" not in candidates
+            if (policy.allow_handoff and "handoff" not in candidates
                     and self.providers.is_available("handoff")):
                 candidates.append("handoff")
             if policy.profile:
@@ -5090,8 +5101,7 @@ class Runtime:
                 policy.timeout_seconds, policy.handoff_timeout_seconds))
         elif candidate == "real_browser":
             policy_for_candidate = replace(policy, timeout_seconds=max(
-                policy.timeout_seconds, policy.real_browser_wait_seconds + 30
-                + (policy.handoff_timeout_seconds if policy.allow_handoff else 0)))
+                policy.timeout_seconds, policy.real_browser_wait_seconds + 30))
         elif candidate in AGENT_PROVIDERS:
             policy_for_candidate = replace(policy, timeout_seconds=max(
                 policy.timeout_seconds, policy.agent_provider_timeout_seconds))

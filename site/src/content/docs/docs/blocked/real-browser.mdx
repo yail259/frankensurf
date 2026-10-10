@@ -18,8 +18,7 @@ visible window, before giving up.
   through more easily.
 - **Never clicks.** A challenge that clears by itself ("Just a moment...") is
   waited out, up to `real_browser_wait_seconds` (15). One that needs a person
-  fails as a wall, unless the call allows a [handoff](#with-a-person): then you
-  clear it in that same window.
+  still fails as a wall, and a [handoff](/docs/blocked/handoff/) can follow.
 - **One page at a time** per profile, in a window that opens and closes. A
   read that finds the profile busy (another read, or another FrankenSurf
   process) skips the real browser rather than waiting.
@@ -35,16 +34,13 @@ from a person. The receipt says so: `receipt.method` is `real_browser`, and
 
 A walled site pauses other reads for 15 minutes ([pacing](/docs/blocked/escalation/#pacing)),
 but not this one: a read that allows the real browser while the site is
-cooling down goes straight to it. So an agent can retry a walled page with
-`allow_real_browser` and get a real attempt.
+cooling down after a wall goes straight to it (a rate limit's pause still
+holds). So an agent can retry a walled page with `allow_real_browser`, or
+`try_harder_than` and `allow_real_browser` together, and get a real attempt.
 
-## With a person
-
-When the call also allows a [handoff](/docs/blocked/handoff/), a wall that
-doesn't clear by itself is handed to you in that same window: you clear it, and
-the read goes on there. The profile keeps what you earned (the challenge's
-cookies), so the next automatic reads of that site usually get through without
-you. No second handoff window opens.
+A handoff, when the call allows one, still comes last and uses its own
+profile: a sign-in you complete there never reaches the real browser's
+anonymous reads.
 
 ## Usage
 

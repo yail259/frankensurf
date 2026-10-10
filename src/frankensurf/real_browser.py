@@ -15,10 +15,9 @@ each page opens in a fresh private window of a real browser you started yourself
 (with remote debugging), which is closed afterwards: no cookies go in or out.
 
 It never clicks or types. A challenge that clears by itself is waited out, up to
-``real_browser_wait_seconds``. When the call also allows a handoff, that same
-window is where a person clears a wall that does not clear by itself, and the
-profile keeps what they earn for later reads. One page at a time per profile: a
-second read while the profile is busy skips the real browser.
+``real_browser_wait_seconds``; one that needs a person fails as a wall, and a
+handoff (its own profile, never this one) can follow. One page at a time per
+profile: a second read while the profile is busy skips the real browser.
 """
 from __future__ import annotations
 
@@ -198,16 +197,6 @@ class RealBrowserProvider:
                                          response_url=request.url) from None
                     code = await self._wait_out(page, request.url,
                                                 min(deadline, time.monotonic() + policy.real_browser_wait_seconds))
-                    if code and not page.url.startswith("chrome-error://") and policy.allow_handoff:
-                        # The call allows a person: this window is the handoff, and
-                        # the profile keeps what they earn for later reads.
-                        from .handoff import _notify
-                        await page.bring_to_front()
-                        _notify(request.url)
-                        code = await self._wait_out(page, request.url, deadline)
-                        if code:
-                            raise WebFailure("TIMEOUT", "Nobody cleared the wall in the real browser in time",
-                                             response_url=page.url)
                     if code:
                         raise WebFailure(code, "The real browser met the wall too", response_url=page.url)
                     readiness = None
