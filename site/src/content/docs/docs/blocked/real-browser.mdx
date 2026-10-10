@@ -19,6 +19,12 @@ visible window, before giving up.
 - **Never clicks.** A challenge that clears by itself ("Just a moment...") is
   waited out, up to `real_browser_wait_seconds` (15). One that needs a person
   still fails as a wall, and a [handoff](/docs/blocked/handoff/) can follow.
+- **Out of your way.** On Linux and WSL it runs on a private virtual display
+  (Xvfb, when installed): a real, non-headless browser that never appears on
+  your screen or takes your cursor or focus, and that works on a server with no
+  display too. On macOS and Windows the window opens off-screen. Set
+  `FRANKENSURF_REAL_BROWSER_WINDOW=visible` to watch it on your screen (on a
+  virtual display it draws without your GPU, which a few walls notice).
 - **One page at a time** per profile, in a window that opens and closes. A
   read that finds the profile busy (another read, or another FrankenSurf
   process) skips the real browser rather than waiting.
@@ -92,9 +98,10 @@ Chrome refuses remote debugging on your everyday profile, which is why it needs
 its own.
 
 <Aside type="note">
-  It needs a display, or `FRANKENSURF_REAL_BROWSER_CDP`. Without either it
-  reports itself unavailable and is skipped. In WSL, a Linux Chrome inside WSL
-  opens through WSLg; a Windows browser is reachable only through
+  It needs Xvfb or a display (on Linux), or `FRANKENSURF_REAL_BROWSER_CDP`.
+  Without any of them it reports itself unavailable and is skipped. In WSL, a
+  Linux Chrome inside WSL works (hidden on Xvfb, or through WSLg when visible);
+  a Windows browser is reachable only through
   `FRANKENSURF_REAL_BROWSER_CDP`, and only when WSL can reach Windows'
   localhost (mirrored networking).
 </Aside>
@@ -109,3 +116,4 @@ its own.
 | `FRANKENSURF_REAL_BROWSER_PATH` | Chrome, then Edge | The browser to launch. |
 | `FRANKENSURF_REAL_BROWSER_PROFILE` | `~/.local/share/frankensurf/real-browser-profile` | FrankenSurf's own profile for it. |
 | `FRANKENSURF_REAL_BROWSER_CDP` | none | Open tabs in a real browser you already run. |
+| `FRANKENSURF_REAL_BROWSER_WINDOW` | hidden | `visible` shows the window on your screen. |

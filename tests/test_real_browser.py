@@ -177,9 +177,11 @@ def _chromium():
 @pytest.fixture
 def real(monkeypatch, tmp_path):
     pytest.importorskip("playwright")
+    import shutil
     chromium = _chromium()
-    if not chromium or not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
-        pytest.skip("needs a Chromium build and a display")
+    if not chromium or not shutil.which("Xvfb"):
+        pytest.skip("needs a Chromium build and Xvfb (the real browser runs hidden on a virtual display)")
+    monkeypatch.delenv("FRANKENSURF_REAL_BROWSER_WINDOW", raising=False)
     # Playwright's own Chromium stands in for Chrome: the same code path.
     monkeypatch.setenv("FRANKENSURF_REAL_BROWSER_PATH", chromium)
     monkeypatch.setenv("FRANKENSURF_REAL_BROWSER_PROFILE", str(tmp_path / "profile"))
@@ -215,3 +217,15 @@ async def test_a_bare_403_is_a_wall_not_the_browsers_error_page(tmp_path, site, 
         result = await web.read(site + "/empty403", WebPolicy(provider="real_browser", settle_ms=0,
                                                               provider_max_attempts_per_candidate=1))
     assert result["receipt"]["failure"]["code"] == "BLOCKED"
+
+
+def test_the_window_stays_off_your_screen_unless_you_ask(monkeypatch):
+    from frankensurf import real_browser
+    monkeypatch.delenv("FRANKENSURF_REAL_BROWSER_WINDOW", raising=False)
+    monkeypatch.setattr(real_browser, "_virtual_display", lambda: ":97")
+    hidden = real_browser._launch_options()
+    assert hidden["env"]["DISPLAY"] == ":97" and "WAYLAND_DISPLAY" not in hidden["env"]
+    monkeypatch.setattr(real_browser, "_virtual_display", lambda: None)
+    assert "--window-position=-32000,-32000" in real_browser._launch_options()["args"]
+    monkeypatch.setenv("FRANKENSURF_REAL_BROWSER_WINDOW", "visible")
+    assert real_browser._launch_options() == {"args": []}
