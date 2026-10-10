@@ -76,11 +76,17 @@ ARMS = {
     # The free router in lightning mode: the read and two other tools start at once.
     "stitched_lightning": {"lightning": True},
     "stitched_paid": {"allow_paid_fallbacks": True},
+    # v0.32's behaviour, for A/B runs: a slow read waited 10 s for one hedge, paid
+    # tools moved ahead after 4 walls, and a not-found page stayed not found.
+    "stitched_free_v032": {"hedge_after_seconds": 10, "hedge_racers": 1, "rescue_not_found": False},
+    "stitched_paid_v032": {"allow_paid_fallbacks": True, "paid_after_walls": 0, "hedge_after_seconds": 10,
+                           "hedge_racers": 1, "rescue_not_found": False},
     # The router plus a calling agent: a model reads each result and, when it is
     # not the page that was asked for, retries with the next stronger provider.
     "stitched_agent": {"allow_paid_fallbacks": True},
 }
-STITCHED = {"stitched_free", "stitched_lightning", "stitched_paid", "stitched_agent"}
+STITCHED = {"stitched_free", "stitched_lightning", "stitched_paid", "stitched_agent",
+            "stitched_free_v032", "stitched_paid_v032"}
 AGENT_LADDER = ("scrapling", "camoufox", "firecrawl", "zyte", "scrapfly", "zenrows", "patchright")
 AGENT_RETRIES = 2
 JUDGE_MODEL = os.environ.get("TOOLBENCH_JUDGE_MODEL", "google/gemini-3.5-flash-lite")
