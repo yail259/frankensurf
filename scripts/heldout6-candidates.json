@@ -1,0 +1,1722 @@
+[
+ {
+  "category": "retail_us",
+  "candidates": [
+   {
+    "site": "westelm",
+    "url": "https://www.westelm.com/search/results.html?words=lamp",
+    "expect": "lamp"
+   },
+   {
+    "site": "cb2",
+    "url": "https://www.cb2.com/search?query=sofa",
+    "expect": "sofa"
+   },
+   {
+    "site": "houzz",
+    "url": "https://www.houzz.com/products/query/rug",
+    "expect": "rug"
+   },
+   {
+    "site": "dillards",
+    "url": "https://www.dillards.com/search-term/dress",
+    "expect": "dress"
+   },
+   {
+    "site": "belk",
+    "url": "https://www.belk.com/search/?q=handbag",
+    "expect": "handbag"
+   },
+   {
+    "site": "reverb",
+    "url": "https://reverb.com/marketplace?query=guitar",
+    "expect": "guitar"
+   },
+   {
+    "site": "swappa",
+    "url": "https://swappa.com/search?q=iphone",
+    "expect": "iphone"
+   },
+   {
+    "site": "1stdibs",
+    "url": "https://www.1stdibs.com/search/?q=lamp",
+    "expect": "lamp"
+   },
+   {
+    "site": "chairish",
+    "url": "https://www.chairish.com/search?q=mirror",
+    "expect": "mirror"
+   },
+   {
+    "site": "bonanza",
+    "url": "https://www.bonanza.com/items/search?q%5Bsearch_term%5D=teapot",
+    "expect": "teapot"
+   },
+   {
+    "site": "liveauctioneers",
+    "url": "https://www.liveauctioneers.com/search/?keyword=watch",
+    "expect": "watch"
+   },
+   {
+    "site": "grainger",
+    "url": "https://www.grainger.com/search?searchQuery=gloves",
+    "expect": "glove"
+   },
+   {
+    "site": "zoro",
+    "url": "https://www.zoro.com/search?q=drill",
+    "expect": "drill"
+   },
+   {
+    "site": "adafruit",
+    "url": "https://www.adafruit.com/search?q=sensor",
+    "expect": "sensor"
+   },
+   {
+    "site": "thriftbooks",
+    "url": "https://www.thriftbooks.com/browse/?b.search=history",
+    "expect": "history"
+   },
+   {
+    "site": "abebooks",
+    "url": "https://www.abebooks.com/servlet/SearchResults?kn=python",
+    "expect": "python"
+   },
+   {
+    "site": "powells",
+    "url": "https://www.powells.com/searchresults?keyword=gardening",
+    "expect": "garden"
+   },
+   {
+    "site": "vitacost",
+    "url": "https://www.vitacost.com/productsearch.aspx?t=probiotic",
+    "expect": "probiotic"
+   },
+   {
+    "site": "iherb",
+    "url": "https://www.iherb.com/search?kw=protein",
+    "expect": "protein"
+   },
+   {
+    "site": "slickdeals",
+    "url": "https://slickdeals.net/newsearch.php?q=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "oreillyauto",
+    "url": "https://www.oreillyauto.com/search?q=battery",
+    "expect": "batter"
+   },
+   {
+    "site": "meijer",
+    "url": "https://www.meijer.com/shopping/search.html?text=cereal",
+    "expect": "cereal"
+   }
+  ]
+ },
+ {
+  "category": "retail_au",
+  "candidates": [
+   {
+    "site": "danmurphys",
+    "url": "https://www.danmurphys.com.au/search?searchTerm=gin",
+    "expect": "gin"
+   },
+   {
+    "site": "bws",
+    "url": "https://bws.com.au/search?searchTerm=vodka",
+    "expect": "vodka"
+   },
+   {
+    "site": "pbtech-nz",
+    "url": "https://www.pbtech.co.nz/search?sf=keyboard",
+    "expect": "keyboard"
+   },
+   {
+    "site": "briscoes-nz",
+    "url": "https://www.briscoes.co.nz/search?q=towel",
+    "expect": "towel"
+   },
+   {
+    "site": "warehousestationery-nz",
+    "url": "https://www.warehousestationery.co.nz/search?q=notebook",
+    "expect": "notebook"
+   },
+   {
+    "site": "newworld-nz",
+    "url": "https://www.newworld.co.nz/shop/search?pg=1&q=bread",
+    "expect": "bread"
+   },
+   {
+    "site": "petstock",
+    "url": "https://www.petstock.com.au/search?q=cat%20litter",
+    "expect": "litter"
+   },
+   {
+    "site": "freedom",
+    "url": "https://www.freedom.com.au/search?q=sofa",
+    "expect": "sofa"
+   },
+   {
+    "site": "adairs",
+    "url": "https://www.adairs.com.au/search/?q=quilt",
+    "expect": "quilt"
+   },
+   {
+    "site": "harrisfarm",
+    "url": "https://www.harrisfarm.com.au/search?q=avocado",
+    "expect": "avocado"
+   },
+   {
+    "site": "scorptec",
+    "url": "https://www.scorptec.com.au/search/go?w=ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "staticice",
+    "url": "https://www.staticice.com.au/cgi-bin/search.cgi?q=monitor",
+    "expect": "monitor"
+   },
+   {
+    "site": "priceme-nz",
+    "url": "https://www.priceme.co.nz/search.aspx?q=headphones",
+    "expect": "headphone"
+   },
+   {
+    "site": "pricespy-nz",
+    "url": "https://pricespy.co.nz/search?search=vacuum",
+    "expect": "vacuum"
+   },
+   {
+    "site": "digidirect",
+    "url": "https://www.digidirect.com.au/catalogsearch/result/?q=tripod",
+    "expect": "tripod"
+   },
+   {
+    "site": "camerapro",
+    "url": "https://www.camerapro.com.au/catalogsearch/result/?q=lens",
+    "expect": "lens"
+   },
+   {
+    "site": "torpedo7-nz",
+    "url": "https://www.torpedo7.co.nz/search?q=tent",
+    "expect": "tent"
+   },
+   {
+    "site": "princesspolly",
+    "url": "https://www.princesspolly.com.au/search?q=dress",
+    "expect": "dress"
+   },
+   {
+    "site": "glassons-nz",
+    "url": "https://www.glassons.com/search?q=jeans",
+    "expect": "jean"
+   },
+   {
+    "site": "bargainchemist-nz",
+    "url": "https://www.bargainchemist.co.nz/search?q=sunscreen",
+    "expect": "sunscreen"
+   },
+   {
+    "site": "mitre10-nz",
+    "url": "https://www.mitre10.co.nz/search?q=drill",
+    "expect": "drill"
+   }
+  ]
+ },
+ {
+  "category": "retail_eu",
+  "candidates": [
+   {
+    "site": "ebuyer",
+    "url": "https://www.ebuyer.com/search?q=monitor",
+    "expect": "monitor"
+   },
+   {
+    "site": "toolstation",
+    "url": "https://www.toolstation.com/search?q=drill",
+    "expect": "drill"
+   },
+   {
+    "site": "smythstoys",
+    "url": "https://www.smythstoys.com/uk/en-gb/search/?text=puzzle",
+    "expect": "puzzle"
+   },
+   {
+    "site": "hobbycraft",
+    "url": "https://www.hobbycraft.co.uk/search?q=yarn",
+    "expect": "yarn"
+   },
+   {
+    "site": "kaufland-de",
+    "url": "https://www.kaufland.de/s/?search_value=staubsauger",
+    "expect": "staubsauger"
+   },
+   {
+    "site": "thalia",
+    "url": "https://www.thalia.de/suche?sq=harry+potter",
+    "expect": "potter"
+   },
+   {
+    "site": "alternate",
+    "url": "https://www.alternate.de/listing.xhtml?q=tastatur",
+    "expect": "tastatur"
+   },
+   {
+    "site": "rossmann-de",
+    "url": "https://www.rossmann.de/de/search/?text=shampoo",
+    "expect": "shampoo"
+   },
+   {
+    "site": "obi-de",
+    "url": "https://www.obi.de/search/akkuschrauber/",
+    "expect": "akkuschrauber"
+   },
+   {
+    "site": "ldlc",
+    "url": "https://www.ldlc.com/recherche/clavier/",
+    "expect": "clavier"
+   },
+   {
+    "site": "castorama",
+    "url": "https://www.castorama.fr/search?term=perceuse",
+    "expect": "perceuse"
+   },
+   {
+    "site": "laredoute",
+    "url": "https://www.laredoute.fr/psrch/psrch.aspx?kwrd=lampe",
+    "expect": "lampe"
+   },
+   {
+    "site": "casadellibro",
+    "url": "https://www.casadellibro.com/busqueda-generica?busqueda=quijote",
+    "expect": "quijote"
+   },
+   {
+    "site": "todocoleccion",
+    "url": "https://www.todocoleccion.net/buscador?bu=reloj",
+    "expect": "reloj"
+   },
+   {
+    "site": "ibs-it",
+    "url": "https://www.ibs.it/search/?ts=as&query=camilleri",
+    "expect": "camilleri"
+   },
+   {
+    "site": "albert-heijn",
+    "url": "https://www.ah.nl/zoeken?query=kaas",
+    "expect": "kaas"
+   },
+   {
+    "site": "kruidvat",
+    "url": "https://www.kruidvat.nl/search?q=shampoo",
+    "expect": "shampoo"
+   },
+   {
+    "site": "clasohlson-se",
+    "url": "https://www.clasohlson.com/se/search?text=lampa",
+    "expect": "lamp"
+   },
+   {
+    "site": "adlibris",
+    "url": "https://www.adlibris.com/se/sok?q=lindgren",
+    "expect": "lindgren"
+   },
+   {
+    "site": "netonnet",
+    "url": "https://www.netonnet.se/search?query=kaffebryggare",
+    "expect": "kaffebryggare"
+   },
+   {
+    "site": "x-kom",
+    "url": "https://www.x-kom.pl/szukaj?q=monitor",
+    "expect": "monitor"
+   },
+   {
+    "site": "empik",
+    "url": "https://www.empik.com/szukaj/produkt?q=tolkien",
+    "expect": "tolkien"
+   }
+  ]
+ },
+ {
+  "category": "retail_other",
+  "candidates": [
+   {
+    "site": "danawa",
+    "url": "https://search.danawa.com/dsearch.php?query=ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "gmarket",
+    "url": "https://browse.gmarket.co.kr/search?keyword=ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "kakaku",
+    "url": "https://kakaku.com/search_results/ssd/",
+    "expect": "ssd"
+   },
+   {
+    "site": "tiki",
+    "url": "https://tiki.vn/search?q=ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "thegioididong",
+    "url": "https://www.thegioididong.com/tim-kiem?key=iphone",
+    "expect": "iphone"
+   },
+   {
+    "site": "nykaa",
+    "url": "https://www.nykaa.com/search/result/?q=lipstick",
+    "expect": "lipstick"
+   },
+   {
+    "site": "snapdeal",
+    "url": "https://www.snapdeal.com/search?keyword=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "daraz-pk",
+    "url": "https://www.daraz.pk/catalog/?q=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "blibli",
+    "url": "https://www.blibli.com/cari/laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "trendyol",
+    "url": "https://www.trendyol.com/sr?q=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "hepsiburada",
+    "url": "https://www.hepsiburada.com/ara?q=ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "zap-il",
+    "url": "https://www.zap.co.il/search.aspx?keyword=ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "extra-sa",
+    "url": "https://www.extra.com/en-sa/search/?text=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "konga",
+    "url": "https://www.konga.com/search?search=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "loot-za",
+    "url": "https://www.loot.co.za/search?terms=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "incredible-za",
+    "url": "https://www.incredible.co.za/catalogsearch/result/?q=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "kabum",
+    "url": "https://www.kabum.com.br/busca/ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "cyberpuerta",
+    "url": "https://www.cyberpuerta.mx/index.php?cl=search&searchparam=ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "fravega",
+    "url": "https://www.fravega.com/l/?keyword=notebook",
+    "expect": "notebook"
+   },
+   {
+    "site": "alkosto",
+    "url": "https://www.alkosto.com/search/?text=televisor",
+    "expect": "televisor"
+   },
+   {
+    "site": "memoryexpress",
+    "url": "https://www.memoryexpress.com/Search/Products?Search=ssd",
+    "expect": "ssd"
+   },
+   {
+    "site": "leons",
+    "url": "https://www.leons.ca/search?q=sofa",
+    "expect": "sofa"
+   }
+  ]
+ },
+ {
+  "category": "classifieds",
+  "candidates": [
+   {
+    "site": "depop",
+    "url": "https://www.depop.com/search/?q=nike",
+    "expect": "nike"
+   },
+   {
+    "site": "reverb",
+    "url": "https://reverb.com/marketplace?query=telecaster",
+    "expect": "telecaster"
+   },
+   {
+    "site": "chrono24",
+    "url": "https://www.chrono24.com/search/index.htm?dosearch=true&query=submariner",
+    "expect": "submariner"
+   },
+   {
+    "site": "catawiki",
+    "url": "https://www.catawiki.com/en/s?q=rolex",
+    "expect": "rolex"
+   },
+   {
+    "site": "abebooks",
+    "url": "https://www.abebooks.com/servlet/SearchResults?kn=dune",
+    "expect": "dune"
+   },
+   {
+    "site": "tradera",
+    "url": "https://www.tradera.com/search?q=lego",
+    "expect": "lego"
+   },
+   {
+    "site": "kupujemprodajem",
+    "url": "https://www.kupujemprodajem.com/pretraga?keywords=bicikl",
+    "expect": "bicikl"
+   },
+   {
+    "site": "bolha",
+    "url": "https://www.bolha.com/?ctl=search_ads&keywords=playstation",
+    "expect": "playstation"
+   },
+   {
+    "site": "skelbiu",
+    "url": "https://www.skelbiu.lt/skelbimai/?keywords=iphone",
+    "expect": "iphone"
+   },
+   {
+    "site": "ikman",
+    "url": "https://ikman.lk/en/ads/sri-lanka?query=iphone",
+    "expect": "iphone"
+   },
+   {
+    "site": "bikroy",
+    "url": "https://bikroy.com/en/ads/bangladesh?query=laptop",
+    "expect": "laptop"
+   },
+   {
+    "site": "enjoei",
+    "url": "https://www.enjoei.com.br/s?q=vestido",
+    "expect": "vestido"
+   },
+   {
+    "site": "todocoleccion",
+    "url": "https://www.todocoleccion.net/buscador?bu=reloj",
+    "expect": "reloj"
+   },
+   {
+    "site": "rebuy-de",
+    "url": "https://www.rebuy.de/kaufen/suchen?q=kindle",
+    "expect": "kindle"
+   },
+   {
+    "site": "adverts-ie",
+    "url": "https://www.adverts.ie/for-sale/q_bike/",
+    "expect": "bike"
+   },
+   {
+    "site": "shpock",
+    "url": "https://www.shpock.com/en-gb/results?q=bike",
+    "expect": "bike"
+   },
+   {
+    "site": "fril",
+    "url": "https://fril.jp/s?query=iphone",
+    "expect": "iphone"
+   },
+   {
+    "site": "ruten",
+    "url": "https://www.ruten.com.tw/find/?q=iphone",
+    "expect": "iphone"
+   },
+   {
+    "site": "swappa",
+    "url": "https://swappa.com/search?q=iphone",
+    "expect": "iphone"
+   },
+   {
+    "site": "thredup",
+    "url": "https://www.thredup.com/women/dresses",
+    "expect": "dress"
+   },
+   {
+    "site": "1stdibs",
+    "url": "https://www.1stdibs.com/search/?q=lamp",
+    "expect": "lamp"
+   },
+   {
+    "site": "kufar",
+    "url": "https://www.kufar.by/l?query=iphone",
+    "expect": "iphone"
+   }
+  ]
+ },
+ {
+  "category": "jobs",
+  "candidates": [
+   {
+    "site": "jooble",
+    "url": "https://jooble.org/SearchResult?ukw=accountant",
+    "expect": "accountant"
+   },
+   {
+    "site": "talent",
+    "url": "https://www.talent.com/jobs?k=nurse&l=",
+    "expect": "nurse"
+   },
+   {
+    "site": "snagajob",
+    "url": "https://www.snagajob.com/search?q=cashier",
+    "expect": "cashier"
+   },
+   {
+    "site": "jobbank-ca",
+    "url": "https://www.jobbank.gc.ca/jobsearch/jobsearch?searchstring=welder",
+    "expect": "welder"
+   },
+   {
+    "site": "irishjobs",
+    "url": "https://www.irishjobs.ie/jobs/accountant",
+    "expect": "accountant"
+   },
+   {
+    "site": "hellowork-fr",
+    "url": "https://www.hellowork.com/fr-fr/emploi/recherche.html?k=comptable",
+    "expect": "comptable"
+   },
+   {
+    "site": "pracuj-pl",
+    "url": "https://www.pracuj.pl/praca/programista;kw",
+    "expect": "programista"
+   },
+   {
+    "site": "work-ua",
+    "url": "https://www.work.ua/jobs-python/",
+    "expect": "python"
+   },
+   {
+    "site": "hh-ru",
+    "url": "https://hh.ru/search/vacancy?text=python",
+    "expect": "python"
+   },
+   {
+    "site": "nav-arbeidsplassen",
+    "url": "https://arbeidsplassen.nav.no/stillinger?q=sykepleier",
+    "expect": "sykepleier"
+   },
+   {
+    "site": "duunitori-fi",
+    "url": "https://duunitori.fi/tyopaikat?haku=sairaanhoitaja",
+    "expect": "sairaanhoitaja"
+   },
+   {
+    "site": "tecnoempleo-es",
+    "url": "https://www.tecnoempleo.com/ofertas-trabajo/?te=python",
+    "expect": "python"
+   },
+   {
+    "site": "vagas-br",
+    "url": "https://www.vagas.com.br/vagas-de-programador",
+    "expect": "programador"
+   },
+   {
+    "site": "computrabajo-co",
+    "url": "https://co.computrabajo.com/trabajo-de-contador",
+    "expect": "contador"
+   },
+   {
+    "site": "bumeran-ar",
+    "url": "https://www.bumeran.com.ar/empleos-busqueda-contador.html",
+    "expect": "contador"
+   },
+   {
+    "site": "bayt-ae",
+    "url": "https://www.bayt.com/en/uae/jobs/accountant-jobs/",
+    "expect": "accountant"
+   },
+   {
+    "site": "jobberman-ng",
+    "url": "https://www.jobberman.com/jobs?q=accountant",
+    "expect": "accountant"
+   },
+   {
+    "site": "shine-in",
+    "url": "https://www.shine.com/job-search/python-jobs",
+    "expect": "python"
+   },
+   {
+    "site": "jobstreet-sg",
+    "url": "https://sg.jobstreet.com/python-jobs",
+    "expect": "python"
+   },
+   {
+    "site": "saramin-kr",
+    "url": "https://www.saramin.co.kr/zf_user/search/recruit?searchword=python",
+    "expect": "python"
+   },
+   {
+    "site": "itviec-vn",
+    "url": "https://itviec.com/it-jobs/python",
+    "expect": "python"
+   },
+   {
+    "site": "reliefweb",
+    "url": "https://reliefweb.int/jobs?search=logistics",
+    "expect": "logistics"
+   }
+  ]
+ },
+ {
+  "category": "property",
+  "candidates": [
+   {
+    "site": "rent-com",
+    "url": "https://www.rent.com/illinois/chicago-apartments",
+    "expect": "chicago"
+   },
+   {
+    "site": "apartmentlist",
+    "url": "https://www.apartmentlist.com/tx/austin",
+    "expect": "austin"
+   },
+   {
+    "site": "loopnet",
+    "url": "https://www.loopnet.com/search/office-space/new-york-ny/for-lease/",
+    "expect": "office"
+   },
+   {
+    "site": "landwatch",
+    "url": "https://www.landwatch.com/texas-land-for-sale",
+    "expect": "acre"
+   },
+   {
+    "site": "zolo",
+    "url": "https://www.zolo.ca/toronto-real-estate",
+    "expect": "toronto"
+   },
+   {
+    "site": "rentals-ca",
+    "url": "https://rentals.ca/vancouver",
+    "expect": "vancouver"
+   },
+   {
+    "site": "spareroom",
+    "url": "https://www.spareroom.co.uk/flatshare/london",
+    "expect": "room"
+   },
+   {
+    "site": "openrent",
+    "url": "https://www.openrent.co.uk/properties-to-rent/manchester",
+    "expect": "manchester"
+   },
+   {
+    "site": "wg-gesucht",
+    "url": "https://www.wg-gesucht.de/wg-zimmer-in-Berlin.8.0.1.0.html",
+    "expect": "berlin"
+   },
+   {
+    "site": "kamernet",
+    "url": "https://kamernet.nl/en/for-rent/rooms-amsterdam",
+    "expect": "amsterdam"
+   },
+   {
+    "site": "otodom",
+    "url": "https://www.otodom.pl/pl/wyniki/wynajem/mieszkanie/mazowieckie/warszawa/warszawa/warszawa",
+    "expect": "warszaw"
+   },
+   {
+    "site": "ingatlan",
+    "url": "https://ingatlan.com/lista/kiado+lakas+budapest",
+    "expect": "budapest"
+   },
+   {
+    "site": "hemnet",
+    "url": "https://www.hemnet.se/bostader",
+    "expect": "rum"
+   },
+   {
+    "site": "bayut",
+    "url": "https://www.bayut.com/to-rent/apartments/dubai/",
+    "expect": "dubai"
+   },
+   {
+    "site": "propertyfinder-ae",
+    "url": "https://www.propertyfinder.ae/en/rent/dubai/apartments-for-rent.html",
+    "expect": "dubai"
+   },
+   {
+    "site": "zameen",
+    "url": "https://www.zameen.com/Homes/Lahore-1-1.html",
+    "expect": "lahore"
+   },
+   {
+    "site": "nobroker",
+    "url": "https://www.nobroker.in/flats-for-rent-in-bangalore_bangalore",
+    "expect": "bangalore"
+   },
+   {
+    "site": "property24",
+    "url": "https://www.property24.com/to-rent/cape-town/western-cape/432",
+    "expect": "cape"
+   },
+   {
+    "site": "vivareal",
+    "url": "https://www.vivareal.com.br/aluguel/sp/sao-paulo/",
+    "expect": "aluguel"
+   },
+   {
+    "site": "zonaprop",
+    "url": "https://www.zonaprop.com.ar/departamentos-alquiler-capital-federal.html",
+    "expect": "departamento"
+   },
+   {
+    "site": "99-co",
+    "url": "https://www.99.co/singapore/rent",
+    "expect": "rent"
+   },
+   {
+    "site": "housinganywhere",
+    "url": "https://housinganywhere.com/s/Barcelona--Spain",
+    "expect": "barcelona"
+   }
+  ]
+ },
+ {
+  "category": "travel",
+  "candidates": [
+   {
+    "site": "klook",
+    "url": "https://www.klook.com/en-US/search/result/?query=tokyo",
+    "expect": "tokyo"
+   },
+   {
+    "site": "tiqets",
+    "url": "https://www.tiqets.com/en/amsterdam-attractions-c75061/",
+    "expect": "amsterdam"
+   },
+   {
+    "site": "civitatis",
+    "url": "https://www.civitatis.com/en/rome/",
+    "expect": "rome"
+   },
+   {
+    "site": "tourradar",
+    "url": "https://www.tourradar.com/d/vietnam",
+    "expect": "vietnam"
+   },
+   {
+    "site": "gadventures",
+    "url": "https://www.gadventures.com/destinations/asia/vietnam/",
+    "expect": "vietnam"
+   },
+   {
+    "site": "intrepidtravel",
+    "url": "https://www.intrepidtravel.com/en/peru",
+    "expect": "peru"
+   },
+   {
+    "site": "wanderu",
+    "url": "https://www.wanderu.com/en-us/bus/us-ny/new-york/us-ma/boston/",
+    "expect": "boston"
+   },
+   {
+    "site": "12go",
+    "url": "https://12go.asia/en/travel/bangkok/chiang-mai",
+    "expect": "chiang"
+   },
+   {
+    "site": "amtrak",
+    "url": "https://www.amtrak.com/routes/coast-starlight-train.html",
+    "expect": "starlight"
+   },
+   {
+    "site": "cheapflights",
+    "url": "https://www.cheapflights.com/flights-to-paris/",
+    "expect": "paris"
+   },
+   {
+    "site": "makemytrip",
+    "url": "https://www.makemytrip.com/hotels/goa-hotels.html",
+    "expect": "goa"
+   },
+   {
+    "site": "goibibo",
+    "url": "https://www.goibibo.com/hotels/hotels-in-jaipur-ct/",
+    "expect": "jaipur"
+   },
+   {
+    "site": "travelocity",
+    "url": "https://www.travelocity.com/Hotel-Search?destination=Chicago",
+    "expect": "chicago"
+   },
+   {
+    "site": "redbus",
+    "url": "https://www.redbus.in/bus-tickets/bangalore-to-chennai",
+    "expect": "chennai"
+   },
+   {
+    "site": "hometogo",
+    "url": "https://www.hometogo.com/lake-tahoe/",
+    "expect": "tahoe"
+   },
+   {
+    "site": "japan-guide",
+    "url": "https://www.japan-guide.com/e/e2158.html",
+    "expect": "kyoto"
+   },
+   {
+    "site": "fodors",
+    "url": "https://www.fodors.com/world/europe/italy/rome",
+    "expect": "rome"
+   },
+   {
+    "site": "ricksteves",
+    "url": "https://www.ricksteves.com/europe/france/paris",
+    "expect": "paris"
+   },
+   {
+    "site": "frommers",
+    "url": "https://www.frommers.com/destinations/barcelona",
+    "expect": "barcelona"
+   },
+   {
+    "site": "roughguides",
+    "url": "https://www.roughguides.com/portugal/",
+    "expect": "portugal"
+   },
+   {
+    "site": "cntraveler",
+    "url": "https://www.cntraveler.com/destinations/tokyo",
+    "expect": "tokyo"
+   },
+   {
+    "site": "premierinn",
+    "url": "https://www.premierinn.com/gb/en/hotels/england/greater-london/london.html",
+    "expect": "london"
+   }
+  ]
+ },
+ {
+  "category": "news",
+  "candidates": [
+   {
+    "site": "ndtv",
+    "url": "https://www.ndtv.com/topic/climate-change",
+    "expect": "climate"
+   },
+   {
+    "site": "hindustantimes",
+    "url": "https://www.hindustantimes.com/cricket",
+    "expect": "cricket"
+   },
+   {
+    "site": "channelnewsasia",
+    "url": "https://www.channelnewsasia.com/singapore",
+    "expect": "singapore"
+   },
+   {
+    "site": "zeit",
+    "url": "https://www.zeit.de/thema/klimawandel",
+    "expect": "klima"
+   },
+   {
+    "site": "tagesschau",
+    "url": "https://www.tagesschau.de/wirtschaft",
+    "expect": "wirtschaft"
+   },
+   {
+    "site": "g1-globo",
+    "url": "https://g1.globo.com/economia/",
+    "expect": "economia"
+   },
+   {
+    "site": "infobae",
+    "url": "https://www.infobae.com/economia/",
+    "expect": "econom"
+   },
+   {
+    "site": "clarin",
+    "url": "https://www.clarin.com/deportes/",
+    "expect": "deport"
+   },
+   {
+    "site": "globalnews",
+    "url": "https://globalnews.ca/tag/climate-change/",
+    "expect": "climate"
+   },
+   {
+    "site": "theage",
+    "url": "https://www.theage.com.au/sport/afl",
+    "expect": "afl"
+   },
+   {
+    "site": "arabnews",
+    "url": "https://www.arabnews.com/saudiarabia",
+    "expect": "saudi"
+   },
+   {
+    "site": "thehill",
+    "url": "https://thehill.com/homenews/senate/",
+    "expect": "senate"
+   },
+   {
+    "site": "foxnews",
+    "url": "https://www.foxnews.com/category/sports/nfl",
+    "expect": "nfl"
+   },
+   {
+    "site": "sky-news",
+    "url": "https://news.sky.com/climate",
+    "expect": "climate"
+   },
+   {
+    "site": "dailymail",
+    "url": "https://www.dailymail.co.uk/home/search.html?sel=site&searchPhrase=tesla",
+    "expect": "tesla"
+   },
+   {
+    "site": "france24",
+    "url": "https://www.france24.com/en/tag/climate-change/",
+    "expect": "climate"
+   },
+   {
+    "site": "allafrica",
+    "url": "https://allafrica.com/nigeria/",
+    "expect": "nigeria"
+   },
+   {
+    "site": "jpost",
+    "url": "https://www.jpost.com/israel-news",
+    "expect": "israel"
+   },
+   {
+    "site": "nbcnews",
+    "url": "https://www.nbcnews.com/health",
+    "expect": "health"
+   },
+   {
+    "site": "telegraph",
+    "url": "https://www.telegraph.co.uk/football/",
+    "expect": "football"
+   },
+   {
+    "site": "corriere",
+    "url": "https://www.corriere.it/economia/",
+    "expect": "economia"
+   },
+   {
+    "site": "theregister",
+    "url": "https://www.theregister.com/security/",
+    "expect": "secur"
+   }
+  ]
+ },
+ {
+  "category": "gov",
+  "candidates": [
+   {
+    "site": "epa-radon",
+    "url": "https://www.epa.gov/radon",
+    "expect": "radon"
+   },
+   {
+    "site": "medlineplus",
+    "url": "https://medlineplus.gov/diabetes.html",
+    "expect": "diabetes"
+   },
+   {
+    "site": "loc-search",
+    "url": "https://www.loc.gov/search/?q=baseball",
+    "expect": "baseball"
+   },
+   {
+    "site": "nps-yellowstone",
+    "url": "https://www.nps.gov/yell/index.htm",
+    "expect": "yellowstone"
+   },
+   {
+    "site": "census-population",
+    "url": "https://www.census.gov/topics/population.html",
+    "expect": "population"
+   },
+   {
+    "site": "ons-uk",
+    "url": "https://www.ons.gov.uk/search?q=inflation",
+    "expect": "inflation"
+   },
+   {
+    "site": "nationalarchives-uk",
+    "url": "https://discovery.nationalarchives.gov.uk/results/r?_q=titanic",
+    "expect": "titanic"
+   },
+   {
+    "site": "citizensadvice-uk",
+    "url": "https://www.citizensadvice.org.uk/housing/",
+    "expect": "housing"
+   },
+   {
+    "site": "cancerresearchuk",
+    "url": "https://www.cancerresearchuk.org/about-cancer/breast-cancer",
+    "expect": "breast"
+   },
+   {
+    "site": "healthdirect-au",
+    "url": "https://www.healthdirect.gov.au/asthma",
+    "expect": "asthma"
+   },
+   {
+    "site": "beyondblue-au",
+    "url": "https://www.beyondblue.org.au/mental-health/anxiety",
+    "expect": "anxiety"
+   },
+   {
+    "site": "stats-nz",
+    "url": "https://www.stats.govt.nz/topics/population",
+    "expect": "population"
+   },
+   {
+    "site": "teara-nz",
+    "url": "https://teara.govt.nz/en/kiwi",
+    "expect": "kiwi"
+   },
+   {
+    "site": "citizensinformation-ie",
+    "url": "https://www.citizensinformation.ie/en/housing/",
+    "expect": "housing"
+   },
+   {
+    "site": "rijksoverheid-nl",
+    "url": "https://www.rijksoverheid.nl/onderwerpen/huurwoning",
+    "expect": "huur"
+   },
+   {
+    "site": "destatis-de",
+    "url": "https://www.destatis.de/DE/Themen/Gesellschaft-Umwelt/Bevoelkerung/_inhalt.html",
+    "expect": "bevölkerung"
+   },
+   {
+    "site": "vie-publique-fr",
+    "url": "https://www.vie-publique.fr/recherche?search_api_fulltext=retraite",
+    "expect": "retraite"
+   },
+   {
+    "site": "unicef",
+    "url": "https://www.unicef.org/immunization",
+    "expect": "immuniz"
+   },
+   {
+    "site": "worldbank",
+    "url": "https://www.worldbank.org/en/topic/poverty",
+    "expect": "poverty"
+   },
+   {
+    "site": "un-climate",
+    "url": "https://www.un.org/en/climatechange",
+    "expect": "climate"
+   },
+   {
+    "site": "amnesty",
+    "url": "https://www.amnesty.org/en/what-we-do/death-penalty/",
+    "expect": "death"
+   },
+   {
+    "site": "wwf-us",
+    "url": "https://www.worldwildlife.org/species/giant-panda",
+    "expect": "panda"
+   }
+  ]
+ },
+ {
+  "category": "media",
+  "candidates": [
+   {
+    "site": "lastfm",
+    "url": "https://www.last.fm/search?q=radiohead",
+    "expect": "radiohead"
+   },
+   {
+    "site": "musicbrainz",
+    "url": "https://musicbrainz.org/search?query=radiohead&type=artist&method=indexed",
+    "expect": "radiohead"
+   },
+   {
+    "site": "pitchfork",
+    "url": "https://pitchfork.com/search/?query=radiohead",
+    "expect": "radiohead"
+   },
+   {
+    "site": "tmdb",
+    "url": "https://www.themoviedb.org/search?query=batman",
+    "expect": "batman"
+   },
+   {
+    "site": "steam",
+    "url": "https://store.steampowered.com/search/?term=zombie",
+    "expect": "zombie"
+   },
+   {
+    "site": "itchio",
+    "url": "https://itch.io/search?q=platformer",
+    "expect": "platformer"
+   },
+   {
+    "site": "mobygames",
+    "url": "https://www.mobygames.com/search/?q=zelda",
+    "expect": "zelda"
+   },
+   {
+    "site": "openlibrary",
+    "url": "https://openlibrary.org/search?q=dune",
+    "expect": "dune"
+   },
+   {
+    "site": "gutenberg",
+    "url": "https://www.gutenberg.org/ebooks/search/?query=dickens",
+    "expect": "dickens"
+   },
+   {
+    "site": "abebooks",
+    "url": "https://www.abebooks.com/servlet/SearchResults?kn=tolkien",
+    "expect": "tolkien"
+   },
+   {
+    "site": "thalia-de",
+    "url": "https://www.thalia.de/suche?sq=harry+potter",
+    "expect": "potter"
+   },
+   {
+    "site": "adlibris-se",
+    "url": "https://www.adlibris.com/se/sok?q=harry+potter",
+    "expect": "potter"
+   },
+   {
+    "site": "audible",
+    "url": "https://www.audible.com/search?keywords=dune",
+    "expect": "dune"
+   },
+   {
+    "site": "allocine-fr",
+    "url": "https://www.allocine.fr/rechercher/?q=batman",
+    "expect": "batman"
+   },
+   {
+    "site": "filmaffinity-es",
+    "url": "https://www.filmaffinity.com/es/search.php?stext=batman",
+    "expect": "batman"
+   },
+   {
+    "site": "csfd-cz",
+    "url": "https://www.csfd.cz/hledat/?q=batman",
+    "expect": "batman"
+   },
+   {
+    "site": "listennotes",
+    "url": "https://www.listennotes.com/search/?q=history",
+    "expect": "history"
+   },
+   {
+    "site": "artic",
+    "url": "https://www.artic.edu/collection?q=monet",
+    "expect": "monet"
+   },
+   {
+    "site": "sciencemuseumgroup",
+    "url": "https://collection.sciencemuseumgroup.org.uk/search?q=telescope",
+    "expect": "telescope"
+   },
+   {
+    "site": "europeana",
+    "url": "https://www.europeana.eu/en/search?query=windmill",
+    "expect": "windmill"
+   },
+   {
+    "site": "ultimate-guitar",
+    "url": "https://www.ultimate-guitar.com/search.php?search_type=title&value=wonderwall",
+    "expect": "wonderwall"
+   },
+   {
+    "site": "eventim-de",
+    "url": "https://www.eventim.de/search/?searchterm=musical",
+    "expect": "musical"
+   }
+  ]
+ },
+ {
+  "category": "food",
+  "candidates": [
+   {
+    "site": "tasty",
+    "url": "https://tasty.co/search?q=chicken",
+    "expect": "chicken"
+   },
+   {
+    "site": "eatingwell",
+    "url": "https://www.eatingwell.com/search?q=salmon",
+    "expect": "salmon"
+   },
+   {
+    "site": "foodandwine",
+    "url": "https://www.foodandwine.com/search?q=risotto",
+    "expect": "risotto"
+   },
+   {
+    "site": "southernliving",
+    "url": "https://www.southernliving.com/search?q=biscuit",
+    "expect": "biscuit"
+   },
+   {
+    "site": "budgetbytes",
+    "url": "https://www.budgetbytes.com/?s=lentil",
+    "expect": "lentil"
+   },
+   {
+    "site": "sallysbakingaddiction",
+    "url": "https://sallysbakingaddiction.com/?s=cookies",
+    "expect": "cookie"
+   },
+   {
+    "site": "smittenkitchen",
+    "url": "https://smittenkitchen.com/?s=tomato",
+    "expect": "tomato"
+   },
+   {
+    "site": "justonecookbook",
+    "url": "https://www.justonecookbook.com/?s=ramen",
+    "expect": "ramen"
+   },
+   {
+    "site": "thewoksoflife",
+    "url": "https://thewoksoflife.com/?s=noodle",
+    "expect": "noodle"
+   },
+   {
+    "site": "cookpad-uk",
+    "url": "https://cookpad.com/uk/search/chicken",
+    "expect": "chicken"
+   },
+   {
+    "site": "iceland-uk",
+    "url": "https://www.iceland.co.uk/search?q=pasta",
+    "expect": "pasta"
+   },
+   {
+    "site": "waitrose",
+    "url": "https://www.waitrose.com/ecom/shop/search?searchTerm=coffee",
+    "expect": "coffee"
+   },
+   {
+    "site": "asda",
+    "url": "https://groceries.asda.com/search/cheese",
+    "expect": "cheese"
+   },
+   {
+    "site": "albert-heijn",
+    "url": "https://www.ah.nl/zoeken?query=kaas",
+    "expect": "kaas"
+   },
+   {
+    "site": "carrefour-fr",
+    "url": "https://www.carrefour.fr/s?q=fromage",
+    "expect": "fromage"
+   },
+   {
+    "site": "lidl-de",
+    "url": "https://www.lidl.de/q/search?q=kaffee",
+    "expect": "kaffee"
+   },
+   {
+    "site": "loblaws",
+    "url": "https://www.loblaws.ca/search?search-bar=cheese",
+    "expect": "cheese"
+   },
+   {
+    "site": "bigbasket",
+    "url": "https://www.bigbasket.com/ps/?q=rice",
+    "expect": "rice"
+   },
+   {
+    "site": "fairprice",
+    "url": "https://www.fairprice.com.sg/search?query=noodle",
+    "expect": "noodle"
+   },
+   {
+    "site": "harrisfarm",
+    "url": "https://www.harrisfarm.com.au/search?q=apple",
+    "expect": "apple"
+   },
+   {
+    "site": "happycow-london",
+    "url": "https://www.happycow.net/europe/england/london/",
+    "expect": "vegan"
+   },
+   {
+    "site": "michelin-guide",
+    "url": "https://guide.michelin.com/en/restaurants",
+    "expect": "restaurant"
+   }
+  ]
+ },
+ {
+  "category": "cars",
+  "candidates": [
+   {
+    "site": "oreillyauto",
+    "url": "https://www.oreillyauto.com/search?q=brake+pads",
+    "expect": "brake"
+   },
+   {
+    "site": "napaonline",
+    "url": "https://www.napaonline.com/en/search?text=brake%20pads",
+    "expect": "brake"
+   },
+   {
+    "site": "carid",
+    "url": "https://www.carid.com/brake-pads.html",
+    "expect": "brake"
+   },
+   {
+    "site": "summitracing",
+    "url": "https://www.summitracing.com/search?keyword=spark%20plug",
+    "expect": "spark"
+   },
+   {
+    "site": "autodoc-uk",
+    "url": "https://www.autodoc.co.uk/search?keyword=brake%20pads",
+    "expect": "brake"
+   },
+   {
+    "site": "bringatrailer",
+    "url": "https://bringatrailer.com/porsche/",
+    "expect": "porsche"
+   },
+   {
+    "site": "classiccars",
+    "url": "https://classiccars.com/listings/find/all-years/ford/mustang",
+    "expect": "mustang"
+   },
+   {
+    "site": "hemmings",
+    "url": "https://www.hemmings.com/classifieds/cars-for-sale/ford/mustang",
+    "expect": "mustang"
+   },
+   {
+    "site": "caranddriver",
+    "url": "https://www.caranddriver.com/toyota/camry",
+    "expect": "camry"
+   },
+   {
+    "site": "iseecars",
+    "url": "https://www.iseecars.com/used-cars/used-toyota-camry-for-sale",
+    "expect": "camry"
+   },
+   {
+    "site": "autoevolution",
+    "url": "https://www.autoevolution.com/toyota/",
+    "expect": "toyota"
+   },
+   {
+    "site": "carsales-au",
+    "url": "https://www.carsales.com.au/cars/toyota/",
+    "expect": "toyota"
+   },
+   {
+    "site": "carexpert-au",
+    "url": "https://www.carexpert.com.au/toyota",
+    "expect": "toyota"
+   },
+   {
+    "site": "otomoto-pl",
+    "url": "https://www.otomoto.pl/osobowe/toyota",
+    "expect": "toyota"
+   },
+   {
+    "site": "autovit-ro",
+    "url": "https://www.autovit.ro/autoturisme/dacia",
+    "expect": "dacia"
+   },
+   {
+    "site": "lacentrale-fr",
+    "url": "https://www.lacentrale.fr/listing?makesModelsCommercialNames=PEUGEOT",
+    "expect": "peugeot"
+   },
+   {
+    "site": "bilbasen-dk",
+    "url": "https://www.bilbasen.dk/brugt/bil/vw",
+    "expect": "vw"
+   },
+   {
+    "site": "nettiauto-fi",
+    "url": "https://www.nettiauto.com/toyota",
+    "expect": "toyota"
+   },
+   {
+    "site": "carwale-in",
+    "url": "https://www.carwale.com/maruti-suzuki-cars/",
+    "expect": "maruti"
+   },
+   {
+    "site": "carlist-my",
+    "url": "https://www.carlist.my/cars-for-sale/perodua/malaysia",
+    "expect": "perodua"
+   },
+   {
+    "site": "webmotors-br",
+    "url": "https://www.webmotors.com.br/carros/estoque/toyota",
+    "expect": "toyota"
+   },
+   {
+    "site": "parkers-uk",
+    "url": "https://www.parkers.co.uk/toyota/",
+    "expect": "toyota"
+   }
+  ]
+ },
+ {
+  "category": "dev",
+  "candidates": [
+   {
+    "site": "hex-pm",
+    "url": "https://hex.pm/packages?search=json",
+    "expect": "json"
+   },
+   {
+    "site": "metacpan",
+    "url": "https://metacpan.org/search?q=json",
+    "expect": "json"
+   },
+   {
+    "site": "libraries-io",
+    "url": "https://libraries.io/search?q=redis",
+    "expect": "redis"
+   },
+   {
+    "site": "mvnrepository",
+    "url": "https://mvnrepository.com/search?q=jackson",
+    "expect": "jackson"
+   },
+   {
+    "site": "hackage",
+    "url": "https://hackage.haskell.org/packages/search?terms=json",
+    "expect": "json"
+   },
+   {
+    "site": "luarocks",
+    "url": "https://luarocks.org/search?q=json",
+    "expect": "json"
+   },
+   {
+    "site": "swiftpackageindex",
+    "url": "https://swiftpackageindex.com/search?query=json",
+    "expect": "json"
+   },
+   {
+    "site": "clojars",
+    "url": "https://clojars.org/search?q=json",
+    "expect": "json"
+   },
+   {
+    "site": "ctan",
+    "url": "https://ctan.org/search?phrase=beamer",
+    "expect": "beamer"
+   },
+   {
+    "site": "debian-packages",
+    "url": "https://packages.debian.org/search?keywords=nginx&searchon=names&suite=stable&section=all",
+    "expect": "nginx"
+   },
+   {
+    "site": "archlinux",
+    "url": "https://archlinux.org/packages/?q=nginx",
+    "expect": "nginx"
+   },
+   {
+    "site": "chocolatey",
+    "url": "https://community.chocolatey.org/packages?q=git",
+    "expect": "git"
+   },
+   {
+    "site": "wordpress-plugins",
+    "url": "https://wordpress.org/plugins/search/seo/",
+    "expect": "seo"
+   },
+   {
+    "site": "greasyfork",
+    "url": "https://greasyfork.org/en/scripts?q=youtube",
+    "expect": "youtube"
+   },
+   {
+    "site": "godot-assets",
+    "url": "https://godotengine.org/asset-library/asset?filter=shader",
+    "expect": "shader"
+   },
+   {
+    "site": "postgresql-docs",
+    "url": "https://www.postgresql.org/search/?q=vacuum",
+    "expect": "vacuum"
+   },
+   {
+    "site": "qiita",
+    "url": "https://qiita.com/search?q=python",
+    "expect": "python"
+   },
+   {
+    "site": "habr",
+    "url": "https://habr.com/ru/search/?q=python",
+    "expect": "python"
+   },
+   {
+    "site": "pytorch-forums",
+    "url": "https://discuss.pytorch.org/search?q=cuda",
+    "expect": "cuda"
+   },
+   {
+    "site": "jsr",
+    "url": "https://jsr.io/packages?search=http",
+    "expect": "http"
+   },
+   {
+    "site": "mathworks-answers",
+    "url": "https://www.mathworks.com/matlabcentral/answers/?term=fft",
+    "expect": "fft"
+   },
+   {
+    "site": "jetbrains-plugins",
+    "url": "https://plugins.jetbrains.com/search?search=python",
+    "expect": "python"
+   }
+  ]
+ },
+ {
+  "category": "social",
+  "candidates": [
+   {
+    "site": "coursera",
+    "url": "https://www.coursera.org/search?query=python",
+    "expect": "python"
+   },
+   {
+    "site": "edx",
+    "url": "https://www.edx.org/search?q=statistics",
+    "expect": "statistic"
+   },
+   {
+    "site": "khanacademy",
+    "url": "https://www.khanacademy.org/search?page_search_query=fractions",
+    "expect": "fraction"
+   },
+   {
+    "site": "futurelearn-uk",
+    "url": "https://www.futurelearn.com/search?q=nursing",
+    "expect": "nurs"
+   },
+   {
+    "site": "openclassrooms-fr",
+    "url": "https://openclassrooms.com/fr/search?query=javascript",
+    "expect": "javascript"
+   },
+   {
+    "site": "udemy",
+    "url": "https://www.udemy.com/courses/search/?q=excel",
+    "expect": "excel"
+   },
+   {
+    "site": "skillshare",
+    "url": "https://www.skillshare.com/en/search?query=procreate",
+    "expect": "procreate"
+   },
+   {
+    "site": "codecademy",
+    "url": "https://www.codecademy.com/search?query=sql",
+    "expect": "sql"
+   },
+   {
+    "site": "classcentral",
+    "url": "https://www.classcentral.com/search?q=machine%20learning",
+    "expect": "learning"
+   },
+   {
+    "site": "quizlet",
+    "url": "https://quizlet.com/search?query=biology&type=sets",
+    "expect": "biology"
+   },
+   {
+    "site": "gofundme",
+    "url": "https://www.gofundme.com/s?q=dog",
+    "expect": "dog"
+   },
+   {
+    "site": "indiegogo",
+    "url": "https://www.indiegogo.com/explore/all?q=backpack",
+    "expect": "backpack"
+   },
+   {
+    "site": "justgiving-uk",
+    "url": "https://www.justgiving.com/search?q=marathon",
+    "expect": "marathon"
+   },
+   {
+    "site": "wikihow",
+    "url": "https://www.wikihow.com/wikiHowTo?search=bake+bread",
+    "expect": "bread"
+   },
+   {
+    "site": "fandom-starwars",
+    "url": "https://starwars.fandom.com/wiki/Special:Search?query=lightsaber",
+    "expect": "lightsaber"
+   },
+   {
+    "site": "itch",
+    "url": "https://itch.io/search?q=platformer",
+    "expect": "platformer"
+   },
+   {
+    "site": "unsplash",
+    "url": "https://unsplash.com/s/photos/mountain",
+    "expect": "mountain"
+   },
+   {
+    "site": "freesound",
+    "url": "https://freesound.org/search/?q=rain",
+    "expect": "rain"
+   },
+   {
+    "site": "wikimedia-commons",
+    "url": "https://commons.wikimedia.org/w/index.php?search=lighthouse&title=Special:MediaSearch&type=image",
+    "expect": "lighthouse"
+   },
+   {
+    "site": "gutefrage-de",
+    "url": "https://www.gutefrage.net/tag/fahrrad/1",
+    "expect": "fahrrad"
+   },
+   {
+    "site": "habr",
+    "url": "https://habr.com/ru/search/?q=kubernetes&target_type=posts",
+    "expect": "kubernetes"
+   },
+   {
+    "site": "hackster",
+    "url": "https://www.hackster.io/search?q=arduino",
+    "expect": "arduino"
+   }
+  ]
+ }
+]
