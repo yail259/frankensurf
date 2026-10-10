@@ -274,6 +274,9 @@ class WebPolicy:
     public_browser_headless: bool = True
     max_pages: int = 2
     use_route_memory: bool = True
+    # Start a fresh install's wall-vendor routing from measured priors
+    # (bundled_wall_priors.json); this machine's own reads outweigh them quickly.
+    use_wall_priors: bool = True
     route_memory_ttl_seconds: float = 3600
     route_memory_min_samples: int = 3
     terminal_failures: tuple[str, ...] = ("AUTH_REQUIRED", "AUTH_EXPIRED", "NOT_FOUND")
@@ -391,6 +394,7 @@ class WebPolicy:
                  "completeness_parallel must be an integer from 1 to 4")
         _require(_is_number(self.hedge_after_seconds), "hedge_after_seconds must be finite and nonnegative")
         _require(type(self.lightning) is bool, "lightning must be a boolean")
+        _require(type(self.use_wall_priors) is bool, "use_wall_priors must be a boolean")
         _require(type(self.allow_real_browser) is bool, "allow_real_browser must be a boolean")
         _require(_is_number(self.real_browser_wait_seconds),
                  "real_browser_wait_seconds must be finite and nonnegative")
@@ -1628,6 +1632,24 @@ def _consent_leads(text) -> bool:
 
 # Failures of the tool itself, not of the page.
 _TOOL_OUTAGES = frozenset({"PROVIDER_DOWN", "PROVIDER_UNAVAILABLE", "TIMEOUT"})
+
+_PRIORS_CACHE = {}
+
+
+def _wall_priors():
+    """Bundled per-vendor counts: {vendor: {tool: [wins, tries]}} (read once)."""
+    if "vendors" not in _PRIORS_CACHE:
+        try:
+            data = json.loads(Path(__file__).with_name("bundled_wall_priors.json").read_text(encoding="utf-8"))
+            vendors = data.get("vendors") if data.get("schema") == "frankensurf.wall-priors/v1" else None
+            _PRIORS_CACHE["vendors"] = {
+                vendor: {tool: [int(pair[0]), int(pair[1])] for tool, pair in tools.items()
+                         if isinstance(pair, list) and len(pair) == 2}
+                for vendor, tools in (vendors or {}).items() if vendor in WALL_VENDORS and isinstance(tools, dict)}
+        except (OSError, ValueError, TypeError):
+            _PRIORS_CACHE["vendors"] = {}
+    return _PRIORS_CACHE["vendors"]
+
 
 WALL_VENDORS = ("cloudflare", "akamai", "datadome", "perimeterx", "imperva", "kasada", "aws_waf",
                 "vercel", "sucuri")
@@ -4903,11 +4925,23 @@ class Runtime:
         except (OSError, ValueError):
             return {}
 
-    def _route_by_vendor(self, vendor, order, plan_state, receipt, minimum=3, hopeless=8):
+    def _vendor_stats(self, vendor, policy):
+        """What got past this wall vendor: this machine's own reads, on top of the
+        bundled priors (a few reads' worth) when the policy uses them."""
+        local = self._wall_stats().get(vendor) or {}
+        priors = (_wall_priors().get(vendor) or {}) if policy.use_wall_priors else {}
+        stats = {}
+        for tool in set(local) | set(priors):
+            wins, tries = local.get(tool, [0, 0])
+            prior_wins, prior_tries = priors.get(tool, [0, 0])
+            stats[tool] = [wins + prior_wins, tries + prior_tries]
+        return stats, bool(priors)
+
+    def _route_by_vendor(self, vendor, order, plan_state, receipt, policy, minimum=3, hopeless=8):
         """Move the tools that got past this wall vendor most often to the front of
         what is left, and the ones that never have in `hopeless` tries to the back.
-        Learned from this machine's own reads, never from site names."""
-        stats = self._wall_stats().get(vendor) or {}
+        Learned from this machine's own reads and measured priors, never from site names."""
+        stats, primed = self._vendor_stats(vendor, policy)
         remaining = order[plan_state["position"] + 1:]
         rated = sorted(((tool, (stats[tool][0] + 1) / (stats[tool][1] + 2)) for tool in remaining
                         if tool in stats and stats[tool][1] >= minimum), key=lambda pair: -pair[1])
@@ -4923,6 +4957,8 @@ class Runtime:
                 learned["first"] = ahead[0]
             if last:
                 learned["last"] = last
+            if primed:
+                learned["priors"] = True
             receipt.setdefault("routing", {})["learned_for"] = learned
 
     def _learn_wall(self, receipt):
@@ -5393,7 +5429,7 @@ class Runtime:
                         if vendor and not plan_state.get("vendor") and not resolved:
                             plan_state["vendor"] = vendor
                             receipt["wall_vendor"] = vendor
-                            self._route_by_vendor(vendor, order, plan_state, receipt)
+                            self._route_by_vendor(vendor, order, plan_state, receipt, policy)
                         step = self._after_failed_attempt(
                             exc, policy, candidate, candidate_record, retry_index,
                             plan_state, order, resolved, receipt)
