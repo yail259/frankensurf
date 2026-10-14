@@ -644,11 +644,19 @@ const weekly = [
       if (geometry.has(svg)) return geometry.get(svg)!;
       const path = svg.querySelector<SVGPathElement>(".snake-path")!;
       const total = path.getTotalLength();
+      // Where each node sits along the path: one coarse pass over the path shared by every node,
+      // then a fine search near each node's best coarse point. (Sampling every 2px per node was
+      // ~20k getPointAtLength calls and froze the page for two seconds as this scrolled in.)
+      const COARSE = 24;
+      const samples: [number, number, number][] = [];
+      for (let l = 0; l <= total; l += COARSE) { const p = path.getPointAtLength(l); samples.push([l, p.x, p.y]); }
       const at: Record<string, number> = {};
       svg.querySelectorAll<SVGGElement>(".snake-node").forEach((node) => {
         const [x, y] = node.getAttribute("transform")!.match(/[\d.]+/g)!.map(Number);
         let best = 0, bestD = Infinity;
-        for (let l = 0; l <= total; l += 2) {
+        for (const [l, px, py] of samples) { const d = (px - x) ** 2 + (py - y) ** 2; if (d < bestD) { bestD = d; best = l; } }
+        const lo = Math.max(0, best - COARSE), hi = Math.min(total, best + COARSE);
+        for (let l = lo; l <= hi; l += 2) {
           const p = path.getPointAtLength(l);
           const d = (p.x - x) ** 2 + (p.y - y) ** 2;
           if (d < bestD) { bestD = d; best = l; }
@@ -727,6 +735,9 @@ const weekly = [
       }
       running = false;
     };
+    // Measure the path while the browser is idle, well before the figure scrolls into view.
+    const warm = () => { const svg = visible(); if (svg) measure(svg); };
+    if ("requestIdleCallback" in window) requestIdleCallback(warm, { timeout: 3000 }); else setTimeout(warm, 1200);
     new IntersectionObserver(([entry]) => {
       onScreen = entry.isIntersecting;
       if (onScreen) play();
