@@ -88,6 +88,8 @@ const agentTools: { group: string; tools: [string, string][] }[] = [
   { group: "Receipts & repair", tools: [["trace", "what ran, what failed, time and cost"], ["repair", "diagnose a failed read"]] },
   { group: "Signed in", tools: [["do", "one bounded action, with a receipt"], ["identity_status", "health of your saved sessions"], ["profiles", "names and sites, never sessions"], ["import_evidence", "a page you opened yourself"], ["import_image_evidence", "an image you saved yourself"]] },
 ];
+const byName = Object.fromEntries(agentTools.map((g) => [g.group, g]));
+const toolCols = [[byName["Read"]], [byName["Sites"]], [byName["Signed in"]], [byName["Search & watch"], byName["Receipts & repair"]]];
 // #box: the latest weekly run, benchmarks/weekly/2026-10-13/summary.json (free tools only).
 const weekly = [
   { name: "Frankensurf", rate: 81 }, { name: "Jina", rate: 70 }, { name: "Scrapling", rate: 67 }, { name: "Camoufox", rate: 66 }, { name: "HTTP", rate: 44 },
@@ -469,15 +471,17 @@ const weekly = [
           {fits.map((f, i) => <button type="button" role="tab" aria-pressed={i === 0 ? "true" : "false"} data-fit={f.id}>{f.name}</button>)}
         </div>
       </div>
-      <div class="w-body">
-        <div class="w-left">
-          {fits.map((f, i) => (
-            <div class="fit-pane" data-pane={f.id} hidden={i !== 0}>
-              <span class="label">{f.how}</span>
-              <pre class="code" set:html={f.code} />
-              <p class="fit-note">{f.note} <a href={f.href} data-astro-prefetch>{f.link} →</a></p>
-            </div>
-          ))}
+      <div class="fits-body">
+        <div class="fits-top">
+          <div class="fits-setup">
+            {fits.map((f, i) => (
+              <div class="fit-pane" data-pane={f.id} hidden={i !== 0}>
+                <span class="label">{f.how}</span>
+                <pre class="code" set:html={f.code} />
+                <p class="fit-note">{f.note} <a href={f.href} data-astro-prefetch>{f.link} →</a></p>
+              </div>
+            ))}
+          </div>
           <div class="receipt">
             <span class="label">every call comes back with a receipt</span>
 <pre class="code"><span class="f">read</span>(<span class="s">"shop.example.com/search?q=lamp"</span>)
@@ -486,13 +490,17 @@ const weekly = [
   4.1 s · $0 · trace 7f3a…</pre>
           </div>
         </div>
-        <div class="w-right">
+        <div class="fits-tools">
           <span class="label">what your agent gets · {agentTools.reduce((n, g) => n + g.tools.length, 0)} tools</span>
-          <div class="toolgroups">
-            {agentTools.map((g) => (
-              <div class="tg">
-                <span class="tg-k">{g.group}</span>
-                <ul>{g.tools.map(([name, what]) => <li><code>{name}</code><span>{what}</span></li>)}</ul>
+          <div class="toolcols">
+            {toolCols.map((col) => (
+              <div class="tcol">
+                {col.map((g) => (
+                  <div class="tg">
+                    <span class="tg-k">{g.group}<small>{g.tools.length}</small></span>
+                    <ul>{g.tools.map(([name, what]) => <li><code>{name}</code><span>{what}</span></li>)}</ul>
+                  </div>
+                ))}
               </div>
             ))}
           </div>

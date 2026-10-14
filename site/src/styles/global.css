@@ -684,10 +684,8 @@ pre.code.mini { font-size: 12px; line-height: 1.65; white-space: pre; word-break
 .plug-link:hover { text-decoration: underline; }
 
 /* Works where your agent lives: one window, a tab per place an agent runs. */
-.window.fits .w-body { min-height: 0; }
 .fit-pane { display: flex; flex-direction: column; gap: 14px; }
 .fit-pane[hidden] { display: none; }
-.fit-pane pre.code { white-space: pre; word-break: normal; overflow-x: auto; padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); }
 .fit-note { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
 .fit-note a { color: var(--accent); text-decoration: none; white-space: nowrap; }
 .fit-note a:hover { text-decoration: underline; }
@@ -697,8 +695,6 @@ pre.code.mini { font-size: 12px; line-height: 1.65; white-space: pre; word-break
 .toolsig code b { color: var(--accent); font-weight: 500; }
 .toolsig span { font-size: 13.5px; color: var(--muted); line-height: 1.45; }
 @media (max-width: 860px) {
-  .window.fits .w-body { grid-template-columns: minmax(0, 1fr); }
-  .window.fits .w-left { border-right: 0; border-bottom: 1px solid var(--line); }
   .window.fits .w-bar .seg { display: flex; overflow-x: auto; scrollbar-width: none; }
   .window.fits .w-bar .w-dots { display: none; }
 }
@@ -747,15 +743,6 @@ pre.code.mini { font-size: 12px; line-height: 1.65; white-space: pre; word-break
   .nav-shell { padding-inline: 10px; }
 }
 
-/* #agents: every MCP tool, grouped by job, two columns. */
-.toolgroups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; }
-.tg { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.tg-k { font: 600 13px var(--sans); color: var(--fg); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
-.tg ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
-.tg li { display: grid; gap: 1px; min-width: 0; }
-.tg code { font: 12.5px var(--mono); color: var(--accent); overflow-wrap: anywhere; }
-.tg li span { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
-@media (max-width: 560px) { .toolgroups { grid-template-columns: minmax(0, 1fr); } }
 
 /* #box extras: the spend cap meter, a session row, a synced row. */
 .capm { display: grid; gap: 10px; font: 12px var(--mono); }
@@ -772,9 +759,36 @@ pre.code.mini { font-size: 12px; line-height: 1.65; white-space: pre; word-break
 .cap-rows .over { border-style: dashed; color: var(--dim); }
 .fields .you { font-style: normal; font-size: 11px; padding: 2px 7px; border-radius: 6px; border: 1px solid rgba(86, 191, 194, 0.45); color: var(--sea); }
 .cache .old { color: var(--dim); }
-.toolgroups { display: block; columns: 2; column-gap: 22px; }
-.tg { break-inside: avoid; margin-bottom: 18px; }
-@media (max-width: 560px) { .toolgroups { columns: 1; } }
-.window.fits .w-left { justify-content: space-between; }
-.receipt { display: flex; flex-direction: column; gap: 10px; }
-.receipt pre.code { white-space: pre; overflow-x: auto; font-size: 12px; padding: 14px; border-radius: 10px; border: 1px dashed rgba(154, 240, 176, 0.3); background: rgba(154, 240, 176, 0.03); }
+
+/* #agents: setup and a receipt side by side, then every MCP tool in four even columns. */
+.fits-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border-bottom: 1px solid var(--line); }
+.fits-setup, .receipt { padding: 22px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.fits-setup { border-right: 1px solid var(--line); }
+.fits-body pre.code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.75; padding: 14px 16px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); }
+.receipt pre.code { border: 1px dashed rgba(154, 240, 176, 0.3); background: rgba(154, 240, 176, 0.03); }
+.fits-tools { padding: 22px; display: flex; flex-direction: column; gap: 18px; }
+.toolcols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.tcol { display: flex; flex-direction: column; gap: 22px; padding: 0 20px; border-left: 1px solid var(--line); min-width: 0; }
+.tcol:first-child { padding-left: 0; border-left: 0; }
+.tcol:last-child { padding-right: 0; }
+.tg { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.tg-k { display: flex; justify-content: space-between; align-items: baseline; font: 600 14px var(--sans); color: var(--fg); }
+.tg-k small { font: 11px var(--mono); color: var(--dim); }
+.tg ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.tg li { display: grid; gap: 2px; min-width: 0; padding-left: 10px; border-left: 2px solid rgba(154, 240, 176, 0.18); }
+.tg code { font: 12.5px var(--mono); color: var(--accent); overflow-wrap: anywhere; }
+.tg li span { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+@media (max-width: 980px) {
+  .toolcols { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 26px; }
+  .tcol:nth-child(odd) { padding-left: 0; border-left: 0; }
+  .tcol:nth-child(even) { padding-right: 0; }
+}
+@media (max-width: 760px) {
+  .fits-top { grid-template-columns: minmax(0, 1fr); }
+  .fits-setup { border-right: 0; border-bottom: 1px solid var(--line); }
+  .fits-setup, .receipt, .fits-tools { padding: 18px 16px; }
+}
+@media (max-width: 520px) {
+  .toolcols { grid-template-columns: minmax(0, 1fr); }
+  .tcol { padding: 0; border-left: 0; }
+}
