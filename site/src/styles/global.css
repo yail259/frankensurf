@@ -632,31 +632,106 @@ footer { position: relative; margin-top: 96px; padding-top: 40px; }
   .sec::after { display: none; }
 }
 
-/* Bolt on your own: the plugin window under the ledger. */
-.window.plug { margin-top: 48px; }
-.plug .w-body { min-height: 0; }
-.plug .w-left { gap: 12px; }
-/* Code reads as code: scroll sideways on a narrow screen rather than wrap. */
-.plug pre.code { white-space: pre; word-break: normal; overflow-x: auto; }
-.plug-kinds { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.plug-kinds li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.02); }
-.plug-kinds b { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
-.plug-kinds span { font: 13px var(--mono); color: var(--dim); }
-.plug-note { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
-.plug-link { margin-top: auto; font: 600 14px var(--sans); color: var(--accent); text-decoration: none; }
-.plug-link:hover { text-decoration: underline; }
-@media (max-width: 860px) { .plug .w-body { grid-template-columns: minmax(0, 1fr); } .plug .w-left { border-right: 0; border-bottom: 1px solid var(--line); } }
+/* Bolt it on: the plugin rack. Each rail is one plugin kind; the built-in tools sit on it as
+   grey modules, and yours drops into the open green slot at the end. */
+.rack { margin: 0 0 16px; padding: 26px 26px 0; border-radius: var(--r); border: 1px solid var(--line); background: linear-gradient(180deg, var(--panel-2), var(--panel)); }
+.rail { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 18px; align-items: center; padding-bottom: 22px; }
+.rail-head { display: flex; flex-direction: column; gap: 3px; }
+.rail-head b { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.rail-head span { font: 12px var(--mono); color: var(--dim); }
+.rail-line { position: relative; display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0; }
+.mod { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel-2); font-size: 13.5px; color: var(--fg-2); white-space: nowrap; }
+.mod i { font: normal 11px var(--mono); color: var(--accent); }
+.mod.paid { border-style: dashed; border-color: rgba(255, 211, 107, 0.4); }
+.mod.paid i { color: var(--spark); }
+.mod.yours { padding: 0; border: 1px dashed rgba(154, 240, 176, 0.6); background: rgba(154, 240, 176, 0.04); }
+.bolt-in { display: inline-flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; color: var(--fg); background: rgba(154, 240, 176, 0.1); box-shadow: 0 0 0 1px var(--accent), 0 0 24px -4px rgba(154, 240, 176, 0.45); font-family: var(--mono); font-size: 13px; }
+.bolt-in i { color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  html:not([data-motion="reduced"]) [data-reveal] .bolt-in { transform: translateY(-26px); opacity: 0; }
+  html:not([data-motion="reduced"]) [data-reveal].in .bolt-in { animation: bolt 0.7s cubic-bezier(0.3, 1.4, 0.5, 1) 0.6s both; }
+}
+@keyframes bolt { from { transform: translateY(-26px); opacity: 0; } to { transform: none; opacity: 1; } }
+.wrap-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 -26px; padding: 14px 26px; border-top: 1px solid var(--line); font: 12px var(--mono); color: var(--fg-2); }
+.wl-k { color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; margin-right: 4px; }
+.wl-w::before { content: "✓ "; color: var(--accent); }
+@media (max-width: 760px) {
+  .rack { padding: 18px 16px 0; }
+  .rail { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .wrap-line { margin: 0 -16px; padding: 12px 16px; }
+}
 
-/* Works where your agent lives, and More in the box: cards with a label, a line and the real command. */
-.fit-grid { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-@media (max-width: 980px) { .fit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 640px) { .fit-grid { grid-template-columns: minmax(0, 1fr); } }
-.panel.fit { display: flex; flex-direction: column; gap: 10px; padding: 20px; text-decoration: none; color: inherit; min-width: 0; }
-.panel.fit h3 { margin: 0; font-size: 17px; letter-spacing: -0.01em; }
-.panel.fit p { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
-.panel.fit p a { color: var(--accent); text-decoration: none; }
-.panel.fit p a:hover { text-decoration: underline; }
-.panel.fit pre.code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; padding: 10px 12px;
-  border-radius: 8px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); }
-.box-grid .panel.fit pre.code { margin-top: auto; }
-.panel.fit code { font: 13px var(--mono); }
+/* The three steps under the rack: write it, install it (nothing runs), trust it. */
+.plug-steps .panel { min-width: 0; }
+.plug-steps p, .box p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.how h3 + p { margin-top: -2px; }
+pre.code.mini { font-size: 12px; line-height: 1.65; white-space: pre; word-break: normal; overflow-x: auto; }
+.term { display: grid; gap: 8px; font: 12px var(--mono); }
+.cmd-l { color: var(--fg-2); padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); overflow-wrap: anywhere; }
+.cmd-l b { color: var(--accent); font-weight: 500; margin-right: 6px; }
+.pstate { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); color: var(--fg-2); }
+.pstate .lock, .pstate .skip { color: var(--dim); }
+.pstate .lock::before { content: "🔒 "; filter: grayscale(1); opacity: 0.7; }
+.pstate.off { opacity: 0.6; }
+.pstate.on { border-color: rgba(154, 240, 176, 0.3); }
+.pstate .ok { color: var(--accent); text-align: right; }
+.plug-link { display: inline-block; margin-top: 20px; font: 600 14px var(--sans); color: var(--accent); text-decoration: none; }
+.plug-link:hover { text-decoration: underline; }
+
+/* Works where your agent lives: one window, a tab per place an agent runs. */
+.window.fits .w-body { min-height: 0; }
+.fit-pane { display: flex; flex-direction: column; gap: 14px; }
+.fit-pane[hidden] { display: none; }
+.fit-pane pre.code { white-space: pre; word-break: normal; overflow-x: auto; padding: 14px; border-radius: 10px; border: 1px solid var(--line); background: rgba(0, 0, 0, 0.25); }
+.fit-note { margin: 0; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
+.fit-note a { color: var(--accent); text-decoration: none; white-space: nowrap; }
+.fit-note a:hover { text-decoration: underline; }
+.toolsig { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.toolsig li { display: grid; gap: 4px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.02); }
+.toolsig code { font: 13px var(--mono); color: var(--fg-2); }
+.toolsig code b { color: var(--accent); font-weight: 500; }
+.toolsig span { font-size: 13.5px; color: var(--muted); line-height: 1.45; }
+@media (max-width: 860px) {
+  .window.fits .w-body { grid-template-columns: minmax(0, 1fr); }
+  .window.fits .w-left { border-right: 0; border-bottom: 1px solid var(--line); }
+  .window.fits .w-bar .seg { display: flex; overflow-x: auto; scrollbar-width: none; }
+  .window.fits .w-bar .w-dots { display: none; }
+}
+
+/* More in the box: six panels in the #how language, a small drawing above each title. */
+.how.box { margin-top: 0; }
+.how.box + .how.box { margin-top: 16px; }
+.box .panel { text-decoration: none; color: inherit; min-width: 0; }
+.fields { display: grid; gap: 6px; font: 12px var(--mono); }
+.fields div { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); color: var(--dim); }
+.fields code { color: var(--fg-2); font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fields .y { font-style: normal; color: var(--accent); }
+.fields .miss { border-style: dashed; }
+.fields .miss code { color: var(--dim); font-style: italic; }
+.fields .up { font-style: normal; font-size: 11px; padding: 2px 7px; border-radius: 6px; border: 1px solid rgba(154, 240, 176, 0.4); color: var(--accent); }
+.harder { display: grid; gap: 12px; font: 12px var(--mono); }
+.harder .tr { justify-self: start; padding: 4px 9px; border-radius: 6px; border: 1px solid var(--line-2); color: var(--fg-2); }
+.hops { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.hops s, .hops b { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); font-weight: 400; }
+.hops s { color: var(--dim); text-decoration-color: rgba(240, 122, 110, 0.7); }
+.hops s::after { content: ""; }
+.hops b { color: var(--accent); border-color: rgba(154, 240, 176, 0.5); background: rgba(154, 240, 176, 0.06); }
+.hops b::before { content: "→ "; color: var(--dim); }
+.rows { display: grid; font: 12px var(--mono); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.rows div { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; color: var(--fg-2); border-top: 1px solid var(--line); }
+.rows div:first-child { border-top: 0; }
+.rows .rh { color: var(--dim); background: rgba(255, 255, 255, 0.03); text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px; }
+.rows div:not(.rh) span:last-child { color: var(--accent); }
+.feed div { padding: 8px 12px; }
+.feed .old { color: var(--dim); }
+.lsearch { display: grid; gap: 10px; }
+.sbox { display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-radius: 999px; border: 1px solid var(--line-2); font: 12px var(--mono); color: var(--fg-2); }
+.sbox i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--dim); position: relative; }
+.sbox i::after { content: ""; position: absolute; width: 5px; height: 1.5px; background: var(--dim); right: -5px; bottom: -2px; transform: rotate(45deg); }
+.sres { display: grid; gap: 8px; padding: 4px 6px; }
+.sres b { display: block; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.14); }
+.sres b:first-child { background: var(--accent); width: 62%; opacity: 0.85; }
+.sres b:nth-child(2) { width: 84%; }
+.sres b:nth-child(3) { width: 48%; }
+.mini-rungs.wk div { grid-template-columns: 84px minmax(0, 1fr) 36px; }
+.mini-rungs.wk div:nth-child(n + 2) i { background: linear-gradient(90deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08)); }
