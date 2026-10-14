@@ -68,7 +68,7 @@ h1, h2 { text-wrap: balance; }
 .docs-link { display: inline-flex; align-items: center; height: 38px; padding: 0 14px; border-radius: 11px; font: 600 13.5px var(--sans); text-decoration: none; color: var(--fg); border: 1px solid var(--line-2); background: rgba(255, 255, 255, 0.04); transition: background 0.2s; }
 .docs-link:hover { background: rgba(255, 255, 255, 0.09); }
 .gh { color: #07090b; background: var(--fg); border: 1px solid var(--fg); }
-.gh svg { width: 16px; height: 16px; fill: currentColor; }
+.gh > svg { width: 16px; height: 16px; fill: currentColor; }
 .gh:hover { transform: translateY(-1px); box-shadow: 0 8px 26px -6px rgba(154, 240, 176, 0.45); }
 @media (max-width: 720px) { .volt { display: none; } .nav-shell { gap: 10px; } .brand-word { font-size: 13px; letter-spacing: 0.1em; } .nav-actions { margin-left: auto; } }
 
@@ -76,8 +76,11 @@ h1, h2 { text-wrap: balance; }
 .btn { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 18px; border-radius: 12px; font: 600 14.5px var(--sans); text-decoration: none; color: var(--fg); border: 1px solid var(--line-2); background: rgba(16, 19, 22, 0.82); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s, background 0.2s; }
 .btn:hover { background: rgba(255, 255, 255, 0.09); }
 .btn.primary { background: var(--fg); color: #07090b; border-color: var(--fg); }
-.btn .star { width: 16px; height: 16px; fill: currentColor; flex: none; }
-.btn .stars { margin-left: 2px; padding: 2px 8px; border-radius: 999px; font: 600 12.5px var(--mono); font-variant-numeric: tabular-nums; background: rgba(7, 9, 11, 0.1); }
+/* Star count: after the label, the number then a star, no pill. The buttons are light, so the
+   star takes a deeper amber than the site's spark yellow to stay visible. */
+.btn .stars, .gh-stars { display: inline-flex; align-items: center; gap: 4px; margin-left: 6px; padding-left: 10px; border-left: 1px solid rgba(7, 9, 11, 0.15); font: 600 13px var(--mono); font-variant-numeric: tabular-nums; }
+.btn .star, .gh-stars .star { width: 14px; height: 14px; fill: #e2a400; flex: none; }
+.gh-stars { margin-left: 2px; padding-left: 8px; }
 .btn.primary:hover { transform: translateY(-1px); box-shadow: 0 10px 30px -6px rgba(154, 240, 176, 0.5); }
 .btn.big { height: 52px; padding: 0 24px; font-size: 16px; }
 
@@ -469,7 +472,9 @@ section[id], main[id] { scroll-margin-top: 100px; }
   .nav-actions { gap: 6px; }
   .gh, .docs-link { height: 44px; padding: 0 10px; }
   .gh { width: 44px; justify-content: center; padding: 0; flex: none; }
-  .gh span { display: none; }
+  .gh > span:not(.gh-stars) { display: none; }
+  .gh { width: auto; padding: 0 8px 0 12px; gap: 6px; }
+  .gh-stars { margin-left: 0; }
 }
 
 html[data-motion="reduced"] {
@@ -735,3 +740,41 @@ pre.code.mini { font-size: 12px; line-height: 1.65; white-space: pre; word-break
 .sres b:nth-child(3) { width: 48%; }
 .mini-rungs.wk div { grid-template-columns: 84px minmax(0, 1fr) 36px; }
 .mini-rungs.wk div:nth-child(n + 2) i { background: linear-gradient(90deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08)); }
+
+/* Phones: the nav keeps Benchmarks, Docs and GitHub; the blog link and wordmark drop off to fit. */
+@media (max-width: 520px) {
+  .nav-blog, .brand-word { display: none; }
+  .nav-shell { padding-inline: 10px; }
+}
+
+/* #agents: every MCP tool, grouped by job, two columns. */
+.toolgroups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 22px; }
+.tg { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.tg-k { font: 600 13px var(--sans); color: var(--fg); padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.tg ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.tg li { display: grid; gap: 1px; min-width: 0; }
+.tg code { font: 12.5px var(--mono); color: var(--accent); overflow-wrap: anywhere; }
+.tg li span { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+@media (max-width: 560px) { .toolgroups { grid-template-columns: minmax(0, 1fr); } }
+
+/* #box extras: the spend cap meter, a session row, a synced row. */
+.capm { display: grid; gap: 10px; font: 12px var(--mono); }
+.cap-top { display: flex; justify-content: space-between; color: var(--fg-2); }
+.cap-top code { font: inherit; color: var(--muted); }
+.cap-top b { font-weight: 500; color: var(--spark); }
+.cap-bar { position: relative; height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.05); border: 1px solid var(--line); }
+.cap-bar i { position: absolute; inset: 0 auto 0 0; width: var(--w); border-radius: 5px; background: linear-gradient(90deg, var(--accent), rgba(154, 240, 176, 0.35)); }
+.cap-bar em { position: absolute; top: -5px; bottom: -5px; left: var(--at); width: 2px; background: var(--spark); border-radius: 1px; }
+.cap-rows { display: grid; gap: 6px; }
+.cap-rows span { display: flex; justify-content: space-between; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); color: var(--fg-2); }
+.cap-rows i { font-style: normal; }
+.cap-rows .y { color: var(--accent); }
+.cap-rows .over { border-style: dashed; color: var(--dim); }
+.fields .you { font-style: normal; font-size: 11px; padding: 2px 7px; border-radius: 6px; border: 1px solid rgba(86, 191, 194, 0.45); color: var(--sea); }
+.cache .old { color: var(--dim); }
+.toolgroups { display: block; columns: 2; column-gap: 22px; }
+.tg { break-inside: avoid; margin-bottom: 18px; }
+@media (max-width: 560px) { .toolgroups { columns: 1; } }
+.window.fits .w-left { justify-content: space-between; }
+.receipt { display: flex; flex-direction: column; gap: 10px; }
+.receipt pre.code { white-space: pre; overflow-x: auto; font-size: 12px; padding: 14px; border-radius: 10px; border: 1px dashed rgba(154, 240, 176, 0.3); background: rgba(154, 240, 176, 0.03); }

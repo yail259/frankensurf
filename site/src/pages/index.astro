@@ -1,6 +1,6 @@
 ---
 import "../styles/global.css";
-import StitchedWave from "../assets/stitched-wave.svg";
+import SiteNav from "../components/SiteNav.astro";
 import stitchedWaveMint from "../assets/stitched-wave-mint.svg?url";
 import { sources, marquee, walls, toolRows, usRow, cellClass, chipLogos, docsFor, layers, stats, failures, versus, usVersus, usFree, ledger, rungs, searchStats } from "../data/site";
 
@@ -80,6 +80,14 @@ const fits = [
   { id: "crew", name: "CrewAI", how: "python", code: '<span class="k">from</span> frankensurf.agent_tools <span class="k">import</span> crewai_tools\n\nAgent(role=<span class="s">"Researcher"</span>, tools=crewai_tools())',
     note: "CrewAI tools with typed arguments.", href: "/docs/frameworks/", link: "Frameworks" },
 ];
+// #agents: every tool the MCP server exposes (src/frankensurf/mcp_server.py), grouped by job.
+const agentTools: { group: string; tools: [string, string][] }[] = [
+  { group: "Read", tools: [["read", "one page, checked; try_harder_than to go again"], ["batch", "many pages, a receipt each"], ["paginate", "follow next pages under one receipt"], ["extract", "fields with an adapter"], ["images", "exact image URLs, decoded"]] },
+  { group: "Search & watch", tools: [["search", "free sources first, results checked"], ["watch_sites", "what's new from feeds and sitemaps"]] },
+  { group: "Sites", tools: [["discover_site_module", "learn a site from its own data"], ["site_modules", "save and manage them"], ["read_template", "a saved search URL, filled in"], ["batch_template", "the same, for many queries"], ["repair_site_module", "propose a fix when a site changes"]] },
+  { group: "Receipts & repair", tools: [["trace", "what ran, what failed, time and cost"], ["repair", "diagnose a failed read"]] },
+  { group: "Signed in", tools: [["do", "one bounded action, with a receipt"], ["identity_status", "health of your saved sessions"], ["profiles", "names and sites, never sessions"], ["import_evidence", "a page you opened yourself"], ["import_image_evidence", "an image you saved yourself"]] },
+];
 // #box: the latest weekly run, benchmarks/weekly/2026-10-13/summary.json (free tools only).
 const weekly = [
   { name: "Frankensurf", rate: 81 }, { name: "Jina", rate: 70 }, { name: "Scrapling", rate: 67 }, { name: "Camoufox", rate: 66 }, { name: "HTTP", rate: 44 },
@@ -100,27 +108,7 @@ const weekly = [
 <body>
 <a class="skip-link" href="#main">Skip to content</a>
 
-<header class="nav" id="nav">
-  <div class="nav-shell">
-    <a class="brand" href="#top" aria-label="Frankensurf home">
-      <StitchedWave class="brand-mark" aria-hidden="true" />
-      <span class="brand-word">FRANKEN<span>SURF</span></span>
-    </a>
-    <div class="volt" aria-label="Lab voltage">
-      <canvas id="ekg" width="120" height="28" aria-hidden="true"></canvas>
-      <span class="volt-read"><b id="kv">0.0</b> kV</span>
-    </div>
-    <nav class="nav-actions">
-      <a class="docs-link" href="/docs/more/weekly/" data-astro-prefetch>Benchmarks</a>
-      <a class="docs-link" href="/blog/">Blog</a>
-      <a class="docs-link" href="/docs/" data-astro-prefetch>Docs</a>
-      <a class="gh" href={repo} aria-label="FrankenSurf on GitHub">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.6 18.3 5 18.3 5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z" /></svg>
-        <span>GitHub</span>
-      </a>
-    </nav>
-  </div>
-</header>
+<SiteNav home />
 <p class="sr-only" id="strike-status" role="status"></p>
 
 <main id="main">
@@ -130,7 +118,7 @@ const weekly = [
       <h1>The <em class="horror">last</em> web tool<br />you&rsquo;ll need.</h1>
       <p class="sub">Because we stitched together the best ones out there: 28 web scrapers and browsers in one free, open-source tool for AI agents.</p>
       <div class="actions">
-        <a class="btn primary" href={repo}><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z" /></svg>Star on GitHub<span class="stars" data-stars hidden></span></a>
+        <a class="btn primary" href={repo}>Star on GitHub<span class="stars"><span data-stars hidden></span><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z" /></svg></span></a>
         <a class="btn" href="#router">See it route</a>
       </div>
       <a class="proof" href="#targets"><span class="claim"><b>96%</b> of 150 sites picked blind</span><span>Firecrawl alone 85% · Zyte alone 86%</span><span class="arrow" aria-hidden="true">↓</span></a>
@@ -490,15 +478,24 @@ const weekly = [
               <p class="fit-note">{f.note} <a href={f.href} data-astro-prefetch>{f.link} →</a></p>
             </div>
           ))}
+          <div class="receipt">
+            <span class="label">every call comes back with a receipt</span>
+<pre class="code"><span class="f">read</span>(<span class="s">"shop.example.com/search?q=lamp"</span>)
+→ the page · via Camoufox
+  tried  HTTP ✗ empty shell, Jina ✗ bot check
+  4.1 s · $0 · trace 7f3a…</pre>
+          </div>
         </div>
         <div class="w-right">
-          <span class="label">what your agent gets</span>
-          <ul class="toolsig">
-            <li><code><b>read</b>(url)</code><span>The page, checked. Empty, sign-in and bot-check pages count as failures.</span></li>
-            <li><code><b>search</b>(query)</code><span>Results from free sources first, each checked like a read.</span></li>
-            <li><code><b>read</b>(url, try_harder_than=trace)</code><span>Skips every tool already tried and starts from the strongest left.</span></li>
-            <li><code><b>trace</b>(id)</code><span>The receipt: what ran, what failed, time and cost.</span></li>
-          </ul>
+          <span class="label">what your agent gets · {agentTools.reduce((n, g) => n + g.tools.length, 0)} tools</span>
+          <div class="toolgroups">
+            {agentTools.map((g) => (
+              <div class="tg">
+                <span class="tg-k">{g.group}</span>
+                <ul>{g.tools.map(([name, what]) => <li><code>{name}</code><span>{what}</span></li>)}</ul>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -506,7 +503,8 @@ const weekly = [
 
   <section class="container sec" id="box">
     <div class="sec-head" data-reveal>
-      <h2>More in the <em class="horror">box.</em></h2>
+      <h2>It does more than <em class="horror">fetch.</em></h2>
+      <p class="sec-sub">The parts that make an agent's web work hold up past the first read: fields instead of pages, a lever when a page is wrong, sites learned once, and change you can poll.</p>
     </div>
     <div class="how box">
       <a class="panel" href="/docs/read/structured/" data-spot data-reveal>
@@ -553,12 +551,39 @@ const weekly = [
         <h3>Your own search engine</h3>
         <p>A pinned, checksum-checked SearXNG on your machine. No Docker.</p>
       </a>
-      <a class="panel" href="/docs/more/weekly/" data-spot data-reveal>
+      <a class="panel" href="/benchmarks/" data-spot data-reveal>
         <div class="mini-rungs wk">
           {weekly.map((w, i) => <div><span>{w.name}</span><i style={`--w:${w.rate}%;--i:${i}`}></i><span>{w.rate}%</span></div>)}
         </div>
         <h3>Benchmarked every Monday</h3>
         <p>Every tool alone and Frankensurf, on a fresh machine. Raw rows in the repo.</p>
+      </a>
+      <a class="panel" href="/docs/read/" data-spot data-reveal>
+        <div class="capm">
+          <div class="cap-top"><code>max_cost_usd</code><b>$0.002</b></div>
+          <div class="cap-bar"><i style="--w:35%"></i><em style="--at:70%"></em></div>
+          <div class="cap-rows"><span>Camoufox <i class="y">free ✓</i></span><span class="over">Zyte <i>over cap, skipped</i></span></div>
+        </div>
+        <h3>A spend cap on every read</h3>
+        <p>Paid tools only run if you allow them, and never past the cap you set.</p>
+      </a>
+      <a class="panel" href="/docs/read/signed-in/" data-spot data-reveal>
+        <div class="fields">
+          <div><span>profile</span><code>work</code><i class="y">✓</i></div>
+          <div><span>site</span><code>app.acme.dev</code><i class="y">✓</i></div>
+          <div><span>cookie</span><code>session=••••••</code><i class="you">yours</i></div>
+        </div>
+        <h3>Signed-in pages, on your terms</h3>
+        <p>Reads with a session you saved. Your agent sees profile names, never the session.</p>
+      </a>
+      <a class="panel" href="/docs/more/share/" data-spot data-reveal>
+        <div class="cache">
+          <div>docs.acme.dev <span class="chip-r">T0</span></div>
+          <div>shop.example.com <span class="chip-r">T3</span></div>
+          <div class="old">community/routes.json <span>⇅ sync</span></div>
+        </div>
+        <h3>Learn from everyone's reads</h3>
+        <p>Share which tool worked on which site, and start where others left off. No pages, no sessions.</p>
       </a>
     </div>
   </section>
@@ -568,7 +593,7 @@ const weekly = [
       <h2><em class="horror">Ride</em> the whole web.</h2>
       <p>Open source. Python 3.12+, Linux, macOS, or Windows through WSL. No account or key.</p>
       <div class="cta-row">
-        <a class="btn primary big" href={repo}><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z" /></svg>Star on GitHub<span class="stars" data-stars hidden></span></a>
+        <a class="btn primary big" href={repo}>Star on GitHub<span class="stars"><span data-stars hidden></span><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z" /></svg></span></a>
         <div class="cmd"><span class="p">$</span><span>pip install "frankensurf[mcp]" &amp;&amp; frankensurf install</span><button class="copy" type="button" data-copy={`pip install "frankensurf[mcp]" && frankensurf install`}>Copy</button></div>
       </div>
     </div>
@@ -698,28 +723,6 @@ const weekly = [
       onScreen = entry.isIntersecting;
       if (onScreen) play();
     }, { threshold: 0.3 }).observe(fig);
-  })();
-
-  // Live star count on the GitHub buttons. GitHub's public API, cached for the
-  // visit; if it can't be reached the buttons simply show no count.
-  // The count appears from SHOW_FROM stars up, so a brand-new repo shows the star alone.
-  const SHOW_FROM = 10;
-  (async () => {
-    const show = (n: number) => n >= SHOW_FROM && document.querySelectorAll<HTMLElement>("[data-stars]").forEach((el) => {
-      el.textContent = n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n);
-      el.hidden = false;
-    });
-    let cached: string | null = null;
-    try { cached = sessionStorage.getItem("fs-stars"); } catch {}
-    if (cached !== null) return show(Number(cached));
-    try {
-      const response = await fetch("https://api.github.com/repos/yail259/frankensurf", { headers: { Accept: "application/vnd.github+json" } });
-      if (!response.ok) return;
-      const n = (await response.json()).stargazers_count;
-      if (typeof n !== "number") return;
-      try { sessionStorage.setItem("fs-stars", String(n)); } catch {}
-      show(n);
-    } catch {}
   })();
 
   import { mountSurf } from "../scripts/surf";
