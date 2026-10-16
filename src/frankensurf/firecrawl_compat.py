@@ -116,6 +116,22 @@ def _data_url(path) -> str | None:
         return None
 
 
+def _json_spec(raw_formats, body: dict) -> dict | None:
+    """The json format, in either shape, or None."""
+    formats = [item for item in raw_formats if isinstance(item, str)]
+    spec = next((item for item in raw_formats if isinstance(item, dict) and item.get("type") == "json"), None)
+    if spec is None and "json" in formats:
+        spec = body.get("jsonOptions") or body.get("extract") or {}
+    return spec
+
+
+def _wants_llm(body: dict) -> bool:
+    """summary or json in formats: needs a model."""
+    raw_formats = body.get("formats") or []
+    return "summary" in [item for item in raw_formats if isinstance(item, str)] \
+        or _json_spec(raw_formats, body) is not None
+
+
 class FirecrawlCompat:
     """Request handling, separate from the socket so it can be tested without one."""
 
@@ -156,9 +172,15 @@ class FirecrawlCompat:
         self._pending: set = set()  # webhook deliveries in flight
 
     def _needs_model(self):
+        """A 400 when agent mode is asked for and this server cannot run it."""
         if not self.model:
             return 400, {"success": False, "error": "summary, json and extract need a model: start frankensurf "
                          "serve --model <any LiteLLM model>, or set FRANKENSURF_AGENT_MODEL"}
+        from .agent import NEED_LITELLM, litellm_missing
+        missing = litellm_missing()
+        if missing:
+            return 400, {"success": False, "error": f"{NEED_LITELLM} (this server was asked for "
+                         f"{self.model})"}
         return None
 
     def _overrides(self, body: dict | None) -> dict:
@@ -197,10 +219,8 @@ class FirecrawlCompat:
             return 400, {"success": False, "error": "url must be an http(s) URL"}
         raw_formats = body.get("formats") or ["markdown"]
         formats = [f for f in raw_formats if isinstance(f, str)]
-        json_spec = next((f for f in raw_formats if isinstance(f, dict) and f.get("type") == "json"), None)
-        if json_spec is None and "json" in formats:
-            json_spec = body.get("jsonOptions") or body.get("extract") or {}
-        wants_llm = "summary" in formats or json_spec is not None
+        json_spec = _json_spec(raw_formats, body)
+        wants_llm = _wants_llm(body)
         if wants_llm and self._needs_model():
             return self._needs_model()
         if body.get("actions"):
@@ -290,6 +310,8 @@ class FirecrawlCompat:
         urls = [u for u in body.get("urls") or [] if isinstance(u, str) and u.startswith(("http://", "https://"))]
         if not urls:
             return 400, {"success": False, "error": "urls must be a list of http(s) URLs"}
+        if _wants_llm(body) and self._needs_model():
+            return self._needs_model()
         import uuid
         job_id = str(uuid.uuid4())
         job = {"status": "scraping", "total": len(urls), "completed": 0, "data": [], "failed": []}
