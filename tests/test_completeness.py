@@ -367,3 +367,33 @@ def test_results_on_the_sites_own_subdomains_count():
     switcher = "".join(f'<a href="https://{lang}.market.example/c/10045678-laptops">{lang}</a>'
                        for lang in ("fr", "de", "es", "it", "nl"))
     assert item_links("<html><body>" + switcher + "</body></html>", page_url) == 0
+
+
+async def test_off_query_from_a_browser_asks_another_kind_of_tool(tmp_path, escalating):
+    default_feed = ("<html><title>Search</title><body>" + CHROME
+                    + "".join(f"<a href=\"/product/red-wine-{n}/SKU{n:06d}\">Red wine {n} $20</a>" for n in range(12))
+                    + "</body></html>")
+    escalating(plugin("local", default_feed, rendering=True), plugin("reader", RESULTS))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={**POLICY, "provider_candidates": None,
+                                                          "completeness_ladder": ["reader"]})
+    receipt = result["receipt"]
+    assert receipt["method"] == "reader" and "Lamp 3" in result["text"]
+    assert receipt["completeness"]["rendered_after_off_query"] == "local"
+
+
+async def test_a_round_of_free_tools_that_adds_nothing_ends_the_climb(tmp_path, escalating):
+    log = []
+    escalating(plugin("cheap", SHELL),
+               slow_plugin("free_a", SHELL, 0, log),
+               slow_plugin("free_b", SHELL, 0, log),
+               slow_plugin("free_c", RESULTS, 0, log))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(SEARCH, policy_overrides={
+            **POLICY, "completeness_ladder": ["free_a", "free_b", "free_c"]})
+        record = result["receipt"]["completeness"]
+        assert record["no_progress"] == {"skipped": ["free_c"]} and ("start", "free_c") not in log
+        climbed = await web.read(SEARCH + "&page=2", policy_overrides={
+            **POLICY, "completeness_ladder": ["free_a", "free_b", "free_c"],
+            "completeness_stop_without_progress": False})
+    assert climbed["receipt"]["method"] == "free_c"

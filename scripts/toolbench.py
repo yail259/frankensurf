@@ -60,7 +60,8 @@ HELDOUT = {"heldout": Path(__file__).with_name("toolbench-heldout.json"),
            "heldout4": Path(__file__).with_name("toolbench-heldout4.json"),
            "heldout5": Path(__file__).with_name("toolbench-heldout5.json"),
            "heldout6": Path(__file__).with_name("toolbench-heldout6.json"),
-           "heldout7": Path(__file__).with_name("toolbench-heldout7.json")}
+           "heldout7": Path(__file__).with_name("toolbench-heldout7.json"),
+           "heldout8": Path(__file__).with_name("toolbench-heldout8.json")}
 COMMON = {"origin_cooldown_seconds": 0, "freshness": "now", "lightning": False, "allow_real_browser": False}
 ARMS = {
     "http": {"provider": "http"},
@@ -193,6 +194,13 @@ async def read(web, arm: str, case: dict) -> dict:
     observed = receipt.get("status") == "observed"
     valid, reason = check(case, result) if observed else (False, None)
     attempts = receipt.get("attempts") or [{}]
+    if arm in STITCHED and not valid and os.environ.get("TOOLBENCH_RECEIPTS"):
+        # Diagnosis: why the router missed, with the page it settled on.
+        text = result.get("text") or ""
+        with open(os.environ["TOOLBENCH_RECEIPTS"], "a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"site": case["site"], "url": case["url"], "expect": case.get("expect"),
+                                     "arm": arm, "reason": reason, "receipt": receipt, "final_url": result.get("url"),
+                                     "text_chars": len(text), "text_head": text[:1500]}, default=str) + "\n")
     return {"arm": arm, "set": case["set"], "site": case["site"], "wall": case["wall"],
             "kind": case["kind"], "url": case["url"], "login": bool(case.get("identity")),
             "status": receipt.get("status"), "valid": valid, "invalid_reason": reason,

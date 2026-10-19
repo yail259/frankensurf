@@ -107,11 +107,12 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `completeness_max_extra_reads` | `5` | Most extra reads one escalation makes. |
 | `completeness_parallel` | `2` | Free ladder tools raced at once (up to 4); paid tools always run alone. |
 | `completeness_stop_on_agreement` | `True` | Stop climbing once two browsers read the same page as the first read. |
+| `completeness_stop_without_progress` | `True` | After a round of free tools that reads pages but none complete, skip the other free tools (paid ones still run). |
 | `completeness_borderline_items` | `20` | A search page that passes with fewer item links (and few prices) gets one more read. |
 | `completeness_settle_ms` | `5000` | Minimum settle time for escalation reads. |
 | `completeness_deadline_seconds` | `150.0` | Time allowed for the whole escalation; a tool still running then is cut off. |
 | `completeness_step_timeout_seconds` | `45.0` | Once a read holds a page, time each extra tool gets to complete it before it is cut off. |
-| `hedge_after_seconds` | `3.0` | After this long without a page, a read is raced by hedge_racers free tools (smart lightning); 0 turns it off. |
+| `hedge_after_seconds` | `2.0` | After this long without a page, a read is raced by hedge_racers free tools (smart lightning); 0 turns it off. |
 | `hedge_racers` | `2` | Free tools that race a read with no page after hedge_after_seconds (smart lightning), 1 to 3. |
 | `lightning` | `False` | Start the read and two other free tools at once and keep the first complete page; escalation races four. |
 | `rescue_not_found` | `True` | After NOT_FOUND, search the site itself for what the URL asked for and return the results when they mention it (receipt.rescued). |
