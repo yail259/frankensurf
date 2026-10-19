@@ -100,6 +100,14 @@ Climbing also stops when two browsers read the same page as the first read
 one, and `completeness.agreed` says so (`completeness_stop_on_agreement`, on by
 default).
 
+It also stops when a round of free tools reads pages but none of them is
+complete: more tools of the same kind rarely help. On held-out set 7 every
+complete escalation came in the first round, and the three or four steps after
+an incomplete one took 20 to 45 seconds and kept the first page anyway.
+`completeness.no_progress` names the free tools it skipped
+(`completeness_stop_without_progress`, on by default). Paid tools the call
+allows still run, and a round where every tool was walled keeps climbing.
+
 Free tools on the ladder race in pairs (`completeness_parallel`, default 2,
 up to 4). The first complete page wins and the other read is cancelled.
 Starts are half a second apart, so a site sees at most two extra reads at
@@ -206,12 +214,12 @@ identity's.
 ## Racing a slow read (smart lightning)
 
 A blocked or script-heavy site can take several tools in turn before one gets
-through. Once an automatic read has run for 3 seconds without a page
+through. Once an automatic read has run for 2 seconds without a page
 (`hedge_after_seconds`, 0 turns it off), two more reads start beside it
 (`hedge_racers`), pinned to the first free tools on the completeness ladder:
 Jina Reader, which fetches from its own network, and Scrapling, a stealth
 browser. The first complete page wins and the rest are cancelled. Most pages
-are read well inside 3 seconds and never race, so a site sees extra requests
+are read well inside 2 seconds and never race, so a site sees extra requests
 only for the reads that need them.
 
 When nothing is complete, the more complete page stands, and when the main read
