@@ -298,3 +298,69 @@ def test_start_prefers_the_native_engine_over_docker(monkeypatch):
     monkeypatch.setattr(local_search, "start_native", lambda **kwargs: {"status": "started", "engine": "native"})
     monkeypatch.setattr(local_search, "docker_problem", lambda: pytest.fail("native installed: no Docker"))
     assert local_search.start()["engine"] == "native"
+
+
+# --- a stock Debian or Ubuntu Python without python3-venv ------------------------------------
+
+def test_a_python_without_ensurepip_gets_the_apt_hint_not_an_exit(monkeypatch, tmp_path):
+    import importlib.util
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec",
+                        lambda name, *rest: None if name == "ensurepip" else real(name, *rest))
+    with pytest.raises(RuntimeError, match="sudo apt install python3-venv"):
+        installer.make_venv(tmp_path / "env")
+
+
+def test_debians_venv_exiting_becomes_an_ordinary_error(monkeypatch, tmp_path):
+    import venv
+
+    def debian_create(self, root):
+        raise SystemExit(1)       # what Debian's patched venv does without ensurepip
+    monkeypatch.setattr(venv.EnvBuilder, "create", debian_create)
+    with pytest.raises(RuntimeError, match="python3-venv"):
+        installer.make_venv(tmp_path / "env")
+
+
+def test_a_tool_that_exits_still_leaves_the_others_and_the_summary(monkeypatch):
+    def exits(log):
+        raise SystemExit(1)
+    monkeypatch.setitem(installer.INSTALLERS, "stealth", exits)
+    monkeypatch.setitem(installer.INSTALLERS, "chromium", lambda log: {"ok": True})
+    result = installer.install(["stealth", "chromium"], log=lambda *a: None)
+    assert result["installed"]["chromium"] == {"ok": True}
+    assert result["installed"]["stealth"]["ok"] is False
+    assert result["retry_with"] == "frankensurf install stealth" and result["ok"] is False
+
+
+def test_crawl4ai_without_ensurepip_says_how_to_fix_it(monkeypatch):
+    monkeypatch.setattr(installer, "_crawl4ai_base_python", lambda: "/usr/bin/python3")
+    ran_commands(monkeypatch, code=1)
+    result = installer._install_crawl4ai(lambda *a: None)
+    assert result["ok"] is False and "python3-venv" in result["error"]
+
+
+# --- XDG_CACHE_HOME: install and read look in the same cache ---------------------------------
+
+def _camoufox_build(cache, version="152.0.4-beta.31"):
+    build = cache / "camoufox" / "browsers" / "official" / f"{version}-official"
+    build.mkdir(parents=True)
+    (build / "camoufox-bin").write_text("")
+    return build / "camoufox-bin"
+
+
+def test_camoufox_is_found_under_xdg_cache_home_even_with_an_old_copy(monkeypatch, tmp_path):
+    from frankensurf import provider_worker
+    home, xdg = tmp_path / "home", tmp_path / "xdg"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(xdg))
+    monkeypatch.delenv("LOCALAPPDATA", raising=False)
+    new = _camoufox_build(xdg)
+    old = _camoufox_build(home / ".cache")          # an earlier install under ~/.cache too
+    assert provider_worker._camoufox_binaries("152.0.4-beta.31") == [new]
+    monkeypatch.delenv("XDG_CACHE_HOME")
+    assert provider_worker._camoufox_binaries("152.0.4-beta.31") == [old]
+
+
+def test_the_stealth_worker_keeps_xdg_cache_home():
+    source = Path(installer.__file__).with_name("experimental.py").read_text()
+    assert '"XDG_CACHE_HOME"}' in source

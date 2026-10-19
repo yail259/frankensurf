@@ -11,7 +11,7 @@
 <h1 align="center">Frankensurf</h1>
 
 <p align="center">
-  <strong>One <code>read()</code> call for AI agents, stitched from 28 web tools.</strong><br>
+  <strong>One <code>read()</code> call for AI agents, stitched from 41 web tools.</strong><br>
   Cheapest tool first, every page checked, a receipt for every attempt.
 </p>
 

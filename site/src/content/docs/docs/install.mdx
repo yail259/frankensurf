@@ -30,9 +30,10 @@ uninstall all` (or `uninstall search`, ...) removes it again.
 
 <Steps>
 
-1. Install the package with the MCP extra.
+1. Install the package with the MCP extra. On Debian or Ubuntu, add `python3-venv` first (stock Python leaves it out).
 
    ```bash
+   sudo apt install -y python3-venv   # Debian and Ubuntu only
    python3 -m venv ~/.venvs/frankensurf && source ~/.venvs/frankensurf/bin/activate
    pip install "frankensurf[mcp]"
    ```
