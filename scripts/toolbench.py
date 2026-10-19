@@ -60,7 +60,8 @@ HELDOUT = {"heldout": Path(__file__).with_name("toolbench-heldout.json"),
            "heldout4": Path(__file__).with_name("toolbench-heldout4.json"),
            "heldout5": Path(__file__).with_name("toolbench-heldout5.json"),
            "heldout6": Path(__file__).with_name("toolbench-heldout6.json"),
-           "heldout7": Path(__file__).with_name("toolbench-heldout7.json")}
+           "heldout7": Path(__file__).with_name("toolbench-heldout7.json"),
+           "heldout8": Path(__file__).with_name("toolbench-heldout8.json")}
 COMMON = {"origin_cooldown_seconds": 0, "freshness": "now", "lightning": False, "allow_real_browser": False}
 ARMS = {
     "http": {"provider": "http"},
