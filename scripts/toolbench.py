@@ -194,6 +194,13 @@ async def read(web, arm: str, case: dict) -> dict:
     observed = receipt.get("status") == "observed"
     valid, reason = check(case, result) if observed else (False, None)
     attempts = receipt.get("attempts") or [{}]
+    if arm in STITCHED and not valid and os.environ.get("TOOLBENCH_RECEIPTS"):
+        # Diagnosis: why the router missed, with the page it settled on.
+        text = result.get("text") or ""
+        with open(os.environ["TOOLBENCH_RECEIPTS"], "a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"site": case["site"], "url": case["url"], "expect": case.get("expect"),
+                                     "arm": arm, "reason": reason, "receipt": receipt, "final_url": result.get("url"),
+                                     "text_chars": len(text), "text_head": text[:1500]}, default=str) + "\n")
     return {"arm": arm, "set": case["set"], "site": case["site"], "wall": case["wall"],
             "kind": case["kind"], "url": case["url"], "login": bool(case.get("identity")),
             "status": receipt.get("status"), "valid": valid, "invalid_reason": reason,

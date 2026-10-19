@@ -12,6 +12,10 @@ on:
       sample:
         description: "Sites to read (empty: all 150)"
         required: false
+      diagnose:
+        description: "Save the router's receipts for its misses as an artifact, and commit nothing"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -38,6 +42,7 @@ jobs:
           SAMPLE: ${{ inputs.sample }}
           FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
           ZYTE_API_KEY: ${{ secrets.ZYTE_API_KEY }}
+          TOOLBENCH_RECEIPTS: ${{ inputs.diagnose && 'misses.jsonl' || '' }}
         run: |
           PYTHONPATH=.:src /tmp/fs/bin/python scripts/weekly_bench.py ${SAMPLE:+--sample "$SAMPLE"} | tail -60
       - name: summary
@@ -51,8 +56,16 @@ jobs:
           for arm, a in sorted(s["arms"].items(), key=lambda kv: -(kv[1]["rate"] or 0)):
               print(f"| {a['label']} | {a['rate'] * 100:.1f}% | {a['median_s']} s |")
           PY
+      - name: keep the misses
+        if: ${{ inputs.diagnose }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: misses
+          path: |
+            misses.jsonl
+            benchmarks/weekly/
       - name: commit the results
-        if: ${{ !inputs.sample }}
+        if: ${{ !inputs.sample && !inputs.diagnose }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
