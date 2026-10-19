@@ -129,11 +129,17 @@ class WebPolicy:
     completeness_parallel: int = 2
     # Stop escalating once two tools have read the same page as the first one.
     completeness_stop_on_agreement: bool = True
+    # After a round of free tools that read pages but none better than the best so
+    # far, skip the rest of the free tools: more of the same kind rarely help
+    # (measured on held-out set 7, where three or four more steps after such a round
+    # took 20 to 45 s and kept the first page). Paid tools the call allows still run,
+    # and a round where every tool was walled keeps climbing.
+    completeness_stop_without_progress: bool = True
     # Smart lightning: when an automatic public read has no page after this many
     # seconds, hedge_racers reads pinned to the first free tools on
     # completeness_ladder start beside it; the first complete page wins and the
     # rest are cancelled. Easy pages finish first and never race. 0 turns it off.
-    hedge_after_seconds: float = 3.0
+    hedge_after_seconds: float = 2.0
     hedge_racers: int = 2
     # Lightning mode: the read and up to two different free tools (the first
     # ones on completeness_ladder) start at once, the first complete page wins,
@@ -520,6 +526,8 @@ class WebPolicy:
                  "completeness_max_extra_reads must be a nonnegative integer")
         _require(type(self.completeness_stop_on_agreement) is bool,
                  "completeness_stop_on_agreement must be a boolean")
+        _require(type(self.completeness_stop_without_progress) is bool,
+                 "completeness_stop_without_progress must be a boolean")
         _require(_is_int(self.completeness_parallel, 1) and self.completeness_parallel <= 4,
                  "completeness_parallel must be an integer from 1 to 4")
         _require(_is_number(self.hedge_after_seconds), "hedge_after_seconds must be finite and nonnegative")
@@ -4345,13 +4353,23 @@ class Runtime:
         from .completeness import assess
         method = (first.get("receipt") or {}).get("method")
         manifest = next((item for item in self.providers.inspect() if item["id"] == method), None)
-        if manifest is None or manifest.get("rendering") or not effective.allow_local_browser:
+        if manifest is None:
             return None
-        tools = [tool for tool in ("local", "camoufox", "scrapling")
+        paid = {item["id"] for item in self.providers.inspect() if item["paid"]}
+        if manifest.get("rendering"):
+            # A browser already ran the script: another tool (a reader that fetches from
+            # elsewhere, a stealthier browser) may be served the real results.
+            candidates = [tool for tool in effective.completeness_ladder if tool != method and tool not in paid]
+        elif effective.allow_local_browser:
+            candidates = ["local", "camoufox", "scrapling"]
+        else:
+            return None
+        tools = [tool for tool in candidates
                  if self.providers.is_available(tool) and tool not in effective.exclude_providers]
         settle = max(effective.settle_ms, effective.completeness_settle_ms)
         second, tool = None, None
         # A browser that reads the page decides; one that meets a wall hands over to a stealthier one.
+        verdict = None
         for tool in tools[:2]:
             if policy is not None:
                 second = await self._read_unpaced(url, replace(policy, provider_candidates=(tool,), settle_ms=settle),
@@ -4360,16 +4378,16 @@ class Runtime:
                 second = await self._read_unpaced(url, None, None, adapter, policy_overrides={
                     **(policy_overrides or {}), "provider_candidates": [tool], "settle_ms": settle},
                     workload_assertions=workload_assertions)
-            if (second.get("receipt") or {}).get("status") == "observed":
+            if (second.get("receipt") or {}).get("status") != "observed":
+                continue
+            verdict = assess(url, second, expect_terms=terms)
+            if verdict["complete"] and not verdict.get("off_query"):
                 break
-        if second is None:
+            if not manifest.get("rendering"):
+                break     # the browser read the page: that is its opinion
+        if second is None or verdict is None or not verdict["complete"] or verdict.get("off_query"):
             return None
         receipt = second.get("receipt") or {}
-        if receipt.get("status") != "observed":
-            return None
-        verdict = assess(url, second, expect_terms=terms)
-        if not verdict["complete"] or verdict.get("off_query"):
-            return None
         receipt["completeness"] = {**{key: verdict.get(key) for key in ("kind", "complete", "item_links", "prices",
                                                                        "text_chars")},
                                    "rendered_after_off_query": method, "kept": tool,
@@ -4753,6 +4771,7 @@ class Runtime:
         pause = min(effective.origin_min_interval_seconds, 1.0)
         finished = False
         while queue and not finished and time.monotonic() <= deadline:
+            score_before, observed_before = best_score, sum(step.get("status") == "observed" for step in steps)
             group = [queue.pop(0)]
             if group[0] not in paid:
                 while queue and queue[0] not in paid and len(group) < width:
@@ -4788,6 +4807,14 @@ class Runtime:
                     if not task.done():
                         task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
+            read_pages = sum(step.get("status") == "observed" for step in steps) > observed_before
+            if (not finished and queue and effective.completeness_stop_without_progress
+                    and read_pages and best_score <= score_before and group[0] not in paid):
+                # More free tools of the same kind rarely help; paid ones the call allows still run.
+                skipped = [identifier for identifier in queue if identifier not in paid]
+                if skipped:
+                    record["no_progress"] = {"skipped": skipped}
+                queue = [identifier for identifier in queue if identifier in paid]
         if len(steps) > 1:
             record["raced"] = width > 1
         record["escalations"] = steps

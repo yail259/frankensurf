@@ -196,7 +196,7 @@ async def test_by_default_a_slow_read_races_two_tools_and_a_quick_one_none(tmp_p
     async with Runtime(tmp_path / "quick") as web:
         quick = await web.read(SEARCH, policy_overrides={**POLICY, "hedge_after_seconds": 0.5})
     assert quick["receipt"]["method"] == "quick_main" and ("start", "reader") not in log
-    assert WebPolicy().hedge_after_seconds == 3.0 and WebPolicy().hedge_racers == 2
+    assert WebPolicy().hedge_after_seconds == 2.0 and WebPolicy().hedge_racers == 2
 
 
 async def test_a_racing_tool_is_left_to_its_racer(tmp_path, install):
