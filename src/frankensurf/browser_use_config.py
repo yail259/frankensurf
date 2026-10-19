@@ -141,7 +141,7 @@ def browser_path():
             return _absolute_file(value).resolve()
         except ConfigurationError:
             return None
-    candidates = sorted((Path.home() / ".cache/ms-playwright").glob("chromium-*/chrome-linux*/chrome"))
+    candidates = sorted(_playwright_chromes())
     return next((item.resolve() for item in reversed(candidates) if item.is_file()), None)
 
 
@@ -178,7 +178,7 @@ def snapshot():
     if configured_browser:
         executable = _absolute_file(configured_browser).resolve()
     else:
-        candidates = sorted((Path.home() / ".cache/ms-playwright").glob("chromium-*/chrome-linux*/chrome"))
+        candidates = sorted(_playwright_chromes())
         executable = next((item.resolve() for item in reversed(candidates) if item.is_file()), None)
     if executable is None:
         raise ConfigurationError("Owned local browser unavailable")
@@ -213,3 +213,16 @@ def manifest_metadata():
 
 def manifest_version():
     return manifest_metadata()[0]
+
+
+def _playwright_chromes():
+    """Playwright's Chromium builds where Playwright installs them: PLAYWRIGHT_BROWSERS_PATH,
+    else XDG_CACHE_HOME/ms-playwright when set, else ~/.cache/ms-playwright."""
+    roots = [Path(os.environ[name]).expanduser() / sub for name, sub in
+             (("PLAYWRIGHT_BROWSERS_PATH", ""), ("XDG_CACHE_HOME", "ms-playwright")) if os.environ.get(name)]
+    roots.append(Path.home() / ".cache/ms-playwright")
+    for root in dict.fromkeys(roots):
+        found = list(root.glob("chromium-*/chrome-linux*/chrome"))
+        if found:
+            return found
+    return []

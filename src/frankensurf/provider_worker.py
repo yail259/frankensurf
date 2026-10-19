@@ -202,17 +202,31 @@ def _camoufox_mac_properties():
 def _camoufox_binaries(version):
     """The pinned Camoufox build, wherever this platform caches it."""
     import os
-    roots = [Path.home()/".cache"/"camoufox", Path.home()/"Library"/"Caches"/"camoufox"]
+    roots = [root/"camoufox" for root in _cache_roots()]
     if os.environ.get("LOCALAPPDATA"):
         roots.append(Path(os.environ["LOCALAPPDATA"])/"camoufox")
-    found = []
+    # The first cache holding the build wins (where camoufox itself looks first), so an
+    # old copy under another cache root never makes the install look ambiguous.
     for root in roots:
+        found = []
         for build in (root/"browsers"/"official").glob(version + "-*"):
             for name in ("camoufox-bin", "Camoufox.app/Contents/MacOS/camoufox", "camoufox.exe"):
                 if (build/name).is_file():
                     found.append(build/name)
                     break
-    return found
+        if found:
+            return found
+    return []
+
+
+def _cache_roots():
+    """Browser cache roots in the order the tools look: XDG_CACHE_HOME when set
+    (containers, CI and many dev machines set it), then ~/.cache, then macOS Caches."""
+    roots = []
+    if os.environ.get("XDG_CACHE_HOME"):
+        roots.append(Path(os.environ["XDG_CACHE_HOME"]).expanduser())
+    roots += [Path.home()/".cache", Path.home()/"Library"/"Caches"]
+    return list(dict.fromkeys(roots))
 
 
 def _launch_timeout(request):
@@ -423,7 +437,7 @@ def _chromium_executable():
                 "/Applications/Chromium.app/Contents/MacOS/Chromium"):
         if Path(app).is_file():
             return app
-    caches = [Path.home()/".cache/ms-playwright", Path.home()/"Library/Caches/ms-playwright"]
+    caches = [root/"ms-playwright" for root in _cache_roots()]
     patterns = ("chromium-*/chrome-linux*/chrome", "chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium",
                 "chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing")
     builds = sorted(path for cache in caches for pattern in patterns for path in cache.glob(pattern))

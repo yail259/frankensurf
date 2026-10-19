@@ -40,12 +40,12 @@ def install_free_providers(log=print):
     own Chrome): setup reports it, and `pip install nodriver` into the same
     environment adds it.
     """
-    import venv
+    from .installer import make_venv
     target = worker_python()
     root = target.parent.parent
     if not target.is_file():
         log(f"Creating the stealth provider environment in {root}")
-        venv.EnvBuilder(with_pip=True).create(root)
+        make_venv(root)
     requirements = Path(__file__).with_name("provider_requirements.txt")
     steps = [("Installing Camoufox, Scrapling and Patchright",
               [str(target), "-m", "pip", "install", "--quiet", "-r", str(requirements)]),
@@ -235,9 +235,9 @@ async def _packet(url, policy, provider):
     if proxy:
         request["proxy"] = proxy
     # Do not inherit provider keys, proxies, account/profile overrides or Python hooks.
-    # PLAYWRIGHT_BROWSERS_PATH is where the browsers are (Docker, shared installs): a path, not a secret.
+    # PLAYWRIGHT_BROWSERS_PATH and XDG_CACHE_HOME say where install put the browsers: paths, not secrets.
     permitted = {"HOME", "PATH", "LANG", "LC_ALL", "DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "XAUTHORITY", "TMPDIR",
-                 "PLAYWRIGHT_BROWSERS_PATH"}
+                 "PLAYWRIGHT_BROWSERS_PATH", "XDG_CACHE_HOME"}
     env = {key: value for key, value in os.environ.items() if key in permitted}
     env.update(PYTHONUNBUFFERED="1", PYTHONNOUSERSITE="1")
     try:

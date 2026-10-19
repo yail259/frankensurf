@@ -59,6 +59,33 @@ def _playwright(*args):
     return [sys.executable, "-m", "playwright", *args]
 
 
+def venv_hint(python=None):
+    """What to do when a Python cannot make virtual environments (Debian and Ubuntu
+    ship venv's pip bootstrap in a separate package)."""
+    version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    return (f"{python or 'this Python'} cannot create virtual environments (ensurepip is missing). "
+            f"On Debian or Ubuntu: sudo apt install python3-venv (or python{version}-venv), "
+            "then run frankensurf install again")
+
+
+def make_venv(root, *, clear=False):
+    """Create a virtual environment with pip, or raise RuntimeError saying how to fix it.
+
+    Debian's patched venv prints a message and calls sys.exit() when ensurepip is
+    missing, which would end the whole install with no summary; this turns that
+    into an ordinary error for the one tool that needed it."""
+    import importlib.util
+    import venv
+    if importlib.util.find_spec("ensurepip") is None:
+        raise RuntimeError(venv_hint())
+    try:
+        venv.EnvBuilder(with_pip=True, clear=clear).create(root)
+    except SystemExit:
+        raise RuntimeError(venv_hint()) from None
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"could not create the environment in {root} ({error}); {venv_hint()}") from None
+
+
 # --- each component --------------------------------------------------------------------------
 
 def _install_chromium(log):
@@ -126,6 +153,13 @@ def _install_crawl4ai(log):
             f"no protected Python 3.10+ to build it from: {Path(sys.executable).resolve()} can be changed "
             "by other users (group- or world-writable), and Crawl4AI is only run from an interpreter "
             "that cannot. Install Python from python.org, Homebrew, uv or your system packages")}
+    try:
+        missing_ensurepip = subprocess.run([base, "-c", "import ensurepip"], capture_output=True,
+                                           timeout=30).returncode != 0
+    except (OSError, subprocess.SubprocessError):
+        missing_ensurepip = False     # the installer script reports a Python it cannot run
+    if missing_ensurepip:
+        return {"ok": False, "error": venv_hint(base)}
     log("Installing Crawl4AI and its browsers (a few minutes)")
     script = Path(__file__).with_name("install_crawl4ai.sh")
     code = _run(["bash", str(script)], env={**os.environ, "FRANKENSURF_CRAWL4AI_BASE_PYTHON": base})
@@ -170,8 +204,10 @@ def install(names=None, *, with_deps=False, log=print):
     for name in chosen:
         try:
             done[name] = INSTALLERS[name](log)
-        except Exception as error:   # report it and carry on with the next tool
-            done[name] = {"ok": False, "error": str(error)[:300]}
+        except KeyboardInterrupt:
+            raise
+        except (Exception, SystemExit) as error:   # report it and carry on with the next tool
+            done[name] = {"ok": False, "error": str(error)[:300] or type(error).__name__}
         if not done[name]["ok"]:
             log(f"  {name}: not installed: {done[name].get('error') or 'see above'}")
     result["installed"] = done

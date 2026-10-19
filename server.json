@@ -6,12 +6,12 @@
     "url": "https://github.com/yail259/frankensurf",
     "source": "github"
   },
-  "version": "0.50.3",
+  "version": "0.50.4",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "frankensurf",
-      "version": "0.50.3",
+      "version": "0.50.4",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"

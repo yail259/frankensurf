@@ -252,8 +252,8 @@ def install_native(log=print):
     SHA-256 matches), unpacked into FrankenSurf's data folder, with its Python packages
     in a virtual environment of its own. Safe to run again: an install of the same
     commit is kept. Raises on failure; nothing half-installed is marked installed."""
-    import venv
     from .browser_install import verify_sha256
+    from .installer import make_venv
     root = native_dir()
     if native_installed():
         return {"status": "installed", "already": True, "path": str(root), "commit": NATIVE_COMMIT}
@@ -271,7 +271,7 @@ def install_native(log=print):
         shutil.rmtree(root / "src", ignore_errors=True)
         tops[0].rename(root / "src")
     log("Installing SearXNG's Python packages (about 130 MB, in its own environment)")
-    venv.EnvBuilder(with_pip=True, clear=True).create(root / "venv")
+    make_venv(root / "venv", clear=True)
     subprocess.run([str(_native_python(root)), "-m", "pip", "install", "--quiet", "--disable-pip-version-check",
                     "-r", str(root / "src" / "requirements.txt")], stdout=sys.stderr, check=True, timeout=1800)
     (root / "installed.json").write_text(json.dumps({"commit": NATIVE_COMMIT, "sha256": NATIVE_SHA256}),
