@@ -1,0 +1,186 @@
+{
+ "schema": "frankensurf.toolbench-heldout/v1",
+ "note": "Eighth held-out set, 20 October 2026: candidates written for it from general knowledge by Claude, before any page was read, to check the October ladder changes blind; 4359 hosts and their brands already read are excluded. Same rules: 800+ characters and the expect pattern at least 3 times. Some URLs may be dead or wrong; that counts against every arm alike. Use once.",
+ "cases": [
+  {
+   "site": "motor1",
+   "wall": "cars",
+   "url": "https://www.motor1.com/reviews/",
+   "expect": "review"
+  },
+  {
+   "site": "devdocs",
+   "wall": "dev",
+   "url": "https://devdocs.io/python~3.12/library/asyncio",
+   "expect": "asyncio"
+  },
+  {
+   "site": "ocado",
+   "wall": "food",
+   "url": "https://www.ocado.com/search?entry=pasta",
+   "expect": "pasta"
+  },
+  {
+   "site": "bls",
+   "wall": "gov",
+   "url": "https://www.bls.gov/cpi/",
+   "expect": "price"
+  },
+  {
+   "site": "genius",
+   "wall": "media",
+   "url": "https://genius.com/artists/Kendrick-lamar",
+   "expect": "kendrick"
+  },
+  {
+   "site": "99acres",
+   "wall": "property",
+   "url": "https://www.99acres.com/property-in-pune-ffid",
+   "expect": "pune"
+  },
+  {
+   "site": "dusk",
+   "wall": "retail_au",
+   "url": "https://www.dusk.com.au/search?q=candle",
+   "expect": "candle"
+  },
+  {
+   "site": "momoshop",
+   "wall": "retail_other",
+   "url": "https://www.momoshop.com.tw/search/searchShop.jsp?keyword=%E8%80%B3%E6%A9%9F",
+   "expect": "耳機"
+  },
+  {
+   "site": "vk",
+   "wall": "social",
+   "url": "https://vk.com/search?c%5Bq%5D=music&c%5Bsection%5D=communities",
+   "expect": "music"
+  },
+  {
+   "site": "trivago",
+   "wall": "travel",
+   "url": "https://www.trivago.com/en-US/odr/hotels-prague-czech-republic?search=200-1013",
+   "expect": "prague"
+  },
+  {
+   "site": "autocar",
+   "wall": "cars",
+   "url": "https://www.autocar.co.uk/car-reviews",
+   "expect": "review"
+  },
+  {
+   "site": "sourcehut",
+   "wall": "dev",
+   "url": "https://sr.ht/projects?search=irc",
+   "expect": "irc"
+  },
+  {
+   "site": "instacart",
+   "wall": "food",
+   "url": "https://www.instacart.com/categories/316-food/317-fresh-produce",
+   "expect": "produce|fruit"
+  },
+  {
+   "site": "gov-sg",
+   "wall": "gov",
+   "url": "https://www.mom.gov.sg/passes-and-permits",
+   "expect": "pass"
+  },
+  {
+   "site": "gog",
+   "wall": "media",
+   "url": "https://www.gog.com/en/games?query=witcher",
+   "expect": "witcher"
+  },
+  {
+   "site": "ozon",
+   "wall": "retail_other",
+   "url": "https://www.ozon.ru/search/?text=chainik",
+   "expect": "чайник"
+  },
+  {
+   "site": "meetup",
+   "wall": "social",
+   "url": "https://www.meetup.com/find/?keywords=hiking",
+   "expect": "hiking"
+  },
+  {
+   "site": "momondo",
+   "wall": "travel",
+   "url": "https://www.momondo.com/flights-to-iceland",
+   "expect": "iceland"
+  },
+  {
+   "site": "whatcar",
+   "wall": "cars",
+   "url": "https://www.whatcar.com/kia/sportage/4x4/review/n24934",
+   "expect": "sportage"
+  },
+  {
+   "site": "bundlephobia",
+   "wall": "dev",
+   "url": "https://bundlephobia.com/package/lodash",
+   "expect": "lodash"
+  },
+  {
+   "site": "zomato",
+   "wall": "food",
+   "url": "https://www.zomato.com/ncr/restaurants/pizza",
+   "expect": "pizza"
+  },
+  {
+   "site": "podchaser",
+   "wall": "media",
+   "url": "https://www.podchaser.com/search/podcasts/q/history",
+   "expect": "history"
+  },
+  {
+   "site": "untappd",
+   "wall": "social",
+   "url": "https://untappd.com/search?q=ipa",
+   "expect": "ipa"
+  },
+  {
+   "site": "traveloka",
+   "wall": "travel",
+   "url": "https://www.traveloka.com/en-id/hotel/indonesia/city/bali-30010",
+   "expect": "bali"
+  },
+  {
+   "site": "cardekho",
+   "wall": "cars",
+   "url": "https://www.cardekho.com/maruti/swift",
+   "expect": "swift"
+  },
+  {
+   "site": "deliveroo",
+   "wall": "food",
+   "url": "https://deliveroo.co.uk/restaurants/london/soho",
+   "expect": "soho|restaurant"
+  },
+  {
+   "site": "ravelry",
+   "wall": "social",
+   "url": "https://www.ravelry.com/patterns/search#query=hat",
+   "expect": "hat"
+  },
+  {
+   "site": "fueleconomy",
+   "wall": "cars",
+   "url": "https://www.fueleconomy.gov/feg/PowerSearch.do?action=noform&path=1&year1=2024&year2=2024&make=Toyota&srchtyp=ymm",
+   "expect": "toyota"
+  },
+  {
+   "site": "nhtsa",
+   "wall": "cars",
+   "url": "https://www.nhtsa.gov/vehicle/2023/TOYOTA/CAMRY/4%252520DR/FWD",
+   "expect": "camry"
+  },
+  {
+   "site": "driven-nz",
+   "wall": "cars",
+   "url": "https://www.driven.co.nz/news/",
+   "expect": "car"
+  }
+ ]
+}
