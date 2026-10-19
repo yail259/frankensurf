@@ -129,11 +129,12 @@ class WebPolicy:
     completeness_parallel: int = 2
     # Stop escalating once two tools have read the same page as the first one.
     completeness_stop_on_agreement: bool = True
-    # After a round of free tools that read pages but none better than the best so
-    # far, skip the rest of the free tools: more of the same kind rarely help
-    # (measured on held-out set 7, where three or four more steps after such a round
-    # took 20 to 45 s and kept the first page). Paid tools the call allows still run,
-    # and a round where every tool was walled keeps climbing.
+    # After a round of free tools that read pages but none of them complete, skip
+    # the rest of the free tools: more of the same kind rarely help (measured on
+    # held-out set 7, where every complete escalation came in the first round and
+    # three or four more steps after an incomplete one took 20 to 45 s and kept the
+    # first page). Paid tools the call allows still run, and a round where every
+    # tool was walled keeps climbing.
     completeness_stop_without_progress: bool = True
     # Smart lightning: when an automatic public read has no page after this many
     # seconds, hedge_racers reads pinned to the first free tools on
@@ -4771,7 +4772,7 @@ class Runtime:
         pause = min(effective.origin_min_interval_seconds, 1.0)
         finished = False
         while queue and not finished and time.monotonic() <= deadline:
-            score_before, observed_before = best_score, sum(step.get("status") == "observed" for step in steps)
+            observed_before = sum(step.get("status") == "observed" for step in steps)
             group = [queue.pop(0)]
             if group[0] not in paid:
                 while queue and queue[0] not in paid and len(group) < width:
@@ -4809,7 +4810,7 @@ class Runtime:
                 await asyncio.gather(*tasks, return_exceptions=True)
             read_pages = sum(step.get("status") == "observed" for step in steps) > observed_before
             if (not finished and queue and effective.completeness_stop_without_progress
-                    and read_pages and best_score <= score_before and group[0] not in paid):
+                    and read_pages and group[0] not in paid):
                 # More free tools of the same kind rarely help; paid ones the call allows still run.
                 skipped = [identifier for identifier in queue if identifier not in paid]
                 if skipped:
