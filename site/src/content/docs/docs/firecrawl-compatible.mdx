@@ -1,6 +1,6 @@
 ---
 title: Firecrawl-compatible API
-description: Run Frankensurf as a local Firecrawl-compatible endpoint, so GPT Researcher, Hermes Agent, OpenClaw, Open WebUI, Dify, LibreChat, n8n and anything else that takes a Firecrawl URL reads through it with no code change.
+description: Run Frankensurf as a local Firecrawl-compatible endpoint, so GPT Researcher, Hermes Agent, OpenClaw, Open WebUI, Dify, LibreChat, n8n, Flowise, Firecrawl's MCP server and anything else that takes a Firecrawl URL reads through it with no code change.
 ---
 
 import { Tabs, TabItem, Aside, Steps } from "@astrojs/starlight/components";
@@ -236,6 +236,101 @@ docs = FireCrawlWebReader(api_key="change-me", api_url="http://127.0.0.1:3002", 
 A page Frankensurf can't read raises an error that says why, instead of returning an empty document.
 Checked with langchain-community 0.4.2 and llama-index-readers-web 0.7.0 (firecrawl-py 4.50) on 18
 October 2026.
+
+## Flowise
+
+[Flowise](https://github.com/FlowiseAI/Flowise)'s FireCrawl document loader takes a base URL in its
+credential. Create a FireCrawl API credential with the **API URL** set to Frankensurf and the key you
+gave `serve`.
+
+Flowise refuses private addresses by default, so two settings in its environment let it reach
+Frankensurf. Keep its own deny list and leave out only the range Frankensurf is on (`172.16.0.0/12`
+for Docker's bridge network):
+
+```bash
+HTTP_SECURITY_CHECK=false   # use only the list below, instead of Flowise's built-in one
+HTTP_DENY_LIST=0.0.0.0,10.0.0.0/8,127.0.0.0/8,169.254.0.0/16,192.168.0.0/16,224.0.0.0/4,240.0.0.0/4,255.255.255.255/32,::1,fc00::/7,fe80::/10,ff00::/8,localhost,ip6-localhost
+```
+
+Use an IP address in the credential (`http://172.17.0.1:3002`, Docker's host address, with
+`serve --host 0.0.0.0`): with a host name such as `host.docker.internal` Flowise 3.1.2 stops with
+"Invalid IP address: undefined". Checked with Flowise 3.1.2's own loader on 20 October 2026: scrape,
+search and crawl.
+
+## Firecrawl's MCP server
+
+[firecrawl-mcp](https://github.com/firecrawl/firecrawl-mcp-server) reads `FIRECRAWL_API_URL`:
+
+```json
+{
+  "mcpServers": {
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": { "FIRECRAWL_API_URL": "http://127.0.0.1:3002", "FIRECRAWL_API_KEY": "change-me" }
+    }
+  }
+}
+```
+
+`firecrawl_scrape`, `firecrawl_search`, `firecrawl_map`, `firecrawl_crawl` and
+`firecrawl_check_crawl_status` work through Frankensurf. Its other tools (agent, interact, monitors,
+research and the rest) are Firecrawl cloud features and need Firecrawl itself. Checked with
+firecrawl-mcp 3.33.4 on 20 October 2026. If your client takes any MCP server, Frankensurf's own
+(`frankensurf-mcp`) gives the agent its full set of tools instead.
+
+## CrewAI
+
+CrewAI's Firecrawl tools (`FirecrawlScrapeWebsiteTool`, `FirecrawlSearchTool`,
+`FirecrawlCrawlWebsiteTool`) don't take a URL: crewai-tools 1.15.28 always calls Firecrawl's cloud,
+and the Firecrawl SDK it uses no longer reads `FIRECRAWL_API_URL`. Two ways round it:
+
+- **Frankensurf's MCP server**, through CrewAI's MCP adapter:
+
+  ```python
+  from crewai_tools import MCPServerAdapter
+  from mcp import StdioServerParameters
+
+  with MCPServerAdapter(StdioServerParameters(command="frankensurf-mcp")) as tools:
+      agent = Agent(role="Researcher", goal="...", backstory="...", tools=tools)
+  ```
+
+- **Keep the Firecrawl tools** and give each one a client that points at Frankensurf:
+
+  ```python
+  from firecrawl import FirecrawlApp
+  from crewai_tools import FirecrawlScrapeWebsiteTool
+
+  scrape = FirecrawlScrapeWebsiteTool(api_key="change-me")
+  scrape._firecrawl = FirecrawlApp(api_key="change-me", api_url="http://127.0.0.1:3002")
+  ```
+
+  This sets a private attribute, so a CrewAI update can break it.
+
+Checked with crewai-tools 1.15.28 and firecrawl-py 4.53 on 20 October 2026: all three Firecrawl tools
+with the client swapped in, and the MCP adapter reading through `frankensurf-mcp`.
+
+## Langflow
+
+Langflow's Firecrawl bundle (`lfx-firecrawl` 0.2.0) has no URL input either; its components always
+call Firecrawl's cloud. Use Langflow's **MCP Tools** component with Frankensurf's MCP server instead.
+Langflow only starts MCP servers through a few commands (`uvx`, `npx`, `python`, `docker` and
+similar), so either:
+
+- **Run Frankensurf's [Docker image](/docs/docker/)** as an MCP server over HTTP and add it in MCP
+  Tools as a streamable HTTP server, `http://frankensurf:8000/mcp`, with the header
+  `Authorization: Bearer <your key>`:
+
+  ```bash
+  docker run -d --name frankensurf --network <langflow's network> --shm-size=1g \
+    -e FRANKENSURF_API_KEY=change-me ghcr.io/yail259/frankensurf frankensurf-mcp --http --host 0.0.0.0
+  ```
+
+- **Or start it with `uvx`** (command `uvx --from frankensurf[mcp] frankensurf-mcp`). This one has no
+  browsers inside Langflow's container, so pages that need one won't read; the Docker image has them.
+
+Checked with Langflow 1.12.6's own MCP clients on 20 October 2026: over HTTP to the 0.51.0 image
+(21 tools, pages read with and without a browser), and with `uvx`.
 
 ## Anything else that takes a Firecrawl URL
 
