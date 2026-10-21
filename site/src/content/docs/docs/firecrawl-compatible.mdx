@@ -254,8 +254,12 @@ HTTP_DENY_LIST=0.0.0.0,10.0.0.0/8,127.0.0.0/8,169.254.0.0/16,192.168.0.0/16,224.
 
 Use an IP address in the credential (`http://172.17.0.1:3002`, Docker's host address, with
 `serve --host 0.0.0.0`): with a host name such as `host.docker.internal` Flowise 3.1.2 stops with
-"Invalid IP address: undefined". Checked with Flowise 3.1.2's own loader on 20 October 2026: scrape,
-search and crawl.
+"Invalid IP address: undefined". That's a Flowise bug: the agent it uses to pin the checked address
+answers Node's DNS lookup with a single address, and Node 20 and later ask for a list. Flowise was
+archived on 13 August 2026 and 3.1.2 is its last release, so it won't be fixed there; if you run a
+fork, the lookup in `createPinnedAgent` (`packages/components/src/httpSecurity.ts`) needs to return
+`[{ address, family }]` when called with `all: true`. Checked with Flowise 3.1.2's own loader on
+20 October 2026: scrape, search and crawl.
 
 ## Firecrawl's MCP server
 
