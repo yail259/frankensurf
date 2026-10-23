@@ -51,6 +51,17 @@ async def test_a_walled_deep_link_is_retried_through_the_home_page(tmp_path, reg
     assert ("camoufox", "https://shop.example.com/") in calls
 
 
+async def test_the_warm_up_tries_only_the_strongest_stealth_browser(tmp_path, registry):
+    calls = []
+    registry(plugin("http", calls=calls), plugin("camoufox", calls=calls), plugin("patchright", calls=calls),
+             plugin("local", calls=calls))
+    async with Runtime(tmp_path) as web:
+        result = await web.read("https://shop.example.com/p/lamp-123456", policy_overrides=POLICY)
+    assert result["receipt"]["warm_up"]["tools"] == ["camoufox"]
+    entered = [tool for tool, entry in calls if entry]
+    assert entered == ["camoufox"]
+
+
 async def test_no_retry_when_switched_off_or_for_a_home_page(tmp_path, registry):
     calls = []
     registry(plugin("http", calls=calls), plugin("camoufox", needs_entry=True, calls=calls))

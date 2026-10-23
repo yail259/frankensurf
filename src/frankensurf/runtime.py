@@ -4335,8 +4335,11 @@ class Runtime:
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.path in ("", "/"):
             return result  # The home page itself was walled; entering through it changes nothing.
+        # The strongest stealth browser available, alone: every warm-up rescue we've
+        # measured came from the first one, and the weaker browsers after it only
+        # added time to reads that stayed walled.
         tools = [tool for tool in ("camoufox", "patchright", "local")
-                 if self.providers.is_available(tool) and tool not in effective.exclude_providers]
+                 if self.providers.is_available(tool) and tool not in effective.exclude_providers][:1]
         if not tools:
             return result
         entry = f"https://{parsed.netloc}/"
