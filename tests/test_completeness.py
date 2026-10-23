@@ -359,6 +359,20 @@ def test_results_split_across_versions_or_package_scopes_still_form_one_group():
     assert result_group(menu, docs, ["vacuum"]) == 0
 
 
+def test_pictures_that_name_the_query_are_results_on_an_image_search():
+    from frankensurf.completeness import result_images
+    url = "https://photos.example.org/search?q=lighthouse&type=image"
+    markdown = "".join(f"![Old lighthouse {n}](https://cdn.example.net/thumb/{n}/Lighthouse_{n}.jpg)" for n in range(12))
+    html = "".join(f'<img src="/img/{n}.jpg" alt="A lighthouse at dusk, view {n}">' for n in range(9))
+    chrome = "".join(f'<img src="/static/icon-{n}.svg" alt="Menu icon {n}">' for n in range(20))
+    assert result_images(markdown, url, ["lighthouse"]) == 12
+    assert result_images(html + chrome, url, ["lighthouse"]) == 9
+    assert result_images(chrome, url, ["lighthouse"]) == 0
+    verdict = assess(url, {"content": markdown, "text": "lighthouse photos " * 100,
+                           "content_type": "text/markdown"})
+    assert verdict["complete"]
+
+
 def test_results_on_the_sites_own_subdomains_count():
     from frankensurf.completeness import _same_site, item_links, result_group
     url = "https://substack.example/search/film%20photography"

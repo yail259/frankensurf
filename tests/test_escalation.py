@@ -112,6 +112,30 @@ async def test_a_tool_erroring_after_two_walls_is_not_retried(tmp_path, registry
     assert tried(result) == ["w1", "w2", "down", "free_ok"]
 
 
+async def test_tools_that_never_get_past_this_wall_vendor_are_skipped_at_the_end(tmp_path, registry):
+    import json
+
+    def walled(identifier):
+        class Plugin:
+            manifest = ProviderManifest(identifier, "1")
+
+            async def acquire(self, request, services):
+                failure = WebFailure("BLOCKED", "fixture wall")
+                failure.wall_vendor = "datadome"
+                raise failure
+        Plugin.__name__ = identifier
+        return Plugin()
+    registry(walled("w1"), walled("w2"), walled("never1"), walled("never2"))
+    (tmp_path / "wall-stats.json").write_text(json.dumps({"datadome": {"never1": [0, 9], "never2": [0, 9]}}))
+    policy = dict(origin_route_hint_ttl_seconds=0, use_wall_priors=False, provider_max_attempts_per_candidate=1)
+    async with Runtime(tmp_path) as web:
+        skipped = await web.read(URL, WebPolicy(**policy))
+        tried_all = await web.read(URL + "?all", WebPolicy(skip_hopeless_tools=False, **policy))
+    assert tried(skipped) == ["w1", "w2"]
+    assert skipped["receipt"]["routing"]["skipped_hopeless"] == ["never1", "never2"]
+    assert tried(tried_all) == ["w1", "w2", "never1", "never2"]
+
+
 async def test_outages_do_not_count_as_walls(tmp_path, registry):
     registry(provider("down1", "PROVIDER_DOWN"), provider("down2", "PROVIDER_DOWN"),
              provider("free_ok", "ok"), provider("paid_ok", "ok", paid=True))

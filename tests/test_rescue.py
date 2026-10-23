@@ -60,6 +60,22 @@ async def test_a_wrong_url_is_found_through_the_sites_own_search(tmp_path, insta
     assert plain["receipt"]["failure"]["code"] == "NOT_FOUND"
 
 
+async def test_the_home_page_is_read_for_its_search_box_without_a_climb(tmp_path, install):
+    install(site(RESULTS))
+    climbed = []
+    async with Runtime(tmp_path) as web:
+        ensure = web._ensure_complete
+
+        async def spy(url, *args, **kwargs):
+            climbed.append(url)
+            return await ensure(url, *args, **kwargs)
+        web._ensure_complete = spy
+        result = await web.read("https://shop.example.com/p/brass-desk-lamp-123456", policy_overrides=QUIET)
+    assert result["receipt"]["rescued"]["via"] == "form"
+    # Making the home page look complete would only delay the search.
+    assert "https://shop.example.com/" not in climbed
+
+
 async def test_results_that_ignore_the_words_are_not_a_rescue(tmp_path, install):
     install(site(OFF))
     async with Runtime(tmp_path) as web:

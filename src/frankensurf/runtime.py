@@ -195,6 +195,9 @@ class WebPolicy:
     retain_public_failure_evidence: bool = True
     max_images: int = 50
     timeout_seconds: float = 25
+    # A plain fetch that hasn't answered in 12 s is a site stalling bots: in our
+    # benchmark history no plain-HTTP read that succeeded took longer.
+    http_timeout_seconds: float = 12
     provider_deadline_grace_seconds: float = 10
     provider_cleanup_grace_seconds: float = 5
     provider_composition_max_depth: int = 8
@@ -358,6 +361,9 @@ class WebPolicy:
     # Start a fresh install's wall-vendor routing from measured priors
     # (bundled_wall_priors.json); this machine's own reads outweigh them quickly.
     use_wall_priors: bool = True
+    # Once only tools that never got past this wall vendor are left, stop rather
+    # than try them (they stay listed in if_not_right for a deliberate retry).
+    skip_hopeless_tools: bool = True
     route_memory_ttl_seconds: float = 3600
     route_memory_min_samples: int = 3
     terminal_failures: tuple[str, ...] = ("AUTH_REQUIRED", "AUTH_EXPIRED", "NOT_FOUND")
@@ -538,6 +544,7 @@ class WebPolicy:
             check_schema(self.extract_schema)
         _require(_is_int(self.hedge_racers, 1) and self.hedge_racers <= 3, "hedge_racers must be 1 to 3")
         _require(type(self.use_wall_priors) is bool, "use_wall_priors must be a boolean")
+        _require(type(self.skip_hopeless_tools) is bool, "skip_hopeless_tools must be a boolean")
         _require(type(self.allow_real_browser) is bool, "allow_real_browser must be a boolean")
         _require(type(self.use_egress_pool) is bool, "use_egress_pool must be a boolean")
         _require(type(self.rescue_not_found) is bool, "rescue_not_found must be a boolean")
@@ -717,6 +724,8 @@ class WebPolicy:
                      name + " must be a bounded printable CSS selector or None")
         _require(_is_number(self.content_ready_timeout_seconds, positive=True),
                  "content readiness timeout must be positive and finite")
+        _require(_is_number(self.http_timeout_seconds, positive=True),
+                 "http_timeout_seconds must be positive and finite")
         _require(self.content_ready_selector is None
                  or not _is_number(self.timeout_seconds, positive=True)
                  or self.content_ready_timeout_seconds <= self.timeout_seconds,
@@ -3681,7 +3690,11 @@ class Runtime:
             receipt["cost_usd"] = _total_cost(costs)
             receipt["rescue"] = record
             return result
-        home_result = await self.read(home, inner_policy, module=False, policy_overrides=inner)
+        # The home page is read for its search box, not its content: no climb to
+        # make it look complete.
+        home_result = await self.read(
+            home, replace(inner_policy, completeness_escalation=False) if inner_policy is not None else None,
+            module=False, policy_overrides={**inner, "completeness_escalation": False} if inner is not None else None)
         home_receipt = home_result.get("receipt") or {}
         costs.append(home_receipt.get("cost_usd", 0))
         record["home_trace_id"] = home_receipt.get("trace_id")
@@ -5590,6 +5603,14 @@ class Runtime:
                 if ahead:
                     move_ahead(ahead)
                     plan_state["escalated"] = True
+        remaining = order[plan_state["position"] + 1:]
+        hopeless = plan_state.get("hopeless") or set()
+        if (policy.skip_hopeless_tools and not resolved and remaining and plan_state["walls"] >= 2
+                and exc.code in policy.escalation_failures and all(item in hopeless for item in remaining)):
+            # Every tool left has never got past this wall vendor: trying them
+            # only delays the answer.
+            receipt.setdefault("routing", {})["skipped_hopeless"] = list(remaining)
+            return "stop"
         return "stop" if (resolved or terminal or candidate == order[-1]) else "next"
 
     def _rank_paid(self, tools, vendor, policy):
@@ -5847,6 +5868,9 @@ class Runtime:
         elif candidate in AGENT_PROVIDERS:
             policy_for_candidate = replace(policy, timeout_seconds=max(
                 policy.timeout_seconds, policy.agent_provider_timeout_seconds))
+        elif candidate == "http":
+            policy_for_candidate = replace(policy, timeout_seconds=min(
+                policy.timeout_seconds, policy.http_timeout_seconds))
         else:
             policy_for_candidate = policy
         attempt_policy = _remaining_cost_policy(policy_for_candidate,

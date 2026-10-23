@@ -28,6 +28,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `prefer_markdown` | `False` | Ask servers for `text/markdown` first (T0). |
 | `sign_requests` | `True` | Sign plain HTTP reads with Web Bot Auth when a key exists (T3). |
 | `timeout_seconds` | `25` | Time allowed for each provider attempt. |
+| `http_timeout_seconds` | `12` | Time allowed for a plain HTTP fetch, capped by timeout_seconds. A fetch that hasn't answered by then is usually a site stalling bots. |
 | `unblocker_timeout_seconds` | `90.0` | Time allowed for an unblocker attempt. |
 | `agent_provider_timeout_seconds` | `300.0` | Time allowed for an agent provider such as Skyvern. |
 | `max_bytes` | 40 MB | Largest response accepted. |
@@ -86,6 +87,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `escalation_failures` | `BLOCKED`, `CAPTCHA` | Failures that count as walls. |
 | `use_route_memory` | `True` | Let route memory reorder providers. |
 | `use_wall_priors` | `True` | Start wall-vendor routing from measured priors on a fresh install; your own reads outweigh them. |
+| `skip_hopeless_tools` | `True` | After walls, stop once only tools that have never got past this wall vendor are left, instead of trying them. They stay in if_not_right for a deliberate retry. |
 | `route_memory_ttl_seconds` | `3600` | How far back route memory looks. |
 | `route_memory_min_samples` | `3` | Clean reads in a row before a provider is promoted. |
 | `origin_route_hint_ttl_seconds` | `86400.0` | How long a site hint lasts. |
