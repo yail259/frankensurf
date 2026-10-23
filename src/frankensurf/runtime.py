@@ -5871,7 +5871,10 @@ class Runtime:
         elif candidate in AGENT_PROVIDERS:
             policy_for_candidate = replace(policy, timeout_seconds=max(
                 policy.timeout_seconds, policy.agent_provider_timeout_seconds))
-        elif candidate == "http":
+        elif (candidate == "http" and adapter is None and not policy.provider
+              and len(policy.provider_candidates or ("http", "next")) > 1):
+            # Only on the router's own climb, where another tool is next: a pinned
+            # provider or an extract keeps the timeout it was given.
             policy_for_candidate = replace(policy, timeout_seconds=min(
                 policy.timeout_seconds, policy.http_timeout_seconds))
         else:
