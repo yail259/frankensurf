@@ -102,6 +102,16 @@ async def test_a_site_every_tool_finds_down_is_not_retried_tool_by_tool(tmp_path
     assert tried(result) == ["down1", "down1", "down2", "down3"]
 
 
+async def test_a_tool_erroring_after_two_walls_is_not_retried(tmp_path, registry):
+    registry(provider("w1", "BLOCKED"), provider("w2", "CAPTCHA"), provider("down", "PROVIDER_DOWN"),
+             provider("free_ok", "ok"))
+    async with Runtime(tmp_path) as web:
+        result = await web.read(URL, WebPolicy(origin_route_hint_ttl_seconds=0, escalate_after_walls=9,
+                                               provider_retry_delay_seconds=0))
+    # The site walled two tools, so the error is more likely the site than a flaky tool.
+    assert tried(result) == ["w1", "w2", "down", "free_ok"]
+
+
 async def test_outages_do_not_count_as_walls(tmp_path, registry):
     registry(provider("down1", "PROVIDER_DOWN"), provider("down2", "PROVIDER_DOWN"),
              provider("free_ok", "ok"), provider("paid_ok", "ok", paid=True))

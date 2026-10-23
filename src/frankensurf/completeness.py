@@ -216,10 +216,21 @@ def _item_like(path: str) -> bool:
                for segment in path.split("/") if segment)
 
 
+_VERSION_SEGMENT = re.compile(r"(?i)v?\d+(?:[._]\d+)*|current|latest|stable|master|main|dev")
+
+
+def _prefix_shape(prefix: str) -> str:
+    """A path prefix with the parts results vary in made alike: versions (/docs/17,
+    /docs/current) and package scopes (/@std, /@http)."""
+    return "/".join("#" if _VERSION_SEGMENT.fullmatch(segment) else "@" if segment.startswith("@") else segment
+                    for segment in prefix.split("/"))
+
+
 def result_group(html: str, base: str, terms) -> int:
     """Links that are results by shape: many distinct same-site links under one
     path prefix (/packages/<name>, /project/<name>), at least a third of whose
-    link texts mention the query. A menu shares a prefix too, but not the query."""
+    link texts mention the query. A menu shares a prefix too, but not the query.
+    Prefixes that differ only by a version or a package scope count as one."""
     if not terms:
         return 0
     host = (urlparse(base).hostname or "").removeprefix("www.")
@@ -238,7 +249,9 @@ def result_group(html: str, base: str, terms) -> int:
         prefix, leaf = path.rsplit("/", 1)
         text = html_lib.unescape(_TAG.sub(" ", inner) + " " + leaf).lower()
         # Results on subdomains share a path prefix (/p/<post>) across hosts.
-        groups.setdefault(prefix, {})[leaf] = text
+        group = groups.setdefault(_prefix_shape(prefix), {})
+        # A result is often linked twice (title, then a bare URL or an icon): keep both texts.
+        group[path] = (group.get(path, "") + " " + text)[:2000]
     best = 0
     for leaves in groups.values():
         if len(leaves) < 8:

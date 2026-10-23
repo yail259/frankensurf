@@ -5518,6 +5518,10 @@ class Runtime:
                 # automatic route failed the same way here, the site is the
                 # likelier cause: each remaining tool still gets one try, not two.
                 and not (plan_state.get("automatic") and len(plan_state["failed_alike"]) >= 2)
+                # Nor after the site walled two tools: a tool erroring there is
+                # more likely the site's doing than a flaky tool.
+                and sum((attempt.get("failure") in policy.escalation_failures)
+                        for attempt in receipt.get("attempts") or ()) < 2
                 and retry_index + 1 < policy.provider_max_attempts_per_candidate):
             return "retry"
         # Anonymous reads meet fake walls: sites answer bots with a sign-in

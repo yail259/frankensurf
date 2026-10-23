@@ -345,6 +345,20 @@ def test_results_are_recognised_by_shape_when_their_links_mention_the_query():
     assert verdict["complete"] and verdict["item_links"] >= 10
 
 
+def test_results_split_across_versions_or_package_scopes_still_form_one_group():
+    from frankensurf.completeness import result_group
+    docs = "https://docs.example.org/search/?q=vacuum"
+    versions = "".join(f'<a href="/docs/{v}/vacuum-{page}.html">Docs {v}: vacuum {page}</a>'
+                       for v in ("current", "18", "17", "16") for page in ("routine", "sql", "config"))
+    assert result_group(versions, docs, ["vacuum"]) == 12
+    registry = "https://pkgs.example.org/packages?search=http"
+    scoped = "".join(f'<a href="/@{scope}/http-{n}">@{scope}/http-{n}</a>' for scope in ("std", "web", "net") for n in range(3))
+    assert result_group(scoped, registry, ["http"]) == 9
+    # The same docs menu in every version still isn't results.
+    menu = "".join(f'<a href="/docs/{v}/{page}.html">{page}</a>' for v in ("17", "18") for page in ("intro", "install", "faq", "tutorial", "reference"))
+    assert result_group(menu, docs, ["vacuum"]) == 0
+
+
 def test_results_on_the_sites_own_subdomains_count():
     from frankensurf.completeness import _same_site, item_links, result_group
     url = "https://substack.example/search/film%20photography"
