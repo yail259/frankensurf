@@ -105,7 +105,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | Field | Default | What it does |
 | --- | --- | --- |
 | `completeness_escalation` | `True` | Check each automatic read's structure and re-read an incomplete page along the ladder. |
-| `completeness_ladder` | `jina_reader`, `scrapling`, `camoufox`, `firecrawl`, `zyte`, `zenrows`, `scrapfly`, `patchright`, `brightdata_unlocker` | Providers an incomplete page is re-read with, in order (paid ones only when allowed). |
+| `completeness_ladder` | `jina_reader`, `scrapling`, `camoufox`, `firecrawl`, `zyte`, `zenrows`, `scrapfly`, `brightdata_unlocker` | Providers an incomplete page is re-read with, in order (paid ones only when allowed). |
 | `completeness_max_extra_reads` | `5` | Most extra reads one escalation makes. |
 | `completeness_parallel` | `2` | Free ladder tools raced at once (up to 4); paid tools always run alone. |
 | `completeness_stop_on_agreement` | `True` | Stop climbing once two browsers read the same page as the first read. |

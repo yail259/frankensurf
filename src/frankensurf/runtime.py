@@ -120,9 +120,11 @@ class WebPolicy:
     # text, is re-read with the next providers on this ladder (paid ones only
     # with allow_paid_fallbacks), keeping the most complete page.
     completeness_escalation: bool = True
+    # Patchright isn't on it: as a second opinion on a page another tool already
+    # read, it never saw more than the tools before it (set 7, 23 October 2026).
     completeness_ladder: tuple[str, ...] = (
         "jina_reader", "scrapling", "camoufox", "firecrawl", "zyte", "zenrows",
-        "scrapfly", "patchright", "brightdata_unlocker")
+        "scrapfly", "brightdata_unlocker")
     completeness_max_extra_reads: int = 5
     # Free ladder tools tried at once while escalating (the first complete page
     # wins, the rest are cancelled). Paid tools always run one at a time.

@@ -245,6 +245,15 @@ async def test_an_incomplete_hedge_never_replaces_the_main_read(tmp_path, escala
         WebPolicy(hedge_after_seconds=-1)
 
 
+def test_the_second_opinion_ladder_leaves_out_tools_that_never_add_a_page():
+    from frankensurf.runtime import WebPolicy
+    ladder = WebPolicy().completeness_ladder
+    # Patchright still reads pages in the normal order; as a second opinion on a page
+    # another tool already read, it never saw more than the tools before it.
+    assert "patchright" not in ladder
+    assert ladder[:3] == ("jina_reader", "scrapling", "camoufox")
+
+
 def test_zero_prices_and_unrendered_values_are_placeholders():
     item = "https://cruise.example.com/itinerary/10-day-islands/sydney/pp1"
     text = "Home Cruises Deals " * 30 + "From $ 0 * average per person, 0 person room. " + "Details " * 200
