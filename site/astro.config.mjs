@@ -47,6 +47,7 @@ export default defineConfig({
           { label: "Add to your agent", slug: "docs/agents" },
           { label: "Agent frameworks", slug: "docs/frameworks" },
           { label: "Firecrawl-compatible API", slug: "docs/firecrawl-compatible" },
+          { label: "Try it on your URLs", slug: "docs/compare" },
         ] },
         { label: "Core calls", items: [
           { label: "Read", collapsed: false, items: [

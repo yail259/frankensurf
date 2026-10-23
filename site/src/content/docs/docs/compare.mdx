@@ -1,0 +1,51 @@
+---
+title: Try it on your URLs
+description: Run your own URLs through Frankensurf and through Firecrawl (cloud or self-hosted, or any Firecrawl-compatible endpoint) side by side, and see which pages each one gets.
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Our benchmarks are on our sites. Before you switch anything, run the pages you actually read:
+
+```bash
+frankensurf compare urls.txt                                  # against Firecrawl's cloud ($FIRECRAWL_API_KEY)
+frankensurf compare urls.txt --against http://localhost:3003  # against a self-hosted Firecrawl
+```
+
+`urls.txt` has one URL per line. Put a tab and a phrase after a URL, something the right page will
+always contain (a product name, a word from the headline), and that URL gets graded: the page counts
+only if the phrase is in it.
+
+```text
+https://shop.example.com/kettles	Kettle
+https://news.example.com/2026/10/budget	budget
+https://docs.example.com/install
+```
+
+Each URL is read both ways at the same time, four URLs at a time, and you get one summary. This
+one is six URLs from our benchmark set against a self-hosted Firecrawl, on 23 October 2026:
+
+```text
+6 URLs, Frankensurf vs http://127.0.0.1:3003
+  Frankensurf  right 4, empty 2; median 1.85s, slowest tenth 34.6s, paid tools $0.0000
+  Against      right 3, empty 3; median 3.55s, slowest tenth 6.5s, 3 credits
+  Only Frankensurf got a page: 1; only http://127.0.0.1:3003: 0
+```
+
+- **right / wrong:** the page came back, with or without your phrase.
+- **page:** something came back for a URL with no phrase. It may still be the wrong page.
+- **blocked:** a short page that reads like a bot check ("Just a moment", "verify you are human").
+- **empty:** nothing, or almost nothing, came back.
+
+`--rows results.jsonl` writes one line per URL with both sides' grade, length, time, error, and
+Frankensurf's tool and cost or the other side's credits.
+
+<Aside>
+Without phrases, the comparison only says whether each side returned a page and whether it looks
+like a block page. It doesn't grade pages with Frankensurf's own checks, since that would mark its
+own homework. Add phrases for a real answer.
+</Aside>
+
+Frankensurf uses your usual settings, so `--paid` and your keys apply as they do for `read`. To
+compare free tools only, leave paid tools off. The other side is any server that speaks Firecrawl's
+`/v2/scrape`, including another `frankensurf serve`.

@@ -29,6 +29,7 @@ goes to `--state` (default `./state`).
 | `paginate` | one URL | Follow pages; needs `--adapter`; `--max-pages`, `--continuation-adapter`. |
 | `images` | image URLs | Download and check images. |
 | `trace` | one trace ID | Show how a result was fetched. |
+| `compare` | a file of URLs | Read each URL with Frankensurf and with a Firecrawl-compatible endpoint, side by side: `--against URL` (default Firecrawl's cloud), `--against-key`, `--rows FILE`. See [Try it on your URLs](/docs/compare/). |
 | `import` | one URL | Store a capture you made: `--evidence-file`, `--observed-at`, `--content-type`. |
 | `do` | none | A typed browser action from `--intent-file`; needs `--identity`, `--grant-action`, `--action-origin`. |
 | `repair` | one trace ID | Diagnose a retained extract failure; `--repair-policy-file`. |
