@@ -158,7 +158,10 @@ Frankensurf read 39 sites the self-hosted Firecrawl didn't, and Firecrawl none t
 didn't. Self-hosted Firecrawl runs Playwright and a plain fetch without Fire-engine, the anti-bot
 layer of Firecrawl's cloud (its docs say self-hosted instances don't get it), and most of its
 misses were "All scraping engines failed". Frankensurf is slower, since it climbs to stealth
-browsers when the cheap tools fail. Setup, rows and scripts:
+browsers when the cheap tools fail. Read side by side with 0.52.0 (each site by both, the first reader alternating): 126 against 89
+read, 5 against 18 wrong pages passed on, 1.4 GB of memory against about 4.2 GB; on pages both
+read, Firecrawl was faster, 4.2 s against 4.8 s median and 9.8 s against 17.8 s in the slowest
+tenth, and it gave up on a page in 1.5 s where Frankensurf kept trying for 16.5 s. Setup, rows and scripts:
 [benchmarks/2026-10-23-self-hosted-firecrawl](https://github.com/yail259/frankensurf/tree/main/benchmarks/2026-10-23-self-hosted-firecrawl).
 
 ## Search
