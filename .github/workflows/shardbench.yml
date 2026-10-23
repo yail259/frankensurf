@@ -21,6 +21,10 @@ on:
         description: "Also read with FrankenSurf, free tools only"
         type: boolean
         default: false
+      shardx_router:
+        description: "Frankensurf's free router with and without ShardX as one of its tools (routers only)"
+        type: boolean
+        default: false
       plugin_check:
         description: "Check the optional plugin end to end instead of benchmarking"
         type: boolean
@@ -52,7 +56,13 @@ jobs:
           sudo apt-get install -y -q xvfb unzip
           /tmp/fs/bin/frankensurf install --with-deps chromium stealth | tail -20
           # FrankenSurf's free router also uses Jina Reader and the local search engine.
-          if [ "${{ inputs.frankensurf }}" = "true" ]; then /tmp/fs/bin/frankensurf install search | tail -5; fi
+          if [ "${{ inputs.frankensurf }}" = "true" ] || [ "${{ inputs.shardx_router }}" = "true" ]; then
+            /tmp/fs/bin/frankensurf install search | tail -5
+          fi
+          if [ "${{ inputs.shardx_router }}" = "true" ]; then
+            /tmp/fs/bin/pip install -q ./contrib/frankensurf-shardx
+            /tmp/fs/bin/frankensurf plugins trust provider shardx frankensurf-shardx
+          fi
       - name: check the optional plugin, installed and trusted as a user would
         if: inputs.plugin_check
         run: |
@@ -67,10 +77,11 @@ jobs:
           SAMPLE: ${{ inputs.sample }}
           SITE_SET: ${{ inputs.site_set || 'heldout7' }}
           WITH_FS: ${{ inputs.frankensurf && '--frankensurf' || '' }}
+          WITH_ROUTER: ${{ inputs.shardx_router && '--shardx-router --routers-only' || '' }}
         run: |
           mkdir -p out
           xvfb-run -a /tmp/fs/bin/python scripts/shardbench.py --out out/shardbench-rows.jsonl \
-            --set "$SITE_SET" $WITH_FS ${SAMPLE:+--sample "$SAMPLE"} | tee out/shardbench-log.txt
+            --set "$SITE_SET" $WITH_FS $WITH_ROUTER ${SAMPLE:+--sample "$SAMPLE"} | tee out/shardbench-log.txt
       - name: summary
         if: ${{ always() && !inputs.plugin_check }}
         run: |

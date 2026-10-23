@@ -129,17 +129,28 @@ async def akamai_cases(out: Path) -> list[dict]:
     return cases
 
 
-async def run(cases, out, workers, gap, headless, frankensurf=False):
+# Frankensurf's free router with ShardX as one of its tools (the frankensurf-shardx plugin,
+# installed and trusted): it races beside Jina Reader where Scrapling would, and climbs before
+# the other stealth browsers.
+SHARDX_ROUTER = {"completeness_ladder": ["jina_reader", "shardx", "scrapling", "camoufox", "patchright"]}
+
+
+async def run(cases, out, workers, gap, headless, frankensurf=False, shardx_router=False, browsers=True):
     from frankensurf import Runtime
     rng = random.Random(7)
-    baseline = [*BASELINE, *(["stitched_free"] if frankensurf else [])]
-    arms = ["shardx", *baseline]
+    if shardx_router:
+        toolbench.ARMS["stitched_free_shardx"] = SHARDX_ROUTER
+        toolbench.STITCHED.add("stitched_free_shardx")
+    baseline = [*(BASELINE if browsers else []), *(["stitched_free"] if frankensurf or shardx_router else []),
+                *(["stitched_free_shardx"] if shardx_router else [])]
+    arms = [*(["shardx"] if browsers else []), *baseline]
     state = Path(out).parent / "shardbench-state"
     runtimes = {arm: Runtime(state_dir=state / arm) for arm in baseline}
     for web in runtimes.values():
         await web.__aenter__()
     shard = ShardArm(headless)
-    await shard.start()
+    if browsers:
+        await shard.start()
     queue: asyncio.Queue = asyncio.Queue()
     for case in cases:
         queue.put_nowait((case, rng.sample(arms, len(arms))))
@@ -168,7 +179,8 @@ async def run(cases, out, workers, gap, headless, frankensurf=False):
     try:
         await asyncio.gather(*(worker() for _ in range(workers)))
     finally:
-        await shard.stop()
+        if browsers:
+            await shard.stop()
         for web in runtimes.values():
             await web.__aexit__(None, None, None)
     return rows
@@ -183,6 +195,10 @@ def main(argv=None):
     parser.add_argument("--headless", action="store_true", help="ShardX headless (default: headed, under xvfb)")
     parser.add_argument("--set", choices=["heldout7", "akamai"], default="heldout7")
     parser.add_argument("--frankensurf", action="store_true", help="also read with FrankenSurf, free tools only")
+    parser.add_argument("--shardx-router", action="store_true",
+                        help="also read with FrankenSurf's free router plus ShardX as a tool (needs the plugin trusted)")
+    parser.add_argument("--routers-only", action="store_true",
+                        help="only the Frankensurf arms, not each browser alone")
     args = parser.parse_args(argv)
     if args.set == "akamai":
         cases = asyncio.run(akamai_cases(args.out))
@@ -191,7 +207,8 @@ def main(argv=None):
     if args.sample and args.sample < len(cases):
         step = len(cases) / args.sample
         cases = [cases[int(index * step)] for index in range(args.sample)]
-    rows = asyncio.run(run(cases, args.out, args.workers, args.gap, args.headless, args.frankensurf))
+    rows = asyncio.run(run(cases, args.out, args.workers, args.gap, args.headless, args.frankensurf,
+                           args.shardx_router, browsers=not args.routers_only))
     summary = toolbench.summarize(rows)
     print(json.dumps({"rows": str(args.out), "sites": len(cases), "summary": summary}, indent=2))
 
