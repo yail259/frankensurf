@@ -143,6 +143,24 @@ the VM) are for. Lightning's median read took 1.7 seconds to Firecrawl's 4.8,
 at no cost. Rows:
 [`benchmarks/2026-10-10/`](https://github.com/yail259/frankensurf/tree/main/benchmarks/2026-10-10).
 
+## Against self-hosted Firecrawl
+
+Firecrawl is open source too, so the question for anyone running their own: against the Firecrawl
+you'd self-host, how many pages does each read? Same 150 sites (held-out set 7), 23 October 2026,
+both servers in Docker on one machine, read by the same client through `POST /v2/scrape`.
+
+| Server | Right page | Wrong page passed on | No page | Median | p90 |
+| --- | --- | --- | --- | --- | --- |
+| Firecrawl 2.11.604, self-hosted | 59.3% | 20 | 41 | 6.0 s | 16.6 s |
+| **Frankensurf 0.51.0, Docker, free tools** | **85.3%** | 6 | 16 | 9.8 s | 33.6 s |
+
+Frankensurf read 39 sites the self-hosted Firecrawl didn't, and Firecrawl none that Frankensurf
+didn't. Self-hosted Firecrawl runs Playwright and a plain fetch without Fire-engine, the anti-bot
+layer of Firecrawl's cloud (its docs say self-hosted instances don't get it), and most of its
+misses were "All scraping engines failed". Frankensurf is slower, since it climbs to stealth
+browsers when the cheap tools fail. Setup, rows and scripts:
+[benchmarks/2026-10-23-self-hosted-firecrawl](https://github.com/yail259/frankensurf/tree/main/benchmarks/2026-10-23-self-hosted-firecrawl).
+
 ## Search
 
 Search is judged blind. For each query, every tool's top five results are pooled,
