@@ -252,6 +252,7 @@ export const versus: { name: string; logo: string; all: [number, number]; unseen
 
 // How the stack changes itself. These describe shipped behaviour, so they carry no label.
 export const ledger = [
+  { when: "23 Oct 2026", layer: "Checks", change: "Results under version folders, package scopes or as pictures count; a stalled plain fetch gives up at 12 s; tools that never pass a wall are skipped", delta: "−2.8 s", detail: "Slowest tenth on 150 held-out sites, both versions read side by side: 27.3 → 24.5 s, 127 → 129 read" },
   { when: "10 Oct 2026", layer: "Router", change: "Slow reads raced after 3 s, paid tools after the first wall, wrong URLs found through the site's own search", delta: "−1.4 s", detail: "Paid fallbacks on 40 held-out sites, one read at a time: median 5.1 → 3.6 s, 36 → 37 read" },
   { when: "6 Oct 2026", layer: "Providers", change: "Kernel, Anchor, Zyte, Apify, fastCRW, Tavily, Parallel, Patchright and nodriver bolted on", delta: "+9", detail: "Patchright, nodriver and self-hosted fastCRW read live pages; the rest are tested against their published APIs" },
   { when: "6 Oct 2026", layer: "Router", change: "A rendered second opinion catches pages whose results never loaded", delta: "+13 pts", detail: "Free tools only, on held-out sites: 34.8% → 47.8% of pages read right" },

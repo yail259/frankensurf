@@ -120,9 +120,11 @@ class WebPolicy:
     # text, is re-read with the next providers on this ladder (paid ones only
     # with allow_paid_fallbacks), keeping the most complete page.
     completeness_escalation: bool = True
+    # Patchright isn't on it: as a second opinion on a page another tool already
+    # read, it never saw more than the tools before it (set 7, 23 October 2026).
     completeness_ladder: tuple[str, ...] = (
         "jina_reader", "scrapling", "camoufox", "firecrawl", "zyte", "zenrows",
-        "scrapfly", "patchright", "brightdata_unlocker")
+        "scrapfly", "brightdata_unlocker")
     completeness_max_extra_reads: int = 5
     # Free ladder tools tried at once while escalating (the first complete page
     # wins, the rest are cancelled). Paid tools always run one at a time.
@@ -195,6 +197,9 @@ class WebPolicy:
     retain_public_failure_evidence: bool = True
     max_images: int = 50
     timeout_seconds: float = 25
+    # A plain fetch that hasn't answered in 12 s is a site stalling bots: in our
+    # benchmark history no plain-HTTP read that succeeded took longer.
+    http_timeout_seconds: float = 12
     provider_deadline_grace_seconds: float = 10
     provider_cleanup_grace_seconds: float = 5
     provider_composition_max_depth: int = 8
@@ -358,6 +363,9 @@ class WebPolicy:
     # Start a fresh install's wall-vendor routing from measured priors
     # (bundled_wall_priors.json); this machine's own reads outweigh them quickly.
     use_wall_priors: bool = True
+    # Once only tools that never got past this wall vendor are left, stop rather
+    # than try them (they stay listed in if_not_right for a deliberate retry).
+    skip_hopeless_tools: bool = True
     route_memory_ttl_seconds: float = 3600
     route_memory_min_samples: int = 3
     terminal_failures: tuple[str, ...] = ("AUTH_REQUIRED", "AUTH_EXPIRED", "NOT_FOUND")
@@ -538,6 +546,7 @@ class WebPolicy:
             check_schema(self.extract_schema)
         _require(_is_int(self.hedge_racers, 1) and self.hedge_racers <= 3, "hedge_racers must be 1 to 3")
         _require(type(self.use_wall_priors) is bool, "use_wall_priors must be a boolean")
+        _require(type(self.skip_hopeless_tools) is bool, "skip_hopeless_tools must be a boolean")
         _require(type(self.allow_real_browser) is bool, "allow_real_browser must be a boolean")
         _require(type(self.use_egress_pool) is bool, "use_egress_pool must be a boolean")
         _require(type(self.rescue_not_found) is bool, "rescue_not_found must be a boolean")
@@ -717,6 +726,8 @@ class WebPolicy:
                      name + " must be a bounded printable CSS selector or None")
         _require(_is_number(self.content_ready_timeout_seconds, positive=True),
                  "content readiness timeout must be positive and finite")
+        _require(_is_number(self.http_timeout_seconds, positive=True),
+                 "http_timeout_seconds must be positive and finite")
         _require(self.content_ready_selector is None
                  or not _is_number(self.timeout_seconds, positive=True)
                  or self.content_ready_timeout_seconds <= self.timeout_seconds,
@@ -3681,7 +3692,11 @@ class Runtime:
             receipt["cost_usd"] = _total_cost(costs)
             receipt["rescue"] = record
             return result
-        home_result = await self.read(home, inner_policy, module=False, policy_overrides=inner)
+        # The home page is read for its search box, not its content: no climb to
+        # make it look complete.
+        home_result = await self.read(
+            home, replace(inner_policy, completeness_escalation=False) if inner_policy is not None else None,
+            module=False, policy_overrides={**inner, "completeness_escalation": False} if inner is not None else None)
         home_receipt = home_result.get("receipt") or {}
         costs.append(home_receipt.get("cost_usd", 0))
         record["home_trace_id"] = home_receipt.get("trace_id")
@@ -4322,8 +4337,11 @@ class Runtime:
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.path in ("", "/"):
             return result  # The home page itself was walled; entering through it changes nothing.
+        # The strongest stealth browser available, alone: every warm-up rescue we've
+        # measured came from the first one, and the weaker browsers after it only
+        # added time to reads that stayed walled.
         tools = [tool for tool in ("camoufox", "patchright", "local")
-                 if self.providers.is_available(tool) and tool not in effective.exclude_providers]
+                 if self.providers.is_available(tool) and tool not in effective.exclude_providers][:1]
         if not tools:
             return result
         entry = f"https://{parsed.netloc}/"
@@ -5518,6 +5536,10 @@ class Runtime:
                 # automatic route failed the same way here, the site is the
                 # likelier cause: each remaining tool still gets one try, not two.
                 and not (plan_state.get("automatic") and len(plan_state["failed_alike"]) >= 2)
+                # Nor after the site walled two tools: a tool erroring there is
+                # more likely the site's doing than a flaky tool.
+                and sum((attempt.get("failure") in policy.escalation_failures)
+                        for attempt in receipt.get("attempts") or ()) < 2
                 and retry_index + 1 < policy.provider_max_attempts_per_candidate):
             return "retry"
         # Anonymous reads meet fake walls: sites answer bots with a sign-in
@@ -5586,6 +5608,14 @@ class Runtime:
                 if ahead:
                     move_ahead(ahead)
                     plan_state["escalated"] = True
+        remaining = order[plan_state["position"] + 1:]
+        hopeless = plan_state.get("hopeless") or set()
+        if (policy.skip_hopeless_tools and not resolved and remaining and plan_state["walls"] >= 2
+                and exc.code in policy.escalation_failures and all(item in hopeless for item in remaining)):
+            # Every tool left has never got past this wall vendor: trying them
+            # only delays the answer.
+            receipt.setdefault("routing", {})["skipped_hopeless"] = list(remaining)
+            return "stop"
         return "stop" if (resolved or terminal or candidate == order[-1]) else "next"
 
     def _rank_paid(self, tools, vendor, policy):
@@ -5843,6 +5873,12 @@ class Runtime:
         elif candidate in AGENT_PROVIDERS:
             policy_for_candidate = replace(policy, timeout_seconds=max(
                 policy.timeout_seconds, policy.agent_provider_timeout_seconds))
+        elif (candidate == "http" and adapter is None and not policy.provider
+              and len(policy.provider_candidates or ("http", "next")) > 1):
+            # Only on the router's own climb, where another tool is next: a pinned
+            # provider or an extract keeps the timeout it was given.
+            policy_for_candidate = replace(policy, timeout_seconds=min(
+                policy.timeout_seconds, policy.http_timeout_seconds))
         else:
             policy_for_candidate = policy
         attempt_policy = _remaining_cost_policy(policy_for_candidate,

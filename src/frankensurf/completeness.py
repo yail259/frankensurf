@@ -59,6 +59,9 @@ _MARKDOWN_LINK = re.compile(r"\]\((https?://[^)\s#]+|/[^)\s#]*)")
 _ANCHOR = re.compile(r"""<a\b([^>]*?)\bhref\s*=\s*["']([^"'#]+)["']([^>]*)>(.*?)</a\s*>""", re.I | re.S)
 _MARKDOWN_ANCHOR = re.compile(r"\[([^\]]{0,300})\]\((https?://[^)\s#]+|/[^)\s#]*)")
 _TAG = re.compile(r"<[^>]+>")
+_MARKDOWN_IMAGE = re.compile(r"!\[([^\]]{0,300})\]\((https?://[^)\s]+|/[^)\s]*)")
+_IMG = re.compile(r"<img\b[^>]*>", re.I)
+_IMG_ATTR = re.compile(r"""\b(src|alt)\s*=\s*["']([^"']*)["']""", re.I)
 _LABEL = re.compile(r"""\b(?:title|aria-label|alt)\s*=\s*["']([^"']*)["']""", re.I)
 _WORD = re.compile(r"[^\W_]+")
 _STOPWORDS = frozenset({"the", "and", "for", "with", "from", "new", "used", "buy", "sale", "cheap",
@@ -216,10 +219,21 @@ def _item_like(path: str) -> bool:
                for segment in path.split("/") if segment)
 
 
+_VERSION_SEGMENT = re.compile(r"(?i)v?\d+(?:[._]\d+)*|current|latest|stable|master|main|dev")
+
+
+def _prefix_shape(prefix: str) -> str:
+    """A path prefix with the parts results vary in made alike: versions (/docs/17,
+    /docs/current) and package scopes (/@std, /@http)."""
+    return "/".join("#" if _VERSION_SEGMENT.fullmatch(segment) else "@" if segment.startswith("@") else segment
+                    for segment in prefix.split("/"))
+
+
 def result_group(html: str, base: str, terms) -> int:
     """Links that are results by shape: many distinct same-site links under one
     path prefix (/packages/<name>, /project/<name>), at least a third of whose
-    link texts mention the query. A menu shares a prefix too, but not the query."""
+    link texts mention the query. A menu shares a prefix too, but not the query.
+    Prefixes that differ only by a version or a package scope count as one."""
     if not terms:
         return 0
     host = (urlparse(base).hostname or "").removeprefix("www.")
@@ -238,7 +252,9 @@ def result_group(html: str, base: str, terms) -> int:
         prefix, leaf = path.rsplit("/", 1)
         text = html_lib.unescape(_TAG.sub(" ", inner) + " " + leaf).lower()
         # Results on subdomains share a path prefix (/p/<post>) across hosts.
-        groups.setdefault(prefix, {})[leaf] = text
+        group = groups.setdefault(_prefix_shape(prefix), {})
+        # A result is often linked twice (title, then a bare URL or an icon): keep both texts.
+        group[path] = (group.get(path, "") + " " + text)[:2000]
     best = 0
     for leaves in groups.values():
         if len(leaves) < 8:
@@ -247,6 +263,26 @@ def result_group(html: str, base: str, terms) -> int:
         if matching >= max(3, len(leaves) / 3):
             best = max(best, len(leaves))
     return best
+
+
+def result_images(html: str, base: str, terms) -> int:
+    """Results that are pictures: distinct images whose alt text or file name
+    mentions the query, as on an image or product search. A logo or a banner
+    doesn't name the query; a default feed's pictures don't either."""
+    if not terms:
+        return 0
+    found = set()
+    pairs = [(alt, src) for alt, src in _MARKDOWN_IMAGE.findall(html[:4_000_000])]
+    for tag in _IMG.findall(html[:4_000_000]):
+        attrs = {name.lower(): value for name, value in _IMG_ATTR.findall(tag)}
+        if attrs.get("src"):
+            pairs.append((attrs.get("alt", ""), attrs["src"]))
+    for alt, src in pairs:
+        path = urlparse(urljoin(base, src.replace("&amp;", "&"))).path
+        described = (html_lib.unescape(alt) + " " + path.rsplit("/", 1)[-1].replace("_", " ")).lower()
+        if any(term in described for term in terms):
+            found.add(path)
+    return len(found) if len(found) >= 8 else 0
 
 
 def item_links(html: str, base: str) -> int:
@@ -457,7 +493,9 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
         return {"kind": kind, "complete": True, "score": len(text), "reason": "not a document page"}
     items = item_links(content, result.get("url") or url)
     if kind == "search" and items < min_items:
-        items = max(items, result_group(content, result.get("url") or url, query_terms(url, expect_terms)))
+        terms = query_terms(url, expect_terms)
+        items = max(items, result_group(content, result.get("url") or url, terms),
+                    result_images(content, result.get("url") or url, terms))
     found_prices = _PRICE.findall(text)
     # "$0" and "$ 0.00" are a price that has not loaded yet, not a price.
     prices = sum(1 for price in found_prices if not _ZERO_PRICE.search(price))

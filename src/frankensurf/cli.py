@@ -409,6 +409,21 @@ async def run(args):
             print(f"frankensurf serve: {error}", file=sys.stderr)
             raise SystemExit(2) from None
         return
+    elif args.operation == "compare":
+        import sys
+        from . import compare
+        try:
+            cases = compare.load_cases(args.urls[0])
+            against = args.against or compare.FIRECRAWL_CLOUD
+            rows = await compare.compare(cases, state_dir=args.state, policy=WebPolicy(**_policy_kwargs(args)),
+                                         against=against, against_key=args.against_key)
+        except (OSError, ValueError) as error:
+            print(f"frankensurf compare: {error}", file=sys.stderr)
+            raise SystemExit(2) from None
+        if args.rows:
+            compare.write_rows(rows, args.rows)
+        print(compare.summary(rows, against))
+        return
     elif args.operation == "egress":
         from .egress import check
         result = {"connections": await check(),
@@ -568,7 +583,7 @@ def build_parser():
         "repair-disable", "executor-enroll", "identity-enroll",
         "identity-status", "identity-revoke", "bot-auth-init", "bot-auth-directory",
         "profile-login", "profile-list", "profile-delete", "module", "read-template", "setup", "skill",
-        "egress", "plugins", "search-engine", "install", "uninstall", "share", "serve", "map", "crawl", "ask"])
+        "egress", "plugins", "search-engine", "install", "uninstall", "share", "serve", "map", "crawl", "ask", "compare"])
     parser.add_argument("urls", nargs="*")
     parser.add_argument("--explain", action="store_true",
         help="read: print each tool tried and what happened, then the page, instead of JSON")
@@ -580,6 +595,10 @@ def build_parser():
     parser.add_argument("--allow-unauthenticated", action="store_true",
         help="serve: listen beyond this machine without an API key (a network you trust)")
     parser.add_argument("--out", metavar="FILE", help="share export: write the recipes to this file")
+    parser.add_argument("--against", default=None, metavar="URL",
+        help="compare: the Firecrawl-compatible endpoint to compare with (default Firecrawl's cloud)")
+    parser.add_argument("--against-key", help="compare: that endpoint's API key (default $FIRECRAWL_API_KEY)")
+    parser.add_argument("--rows", metavar="FILE", help="compare: also write one JSON row per URL to this file")
     parser.add_argument("--with-deps", action="store_true",
         help="install: also install the browsers' system libraries (Linux; asks for sudo)")
     parser.add_argument("--list", action="store_true",
@@ -801,6 +820,10 @@ def parse_args(argv=None):
     elif args.operation in ("map", "crawl"):
         if len(args.urls) != 1:
             parser.error(args.operation + " takes one URL: frankensurf " + args.operation + " https://example.com/docs/")
+    elif args.operation == "compare":
+        if len(args.urls) != 1:
+            parser.error("compare takes one file of URLs (one per line, optionally a tab and a phrase the page "
+                         "should contain): frankensurf compare urls.txt [--against URL]")
     elif args.operation == "serve":
         if args.urls:
             parser.error("serve takes no arguments: frankensurf serve [--port 3002] [--host 127.0.0.1] [--paid]")

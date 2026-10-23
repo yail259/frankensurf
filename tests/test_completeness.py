@@ -245,6 +245,15 @@ async def test_an_incomplete_hedge_never_replaces_the_main_read(tmp_path, escala
         WebPolicy(hedge_after_seconds=-1)
 
 
+def test_the_second_opinion_ladder_leaves_out_tools_that_never_add_a_page():
+    from frankensurf.runtime import WebPolicy
+    ladder = WebPolicy().completeness_ladder
+    # Patchright still reads pages in the normal order; as a second opinion on a page
+    # another tool already read, it never saw more than the tools before it.
+    assert "patchright" not in ladder
+    assert ladder[:3] == ("jina_reader", "scrapling", "camoufox")
+
+
 def test_zero_prices_and_unrendered_values_are_placeholders():
     item = "https://cruise.example.com/itinerary/10-day-islands/sydney/pp1"
     text = "Home Cruises Deals " * 30 + "From $ 0 * average per person, 0 person room. " + "Details " * 200
@@ -343,6 +352,34 @@ def test_results_are_recognised_by_shape_when_their_links_mention_the_query():
     verdict = assess(url, {"content": "<html><body>" + links + menu + "</body></html>",
                            "text": "json tool " * 200, "content_type": "text/html"})
     assert verdict["complete"] and verdict["item_links"] >= 10
+
+
+def test_results_split_across_versions_or_package_scopes_still_form_one_group():
+    from frankensurf.completeness import result_group
+    docs = "https://docs.example.org/search/?q=vacuum"
+    versions = "".join(f'<a href="/docs/{v}/vacuum-{page}.html">Docs {v}: vacuum {page}</a>'
+                       for v in ("current", "18", "17", "16") for page in ("routine", "sql", "config"))
+    assert result_group(versions, docs, ["vacuum"]) == 12
+    registry = "https://pkgs.example.org/packages?search=http"
+    scoped = "".join(f'<a href="/@{scope}/http-{n}">@{scope}/http-{n}</a>' for scope in ("std", "web", "net") for n in range(3))
+    assert result_group(scoped, registry, ["http"]) == 9
+    # The same docs menu in every version still isn't results.
+    menu = "".join(f'<a href="/docs/{v}/{page}.html">{page}</a>' for v in ("17", "18") for page in ("intro", "install", "faq", "tutorial", "reference"))
+    assert result_group(menu, docs, ["vacuum"]) == 0
+
+
+def test_pictures_that_name_the_query_are_results_on_an_image_search():
+    from frankensurf.completeness import result_images
+    url = "https://photos.example.org/search?q=lighthouse&type=image"
+    markdown = "".join(f"![Old lighthouse {n}](https://cdn.example.net/thumb/{n}/Lighthouse_{n}.jpg)" for n in range(12))
+    html = "".join(f'<img src="/img/{n}.jpg" alt="A lighthouse at dusk, view {n}">' for n in range(9))
+    chrome = "".join(f'<img src="/static/icon-{n}.svg" alt="Menu icon {n}">' for n in range(20))
+    assert result_images(markdown, url, ["lighthouse"]) == 12
+    assert result_images(html + chrome, url, ["lighthouse"]) == 9
+    assert result_images(chrome, url, ["lighthouse"]) == 0
+    verdict = assess(url, {"content": markdown, "text": "lighthouse photos " * 100,
+                           "content_type": "text/markdown"})
+    assert verdict["complete"]
 
 
 def test_results_on_the_sites_own_subdomains_count():

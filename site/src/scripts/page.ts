@@ -1,87 +1,72 @@
 // Page interactions: router product window, scroll reveals, card spotlight.
 
 import { reducedMotion } from "./motion";
+import { READS, READS_CAPTURED } from "../data/reads";
 const reduce = reducedMotion();
 const manual = reduce || matchMedia("(max-width: 760px)").matches;
 
-/* ---------- router window ---------- */
-type Step = [ok: 0 | 1 | 2, ms?: number, note?: string];
-const PROVIDERS: Record<string, { label: string; native: string }> = {
-  claude: { label: "Claude", native: "web_fetch" },
-  gpt: { label: "GPT", native: "web_search" },
-  gemini: { label: "Gemini", native: "url_context" },
-  open: { label: "Open-weight", native: "none" },
-};
-const SITES: { k: string; label: string; url: string; task: string; native: string; steps: Step[]; tokens: string }[] = [
-  { k: "docs", label: "Docs page", url: "docs.acme.dev/api/limits", task: "rate limits per plan", native: "raw HTML, 14k tokens of nav",
-    steps: [[1, 160, "origin served markdown"]], tokens: "1.9k" },
-  { k: "spa", label: "JS app", url: "app.acme.dev/billing", task: "current invoice total", native: "empty app shell",
-    steps: [[0, 90, "no markdown variant"], [0, 140, "empty shell, needs JS"], [1, 1100, "rendered, trimmed"]], tokens: "3.1k" },
-  { k: "cf", label: "Cloudflare", url: "shop.example.com/p/2231", task: "price and stock", native: "challenge page",
-    steps: [[0, 80, "403 challenge"], [0, 120, "Turnstile"], [0, 900, "challenge loop"], [1, 2300, "signed agent accepted"]], tokens: "2.8k" },
-  { k: "dd", label: "DataDome", url: "retail.example.com/deals", task: "top 10 deals", native: "blocked at edge",
-    steps: [[0, 80, "blocked"], [0, 110, "blocked"], [0, 850, "fingerprint flagged"], [0, 1900, "flagged mid-session"], [1, 3400, "unblocker route"]], tokens: "4.6k" },
-  { k: "login", label: "Login wall", url: "portal.example.com/orders", task: "last 5 orders", native: "login page",
-    steps: [[0, 70, "401"], [0, 90, "login redirect"], [1, 1400, "saved session reused"]], tokens: "3.8k" },
-  { k: "mfa", label: "2FA", url: "bank.example.com/statements", task: "download statement", native: "stuck at 2FA",
-    steps: [[0, 70, "401"], [0, 90, "login redirect"], [0, 1200, "2FA prompt"], [2], [2], [1, 1800, "approval sent to you"]], tokens: "<1k" },
-];
-const RUNGS = [
-  ["T0", "Content negotiation"], ["T1", "Light fetch"], ["T2", "Managed browser"],
-  ["T3", "Stealth + signed identity"], ["T4", "Unblocker network"], ["T5", "Human handoff"],
-];
+/* ---------- router window: real reads, replayed ---------- */
 
-const fmt = (ms: number) => (ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms");
+const TOOL_NAMES: Record<string, string> = {
+  http: "Plain HTTP", jina_reader: "Jina Reader", scrapling: "Scrapling", camoufox: "Camoufox",
+  local: "Chromium", patchright: "Patchright",
+};
+const OUTCOMES: Record<string, [cls: string, text: string]> = {
+  kept: ["ok", "page kept"], page: ["page", "page, not kept"], BLOCKED: ["no", "blocked"],
+  CAPTCHA: ["no", "challenge page"], NOT_FOUND: ["no", "not found"], TIMEOUT: ["no", "timed out"],
+  CancelledError: ["stop", "stopped, race won"],
+};
+const secs = (s: number) => s.toFixed(1) + "s";
+const esc = (text: string) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
 function mountRouter(root: HTMLElement) {
-  const ladder = root.querySelector<HTMLOListElement>("[data-ladder]")!;
+  const lanes = root.querySelector<HTMLOListElement>("[data-ladder]")!;
   const code = root.querySelector<HTMLElement>("[data-code]")!;
   const summary = root.querySelector<HTMLElement>("[data-summary]")!;
-  const nativeEl = root.querySelector<HTMLElement>("[data-native]")!;
+  const plainEl = root.querySelector<HTMLElement>("[data-native]")!;
+  const noteEl = root.querySelector<HTMLElement>("[data-note]")!;
   const siteTabs = root.querySelector<HTMLElement>("[data-sites]")!;
-  const provTabs = root.querySelector<HTMLElement>("[data-providers]")!;
-  let site = 0, prov = "claude", timers: number[] = [], auto = !manual, cycle = 0;
+  let site = 0, timers: number[] = [], auto = !manual;
 
-  siteTabs.innerHTML = SITES.map((s, i) => `<button type="button" data-i="${i}">${s.label}</button>`).join("");
-  provTabs.innerHTML = Object.entries(PROVIDERS).map(([k, p]) => `<button type="button" data-k="${k}">${p.label}</button>`).join("");
-  ladder.innerHTML = RUNGS.map(([id, n]) => `<li><span class="r-id">${id}</span><span class="r-name">${n}<small></small></span><span class="r-ms"></span></li>`).join("");
+  siteTabs.innerHTML = READS.map((r, i) => `<button type="button" data-i="${i}">${esc(r.label)}</button>`).join("");
 
   function run() {
     timers.forEach(clearTimeout); timers = [];
-    const s = SITES[site], p = PROVIDERS[prov];
+    const r = READS[site];
     siteTabs.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(i === site)));
-    provTabs.querySelectorAll<HTMLButtonElement>("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.k === prov)));
-    code.innerHTML =
-      `<span class="k">const</span> page = <span class="k">await</span> <span class="f">surf</span>(<span class="s">"https://${s.url}"</span>, {\n` +
-      `  model: <span class="s">"${prov}"</span>,\n  task: <span class="s">"${s.task}"</span>,\n})`;
-    nativeEl.innerHTML = `<span class="n-label">${p.label} alone · <code>${p.native}</code></span><span class="n-bad">${s.k === "docs" ? "works, wasteful" : "fails"}</span><span class="n-why">${s.native}</span>`;
+    code.innerHTML = `<span class="f">frankensurf</span> read <span class="s">"${esc(r.url)}"</span>`;
+    plainEl.innerHTML = `<span class="n-label">A plain fetch alone</span><span class="n-bad${r.plain.status === "works" ? " n-ok" : ""}">${r.plain.status}</span><span class="n-why">${esc(r.plain.why)}</span>`;
+    noteEl.textContent = "";
     summary.innerHTML = "";
-    const lis = Array.from(ladder.children) as HTMLLIElement[];
-    lis.forEach((li) => { li.className = ""; li.querySelector("small")!.textContent = ""; li.querySelector(".r-ms")!.textContent = ""; });
-    let total = 0, winIdx = 0, winMs = 0;
-    s.steps.forEach((st, i) => { if (st[0] !== 2) total += st[1]!; if (st[0] === 1) { winIdx = i; winMs = st[1]!; } });
-    let delay = 0;
-    s.steps.forEach((st, i) => {
-      const show = () => {
-        const li = lis[i];
-        if (st[0] === 2) { li.className = "skip"; li.querySelector(".r-ms")!.textContent = "skipped"; return; }
-        li.className = st[0] === 1 ? "ok" : "no";
-        li.querySelector("small")!.textContent = st[2]!;
-        li.querySelector(".r-ms")!.textContent = fmt(st[1]!);
-        if (i === s.steps.length - 1) {
-          summary.innerHTML = `<span><em>${fmt(total)}</em> total</span><span><em>${s.tokens}</em> tokens to model</span><span>next visit starts at <em>${RUNGS[winIdx][0]}</em> · ${fmt(winMs)}</span>`;
-          if (auto) timers.push(window.setTimeout(() => {
-            site = (site + 1) % SITES.length; cycle++;
-            if (cycle % SITES.length === 0) { const keys = Object.keys(PROVIDERS); prov = keys[(keys.indexOf(prov) + 1) % keys.length]; }
-            run();
-          }, 2600));
-        }
-      };
-      if (manual) show(); else { delay += i === 0 ? 250 : 420; timers.push(window.setTimeout(show, delay)); }
+    // Bars sit on one time axis: the read's own length, so a 1 s read and a 16 s read both fill the width.
+    const span = Math.max(r.total, ...r.events.map((e) => e.end));
+    // Played at real speed for short reads, compressed for long ones, so no tab takes over 6 s.
+    const speed = Math.min(1, 6 / span);
+    lanes.innerHTML = r.events.map((e) => {
+      const [cls, text] = OUTCOMES[e.outcome] ?? ["no", e.outcome.toLowerCase().replace(/_/g, " ")];
+      const left = (e.start / span) * 100, width = Math.max(((e.end - e.start) / span) * 100, 1.2);
+      return `<li class="lane ${cls}"><span class="l-tool">${TOOL_NAMES[e.tool] ?? esc(e.tool)}</span>` +
+        `<span class="l-track"><i style="left:${left}%;--w:${width}%;--d:${Math.max((e.end - e.start) * speed, 0.15)}s"></i></span>` +
+        `<span class="l-out">${text}<small>${e.on ? e.on + " · " : ""}${secs(e.start)} to ${secs(e.end)}</small></span></li>`;
+    }).join("");
+    const items = Array.from(lanes.children) as HTMLElement[];
+    const finish = () => {
+      noteEl.textContent = r.note;
+      summary.innerHTML = `<span><em>${secs(r.total)}</em> total</span>` +
+        (r.ok ? `<span>page from <em>${TOOL_NAMES[r.method!] ?? r.method}</em> · ${r.chars.toLocaleString()} chars</span>`
+              : `<span><em>no page</em> · says why (${r.failure?.toLowerCase()})</span>`) +
+        `<span>real read · ${READS_CAPTURED} · home connection</span>`;
+      if (auto) timers.push(window.setTimeout(() => { site = (site + 1) % READS.length; run(); }, 3200));
+    };
+    if (manual) { items.forEach((li) => li.classList.add("on", "done")); finish(); return; }
+    // Each bar grows for as long as that tool really ran; its outcome shows when it finished.
+    r.events.forEach((e, i) => {
+      timers.push(window.setTimeout(() => items[i].classList.add("on"), 200 + e.start * speed * 1000));
+      timers.push(window.setTimeout(() => items[i].classList.add("done"), 200 + e.end * speed * 1000));
     });
+    timers.push(window.setTimeout(finish, 400 + span * speed * 1000));
   }
   siteTabs.addEventListener("click", (e) => { const b = (e.target as HTMLElement).closest("button"); if (!b) return; auto = false; site = +b.dataset.i!; run(); });
-  provTabs.addEventListener("click", (e) => { const b = (e.target as HTMLElement).closest<HTMLButtonElement>("button"); if (!b) return; auto = false; prov = b.dataset.k!; run(); });
 
   if (manual) { run(); return; }
   let started = false;
