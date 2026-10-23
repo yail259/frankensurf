@@ -192,6 +192,30 @@ often: free tools 82.0%, lightning mode 84.0% at a 1.2 s median.
 See [Benchmarks](https://frankensurf.dev/docs/more/benchmarks/).
 </details>
 
+### Against self-hosted Firecrawl
+
+Firecrawl is open source too, so the fair question for anyone running their own is how the Firecrawl
+you'd self-host does. Its docs say self-hosted instances don't get Fire-engine, the anti-bot layer of
+its cloud. Same 150 sites, 23 October 2026, both servers in Docker on one machine, each site read by
+both with the first reader alternating site by site:
+
+| | Self-hosted Firecrawl 2.11.604 | Frankensurf 0.52.0 (free tools) |
+| --- | ---: | ---: |
+| Pages read right | 89 of 150 | **126 of 150** |
+| Wrong page passed on as the page | 18 | **5** |
+| Nothing back | 43 | 19 |
+| Memory while reading | about 4.2 GB, six containers | **1.4 GB, one container** |
+| Median, pages both read | **4.2 s** | 4.8 s |
+| Slowest tenth, pages both read | **9.8 s** | 17.8 s |
+| Time to give up on a page (median) | **1.5 s** | 16.5 s |
+
+- Frankensurf read 38 sites the self-hosted Firecrawl didn't; Firecrawl read 1 it didn't.
+- The slower tail and slower give-ups are the cost of the extra pages: where self-hosted Firecrawl
+  tries once and stops, Frankensurf climbs to stealth browsers and checks each page before handing it
+  back.
+- Rows, scripts and setup: [`benchmarks/2026-10-23-self-hosted-firecrawl/`](benchmarks/2026-10-23-self-hosted-firecrawl/).
+  Run it on your own pages with `frankensurf compare urls.txt --against http://localhost:3002`.
+
 ## Search
 
 `search` uses free sources first and checks every result: on topic, the right kind of page, inside

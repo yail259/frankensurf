@@ -32,6 +32,28 @@ Firecrawl you'd self-host, not Firecrawl's cloud, how many pages does each read?
   (`docs/more/benchmarks`), and Frankensurf's free tools 88.0% that day. Self-hosting loses most of
   what Firecrawl's paid layer adds; Frankensurf's free tools get about as far as the cloud.
 
+## Side by side, with 0.52.0
+
+The run above read one server after the other. Pages and sites cache, so whichever reads second gets
+an easier time; for speed the fair test reads each site with both, the first reader alternating site
+by site (`scripts/interleave.py`). Same 150 sites, same grading, 23 October 2026, Frankensurf's 0.52.0
+image (`interleaved-*.jsonl`):
+
+| | Self-hosted Firecrawl 2.11.604 | Frankensurf 0.52.0 (free tools) |
+| --- | ---: | ---: |
+| Pages read right | 89 of 150 | **126 of 150** |
+| Wrong page passed on as the page | 18 | **5** |
+| Nothing back | 43 | 19 |
+| Memory while reading | about 4.2 GB, six containers | **1.4 GB, one container** |
+| Median, pages both read | **4.2 s** | 4.8 s |
+| Slowest tenth, pages both read | **9.8 s** | 17.8 s |
+| Time to give up on a page (median) | **1.5 s** | 16.5 s |
+
+Memory is `docker stats` at the end of the run. Frankensurf read 38 sites Firecrawl didn't and
+Firecrawl 1 Frankensurf didn't (asda). Self-hosted Firecrawl twice needed a hand before it would
+read at all: after a restart its queue worker couldn't reconnect to Redis until the stack was torn
+down, and after a fresh start Compose left its API container created but not started.
+
 Rerun (from the repo root, with both servers up):
 
 ```bash

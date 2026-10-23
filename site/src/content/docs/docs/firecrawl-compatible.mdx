@@ -16,6 +16,12 @@ frankensurf serve            # http://127.0.0.1:3002, Firecrawl's own port, this
 Then set the project's Firecrawl URL to `http://127.0.0.1:3002`. The API key can be anything; it
 isn't checked. Free tools only unless you start it with `--paid`, and `--max-cost` caps a request.
 
+**Already running Firecrawl yourself?** On 150 sites picked blind, read side by side on one machine,
+self-hosted Firecrawl 2.11.604 read 89 and Frankensurf 126, and passed on 18 wrong pages against 5;
+Firecrawl was faster on the pages both read. [The comparison](/docs/more/benchmarks/#against-self-hosted-firecrawl),
+and to check it on your own pages: `frankensurf compare urls.txt --against http://localhost:3002`
+([how](/docs/compare/)).
+
 ## What you get back
 
 - **Scrape** (`POST /v1/scrape`, `/v2/scrape`): the page as markdown (headings, lists, links,
