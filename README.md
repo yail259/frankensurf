@@ -11,8 +11,8 @@
 <h1 align="center">Frankensurf</h1>
 
 <p align="center">
-  <strong>One <code>read()</code> call for AI agents, stitched from 41 web tools.</strong><br>
-  Cheapest tool first, every page checked, a receipt for every attempt.
+  <strong>Access 96% of the web, cheaply and accurately.</strong><br>
+  A free, self-hosted alternative to Firecrawl: one container, the same API, and every page checked before your agent reads it.
 </p>
 
 <p align="center">
@@ -33,16 +33,17 @@
 
 ---
 
-Every web tool breaks somewhere, and they break on different sites. Frankensurf sits in front of
-all of them and gives your agent one call. It tries the cheapest tool first, checks the page is
-real, moves to a stronger tool only when a site pushes back, and returns clean page data with a
-receipt of how it got there.
+Most scrapers count a 200 as a success, so your agent ends up reading challenge pages, empty app
+shells and menus, and answering anyway. Frankensurf reads each page with the cheapest tool that
+works, checks it's the real page, and climbs to stealth browsers (or paid APIs, if you allow them)
+only when a site pushes back. It speaks Firecrawl's API, so anything with a Firecrawl URL setting
+can point at it.
 
 <table>
   <tr>
-    <td width="33%" valign="top"><strong>Cheapest first</strong><br><sub>Plain HTTP, Jina Reader, a local browser, free stealth browsers, hosted browsers, then paid APIs only if you allow them.</sub></td>
-    <td width="33%" valign="top"><strong>Every page checked</strong><br><sub>A challenge page, a login wall or a search page whose results never loaded counts as a failure, not a success.</sub></td>
-    <td width="33%" valign="top"><strong>Shows its work</strong><br><sub>Every result says which tools ran, how long each took, what it cost, and why it stopped.</sub></td>
+    <td width="33%" valign="top"><strong>Gets past walls</strong><br><sub>41 web tools behind one call: plain HTTP, Jina Reader, browsers, free stealth browsers, then paid APIs only if you allow them.</sub></td>
+    <td width="33%" valign="top"><strong>Every page checked</strong><br><sub>A challenge page, a login wall or a search page whose results never loaded counts as a failure, with a receipt saying why.</sub></td>
+    <td width="33%" valign="top"><strong>Drop-in for Firecrawl</strong><br><sub>Same API, one Docker container. Check it on your own URLs first with <code>frankensurf compare</code>.</sub></td>
   </tr>
 </table>
 
@@ -50,9 +51,22 @@ receipt of how it got there.
   <img src="https://frankensurf.dev/blog/head-to-head-set7.png" alt="Share of 150 sites read correctly: Frankensurf 96%, Zyte 86%, Firecrawl 85%, free tools only 88%" width="820">
 </p>
 
+On 150 sites picked blind: 96% read right with paid fallbacks against 85% for Firecrawl's cloud on its
+own, and 88% with free tools only. Against a self-hosted Firecrawl on the same sites, 126 read against
+89 ([details](#against-self-hosted-firecrawl), losses included).
+
 ## Quick start
 
-Python 3.12+, on Linux, macOS, or Windows through WSL. No account or key needed.
+**As a Firecrawl-compatible server** (one container, free tools inside, no account needed):
+
+```bash
+docker run -d -p 3002:3002 --shm-size=1g -e FRANKENSURF_API_KEY=pick-a-key ghcr.io/yail259/frankensurf
+```
+
+Then point your tool's Firecrawl URL at `http://localhost:3002` with that key
+([which tools, and how](https://frankensurf.dev/docs/firecrawl-compatible/)).
+
+**As a Python package and CLI** (Python 3.12+, on Linux, macOS, or Windows through WSL):
 
 ```bash
 pip install "frankensurf[mcp]"

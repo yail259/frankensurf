@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "frankensurf"
 version = "0.52.0"
-description = "One read() call for AI agents, stitched from 41 web tools: cheapest first, every page checked, a receipt for every attempt"
+description = "Access 96% of the web, cheaply and accurately: a free, self-hosted alternative to Firecrawl with the same API, every page checked"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
