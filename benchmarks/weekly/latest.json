@@ -1,71 +1,71 @@
 {
-  "date": "2026-10-19",
+  "date": "2026-10-28",
   "where": "GitHub Actions (data-centre address)",
-  "version": "0.50.3",
+  "version": "0.52.0",
   "set": "held-out set 7 (150 sites picked blind on 10 October 2026)",
   "sites": 150,
   "arms": {
-    "local": {
-      "label": "Headless Chromium",
-      "sites": 150,
-      "read": 66,
-      "rate": 0.44,
-      "median_s": 2.4,
-      "p90_s": 7.6,
-      "cost_usd": 0.0
-    },
     "scrapling": {
       "label": "Scrapling",
       "sites": 150,
-      "read": 100,
-      "rate": 0.6667,
-      "median_s": 5.8,
-      "p90_s": 10.3,
+      "read": 93,
+      "rate": 0.62,
+      "median_s": 5.0,
+      "p90_s": 8.9,
+      "cost_usd": 0.0
+    },
+    "local": {
+      "label": "Headless Chromium",
+      "sites": 150,
+      "read": 61,
+      "rate": 0.4067,
+      "median_s": 2.5,
+      "p90_s": 4.7,
       "cost_usd": 0.0
     },
     "http": {
       "label": "Plain HTTP",
       "sites": 150,
-      "read": 66,
-      "rate": 0.44,
+      "read": 65,
+      "rate": 0.4333,
       "median_s": 0.8,
       "p90_s": 2.6,
-      "cost_usd": 0.0
-    },
-    "jina_reader": {
-      "label": "Jina Reader",
-      "sites": 150,
-      "read": 111,
-      "rate": 0.74,
-      "median_s": 4.8,
-      "p90_s": 10.4,
       "cost_usd": 0.0
     },
     "camoufox": {
       "label": "Camoufox",
       "sites": 150,
-      "read": 103,
-      "rate": 0.6867,
-      "median_s": 9.6,
-      "p90_s": 13.9,
+      "read": 96,
+      "rate": 0.64,
+      "median_s": 8.1,
+      "p90_s": 11.8,
+      "cost_usd": 0.0
+    },
+    "jina_reader": {
+      "label": "Jina Reader",
+      "sites": 150,
+      "read": 104,
+      "rate": 0.6933,
+      "median_s": 5.6,
+      "p90_s": 11.4,
       "cost_usd": 0.0
     },
     "patchright": {
       "label": "Patchright",
       "sites": 150,
-      "read": 66,
-      "rate": 0.44,
-      "median_s": 3.4,
-      "p90_s": 7.1,
+      "read": 61,
+      "rate": 0.4067,
+      "median_s": 2.9,
+      "p90_s": 6.3,
       "cost_usd": 0.0
     },
     "stitched_free": {
       "label": "Frankensurf, free tools only",
       "sites": 150,
-      "read": 125,
-      "rate": 0.8333,
-      "median_s": 4.3,
-      "p90_s": 24.6,
+      "read": 119,
+      "rate": 0.7933,
+      "median_s": 2.6,
+      "p90_s": 15.1,
       "cost_usd": 0.0
     }
   }

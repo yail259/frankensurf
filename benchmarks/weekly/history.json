@@ -26,5 +26,19 @@
    "patchright": 0.44,
    "stitched_free": 0.8333
   }
+ },
+ {
+  "date": "2026-10-28",
+  "version": "0.52.0",
+  "sites": 150,
+  "rates": {
+   "scrapling": 0.62,
+   "local": 0.4067,
+   "http": 0.4333,
+   "camoufox": 0.64,
+   "jina_reader": 0.6933,
+   "patchright": 0.4067,
+   "stitched_free": 0.7933
+  }
  }
 ]
