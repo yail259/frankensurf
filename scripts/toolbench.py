@@ -61,7 +61,8 @@ HELDOUT = {"heldout": Path(__file__).with_name("toolbench-heldout.json"),
            "heldout5": Path(__file__).with_name("toolbench-heldout5.json"),
            "heldout6": Path(__file__).with_name("toolbench-heldout6.json"),
            "heldout7": Path(__file__).with_name("toolbench-heldout7.json"),
-           "heldout8": Path(__file__).with_name("toolbench-heldout8.json")}
+           "heldout8": Path(__file__).with_name("toolbench-heldout8.json"),
+           "heldout9": Path(__file__).with_name("toolbench-heldout9.json")}
 COMMON = {"origin_cooldown_seconds": 0, "freshness": "now", "lightning": False, "allow_real_browser": False}
 ARMS = {
     "http": {"provider": "http"},
@@ -312,10 +313,13 @@ def main(argv=None):
     parser.add_argument("--label", default="run")
     parser.add_argument("--resume", type=Path, help="rows file to continue; finished (arm, URL) pairs are skipped")
     parser.add_argument("--sample", type=int, help="read only this many cases, spread evenly over the set")
+    parser.add_argument("--sites", nargs="*", help="read only these cases, by site name")
     args = parser.parse_args(argv)
     cases = frozen_main(args.rows) + heldout()
     if args.only_set:
         cases = [case for case in cases if case["set"] in args.only_set]
+    if args.sites:
+        cases = [case for case in cases if case["site"] in args.sites]
     if args.sample and args.sample < len(cases):
         step = len(cases) / args.sample
         cases = [cases[int(index * step)] for index in range(args.sample)]
