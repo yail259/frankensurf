@@ -150,5 +150,33 @@ def test_repeat_read_records_failures_without_exception_details():
         pass
     case = {"site": "test", "url": "https://example.org/", "kind": "article"}
     rows = asyncio.run(repeat.measure_case(Web(), case, 0, sleep=no_wait))
-    assert len(rows) == 3 and all(row["failure"] == "RuntimeError" for row in rows)
+    assert len(rows) == 1 and rows[0]["failure"] == "RuntimeError"
+    assert rows[0]["stop_reason"] == "uncertain_outcome"
     assert "private error detail" not in json.dumps(rows)
+
+
+def test_repeat_read_stops_after_a_blocked_attempt_even_if_result_succeeds():
+    load()
+    spec = importlib.util.spec_from_file_location("repeat_read_benchmark", SCRIPT.with_name("repeat_read_benchmark.py"))
+    repeat = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(repeat)
+    calls = []
+    class Web:
+        async def read(self, url, policy_overrides):
+            calls.append(url)
+            return {"url": url, "text": "observed " * 100,
+                    "receipt": {"status": "observed", "attempts": [{"failure": {"code": "BLOCKED"}}]}}
+    case = {"site": "test", "url": "https://example.org/", "kind": "article", "expect": "observed", "expect_min": 3}
+    rows = asyncio.run(repeat.measure_case(Web(), case, 2))
+    assert len(calls) == len(rows) == 1 and rows[0]["stop_reason"] == "origin_blocked"
+
+
+def test_repeat_sample_uses_distinct_origins():
+    load()
+    spec = importlib.util.spec_from_file_location("repeat_read_benchmark", SCRIPT.with_name("repeat_read_benchmark.py"))
+    repeat = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(repeat)
+    cases = [{"url": "https://example.org/a"}, {"url": "https://www.example.org/b"}, {"url": "https://example.com/"}]
+    assert repeat.select_cases(cases, 2) == [cases[0], cases[2]]
+    with pytest.raises(ValueError):
+        repeat.select_cases(cases, 3)

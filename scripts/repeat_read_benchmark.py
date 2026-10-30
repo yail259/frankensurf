@@ -11,23 +11,50 @@ import asyncio
 import json
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 import tempfile
 import time
 
 import toolbench
 
 
-async def measure_case(web, case, gap, sleep=asyncio.sleep, emit=None):
+BLOCK_CODES = {"BLOCKED", "CAPTCHA", "RATE_LIMITED"}
+
+
+def blocked_attempt(receipt):
+    failures = [receipt.get("failure")] + [attempt.get("failure") for attempt in receipt.get("attempts") or []]
+    return any((item.get("code") if isinstance(item, dict) else item) in BLOCK_CODES for item in failures)
+
+
+def select_cases(cases, sample):
+    distinct, origins = [], set()
+    for case in cases:
+        url = urlsplit(case["url"])
+        host = (url.hostname or "").lower().removeprefix("www.")
+        if url.scheme not in ("http", "https") or not host or case.get("identity"):
+            raise ValueError("Expected public HTTP(S) cases")
+        if host not in origins:
+            distinct.append(case)
+            origins.add(host)
+    if sample < 1 or sample > len(distinct):
+        raise ValueError("Sample must fit the distinct origins")
+    step = len(distinct) / sample
+    return [distinct[int(index * step)] for index in range(sample)]
+
+
+async def measure_case(web, case, gap, sleep=asyncio.sleep, emit=None, timeout=90):
     rows = []
     for index, (phase, freshness) in enumerate((("first", "now"), ("fresh_repeat", "now"),
                                                  ("cached_repeat", "cached"))):
         if index:
             await sleep(gap)
         started = time.monotonic()
+        uncertain = False
         try:
-            result = await web.read(case["url"], policy_overrides={"freshness": freshness,
-                                                                   "allow_paid_fallbacks": False})
+            result = await asyncio.wait_for(web.read(case["url"], policy_overrides={"freshness": freshness,
+                                                                                     "allow_paid_fallbacks": False}), timeout)
         except Exception as error:
+            uncertain = True
             result = {"receipt": {"status": "failed", "failure": {"code": type(error).__name__}}}
         elapsed_ms = round((time.monotonic() - started) * 1000)
         receipt = result.get("receipt") or {}
@@ -38,9 +65,15 @@ async def measure_case(web, case, gap, sleep=asyncio.sleep, emit=None):
                "status": receipt.get("status"), "valid": valid, "invalid_reason": reason,
                "cache_hit": receipt.get("cache_hit"),
                "failure": (receipt.get("failure") or {}).get("code")}
+        if blocked_attempt(receipt):
+            row["stop_reason"] = "origin_blocked"
+        elif uncertain:
+            row["stop_reason"] = "uncertain_outcome"
         rows.append(row)
         if emit is not None:
             emit(row)
+        if row.get("stop_reason"):
+            break
     return rows
 
 
@@ -67,10 +100,12 @@ def main():
     parser.add_argument("--gap", type=float, default=2.0, help="seconds between reads of the same site")
     args = parser.parse_args()
     cases = [case for case in toolbench.heldout() if case["set"] == "heldout7"]
-    if args.sample < 1 or args.sample > len(cases) or not 0 <= args.gap < float("inf"):
-        parser.error("sample must fit the held-out set and gap must be nonnegative and finite")
-    step = len(cases) / args.sample
-    cases = [cases[int(index * step)] for index in range(args.sample)]
+    if not 2 <= args.gap < float("inf"):
+        parser.error("gap must be finite and at least two seconds")
+    try:
+        cases = select_cases(cases, args.sample)
+    except ValueError as error:
+        parser.error(str(error))
     descriptor = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as output:
         asyncio.run(run(cases, output, args.gap, args.where))
