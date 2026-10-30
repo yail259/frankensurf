@@ -14,12 +14,12 @@ const history = read("history.json");
 
 // One entry per site: its category and, per tool, [read right?, seconds].
 function compact(rowsText: string) {
-  const sites: Record<string, { wall: string; url: string; arms: Record<string, [number, number]> }> = {};
+  const sites: Record<string, { wall: string; url: string; arms: Record<string, [number, number | null]> }> = {};
   for (const line of rowsText.split("\n")) {
     if (!line.trim()) continue;
     const r = JSON.parse(line);
     const s = (sites[r.site] ??= { wall: r.wall, url: r.url, arms: {} });
-    s.arms[r.arm] = [r.valid ? 1 : 0, Math.round((r.latency_ms ?? 0) / 100) / 10];
+    s.arms[r.arm] = [r.valid ? 1 : 0, (typeof r.latency_ms === "number" && Number.isFinite(r.latency_ms) && r.latency_ms >= 0 ? r.latency_ms / 1000 : null)];
   }
   return sites;
 }
@@ -74,7 +74,7 @@ const repo = "https://github.com/yail259/frankensurf";
   <section class="container sec" id="board">
     <div class="sec-head" data-reveal>
       <h2>Who read the <em class="horror">page.</em></h2>
-      <p class="sec-sub">Share of the 150 sites read right. A read counts only when the real page came back: a bot check, a sign-in wall or an empty shell is a miss, even with a 200.</p>
+      <p class="sec-sub">Share of the 150 sites read right. A read counts only when the real page came back: a bot check, a sign-in wall or an empty shell is a miss, even with a 200. Timing columns include each tool's successful reads, which can be different sites.</p>
     </div>
     <div class="panel board" data-board data-reveal></div>
   </section>
@@ -93,10 +93,10 @@ const repo = "https://github.com/yail259/frankensurf";
 
   <section class="container sec" id="speed">
     <div class="sec-head" data-reveal>
-      <h2>Reads more. Costs <em class="horror">time.</em></h2>
-      <p class="sec-sub">Each dot is a tool's median read; the line runs out to its slowest tenth. Frankensurf's median stays low because most sites stop at the first cheap tool. Its tail is long because a hard site climbs several tools.</p>
+      <h2>Speed on shared <em class="horror">reads.</em></h2>
+      <p class="sec-sub">For each tool, compare median read times on the same sites both it and Frankensurf read successfully. Each row uses its own set of sites; failures and sites read by only one tool are excluded. These are single reads, not cached repeats.</p>
     </div>
-    <div class="panel speed" data-reveal><svg class="speed-svg" data-speed viewBox="0 0 760 340" role="img" aria-label="Median and slowest-tenth read time against share of sites read, per tool"></svg></div>
+    <div class="panel speed" data-reveal><div data-speed></div></div>
   </section>
 
   <section class="container sec" id="walls">
@@ -133,10 +133,12 @@ const repo = "https://github.com/yail259/frankensurf";
 <script is:inline type="application/json" id="bench-data" set:html={JSON.stringify(data)} />
 
 <script>
+  import { pairedLatency } from "../lib/matched-latency.mjs";
+
   type Arm = { label: string; sites: number; read: number; rate: number; median_s: number | null; p90_s: number | null };
   type Data = { summary: { date: string; version: string; sites: number; where: string; arms: Record<string, Arm> };
     history: { date: string; version: string; rates: Record<string, number> }[];
-    sites: Record<string, { wall: string; url: string; arms: Record<string, [number, number]> }> };
+    sites: Record<string, { wall: string; url: string; arms: Record<string, [number, number | null]> }> };
 
   const US = "stitched_free";
   const RAW = "https://raw.githubusercontent.com/yail259/frankensurf/main/benchmarks/weekly/";
@@ -196,11 +198,11 @@ const repo = "https://github.com/yail259/frankensurf";
     const missed = ids.filter((id) => !reads(id, US) && nSingle(id) > 0).length;
     $("[data-callouts]")!.innerHTML = [
       [onlyUs, "sites only Frankensurf read", "No single tool got the real page. Routing between them did."],
-      [missed, "sites a single tool read and Frankensurf missed", "Usually a slow tool it didn't wait for. These are the next things to fix."],
-      [nobody, "sites nothing read", "Hard walls for every free tool. Paid tools or you get these."],
+      [missed, "sites a single tool read and Frankensurf missed", "These are the next reads to investigate."],
+      [nobody, "sites nothing read", "These need another approach."],
     ].map(([n, h, p]) => `<div class="panel" data-spot><span class="co-n">${n}</span><h3>${h}</h3><p>${p}</p></div>`).join("");
 
-    drawSpeed(arms);
+    drawSpeed(d, arms);
     drawWalls(d, arms, ids);
     drawTrend(d, arms);
   }
@@ -216,27 +218,17 @@ const repo = "https://github.com/yail259/frankensurf";
     return out;
   }
 
-  function drawSpeed(arms: [string, Arm][]) {
-    const svg = $("[data-speed]")!;
-    const W = 760, H = 340, L = 56, R = 130, T = 20, B = 46;
-    const maxS = Math.ceil(Math.max(...arms.map(([, a]) => a.p90_s ?? 0)) / 5) * 5;
-    const x = (s: number) => L + (s / maxS) * (W - L - R);
-    const y = (r: number) => T + (1 - r) * (H - T - B);
-    let g = "";
-    for (let r = 0; r <= 1.0001; r += 0.25) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(r)}" y2="${y(r)}"/><text class="ax" x="${L - 10}" y="${y(r) + 4}" text-anchor="end">${r * 100}%</text>`;
-    for (let s = 0; s <= maxS; s += 5) g += `<text class="ax" x="${x(s)}" y="${H - B + 20}" text-anchor="middle">${s} s</text>`;
-    g += `<text class="ax" x="${W - R}" y="${H - 6}" text-anchor="end">read time: dot = median, line = slowest tenth</text>`;
-    const shown = arms.filter(([, a]) => a.median_s != null);
-    const ly = spread(shown.map(([, a]) => y(a.rate)), 17, T, H - B);
-    const lx = W - R + 18;
-    shown.forEach(([k, a], i) => {
-      const us = k === US, cy = y(a.rate), end = x(a.p90_s ?? a.median_s!);
-      g += `<g class="pt${us ? " us" : ""}" style="--i:${i}"><line class="whisk" x1="${x(a.median_s!)}" x2="${end}" y1="${cy}" y2="${cy}"/>` +
-        `<circle cx="${x(a.median_s!)}" cy="${cy}" r="${us ? 7 : 5}"/>` +
-        `<path class="lead" d="M${end + 6} ${cy} L${lx - 12} ${cy} L${lx - 4} ${ly[i]}"/>` +
-        `<text class="pl" x="${lx}" y="${ly[i] + 4}">${esc(short(a.label))}</text></g>`;
-    });
-    svg.innerHTML = g;
+  function drawSpeed(d: Data, arms: [string, Arm][]) {
+    const rows = arms.filter(([key]) => key !== US).map(([key, arm]) => ({
+      label: short(arm.label), ...pairedLatency(d.sites, US, key),
+    }));
+    const maximum = Math.max(0.1, ...rows.flatMap((row) => [row.ours ?? 0, row.other ?? 0]));
+    const bar = (value: number | null, ours: boolean) => value === null
+      ? `<span class="speed-empty">—</span>`
+      : `<span class="speed-value"><i class="speed-track" aria-hidden="true"><i class="speed-bar${ours ? " us" : ""}" style="--w:${(100 * value / maximum).toFixed(2)}%"></i></i><span>${value.toFixed(1)} s</span></span>`;
+    $("[data-speed]")!.innerHTML = `<table class="speed-table"><caption>Median seconds on sites both tools read successfully</caption>
+      <thead><tr><th scope="col">Compared with</th><th scope="col">Shared sites</th><th scope="col">Frankensurf</th><th scope="col">Other tool</th></tr></thead>
+      <tbody>${rows.map((row) => `<tr><th scope="row">${esc(row.label)}</th><td data-label="Shared sites">${row.count}</td><td data-label="Frankensurf">${bar(row.ours, true)}</td><td data-label="Other tool">${bar(row.other, false)}</td></tr>`).join("")}</tbody></table>`;
   }
 
   function drawWalls(d: Data, arms: [string, Arm][], ids: string[]) {
@@ -320,7 +312,7 @@ const repo = "https://github.com/yail259/frankensurf";
         if (!line.trim()) continue;
         const r = JSON.parse(line);
         const s = (sites[r.site] ??= { wall: r.wall, url: r.url, arms: {} });
-        s.arms[r.arm] = [r.valid ? 1 : 0, Math.round((r.latency_ms ?? 0) / 100) / 10];
+        s.arms[r.arm] = [r.valid ? 1 : 0, (typeof r.latency_ms === "number" && Number.isFinite(r.latency_ms) && r.latency_ms >= 0 ? r.latency_ms / 1000 : null)];
       }
       render({ summary: latest, history, sites });
     } catch {}
@@ -388,7 +380,7 @@ const repo = "https://github.com/yail259/frankensurf";
   @media (max-width: 760px) {
     .m-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } .matrix-wrap { padding: 14px; } .matrix { gap: 10px; }
     .m-cells { gap: 0.5px; } .m-cells i { aspect-ratio: auto; height: 14px; border-radius: 0; }
-    .speed, .trend { overflow-x: auto; } .speed-svg, .trend-svg { min-width: 640px; }
+    .trend { overflow-x: auto; } .trend-svg { min-width: 620px; }
   }
   .callouts { margin-top: 16px; }
   .callouts p { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
@@ -396,20 +388,34 @@ const repo = "https://github.com/yail259/frankensurf";
   .callouts .panel:nth-child(2) .co-n { color: var(--spark); }
   .callouts .panel:nth-child(3) .co-n { color: var(--fg-2); }
 
-  /* Speed scatter */
+  /* Paired median read times */
   .speed, .trend { padding: 18px; }
-  .speed-svg, .trend-svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .trend-svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .speed-table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+  .speed-table caption { text-align: left; padding: 0 4px 14px; color: var(--dim); font: 12px var(--mono); }
+  .speed-table th, .speed-table td { padding: 14px 10px; border-top: 1px solid var(--line); }
+  .speed-table thead th { color: var(--dim); font: 11px var(--mono); }
+  .speed-table tbody th { color: var(--fg-2); font-weight: 500; }
+  .speed-table td { font: 12px var(--mono); color: var(--fg-2); font-variant-numeric: tabular-nums; }
+  .speed-value { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .speed-track { width: 110px; flex: 0 0 110px; }
+  .speed-bar { display: block; width: var(--w); min-width: 2px; height: 5px; background: var(--fg-2); border-radius: 4px; }
+  .speed-bar.us { background: var(--accent); }
+  .speed-empty { color: var(--dim); }
+  @media (max-width: 600px) {
+    .speed-table, .speed-table tbody { display: block; }
+    .speed-table caption { display: block; line-height: 1.5; }
+    .speed-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .speed-table tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px solid var(--line); padding: 16px 4px; }
+    .speed-table tbody th { grid-column: 1 / -1; }
+    .speed-table th, .speed-table td { padding: 0; border: 0; }
+    .speed-table td::before { content: attr(data-label); display: block; color: var(--dim); font: 10px var(--mono); margin-bottom: 7px; }
+    .speed-table td:first-of-type { grid-column: 1 / -1; }
+    .speed-value { gap: 5px; }
+    .speed-track { width: 65px; flex-basis: 65px; }
+  }
   .grid { stroke: var(--line); }
   .ax { font: 11px var(--mono); fill: var(--dim); }
-  .pt circle { fill: var(--panel-2); stroke: var(--fg-2); stroke-width: 1.5; }
-  .pt .whisk { stroke: rgba(255, 255, 255, 0.25); stroke-width: 2; stroke-linecap: round; }
-  .pt .pl { font: 12px var(--sans); fill: var(--fg-2); }
-  .pt.us circle { fill: var(--accent); stroke: var(--accent); }
-  .pt.us .whisk { stroke: var(--accent); opacity: 0.6; stroke-dasharray: 4 4; }
-  .pt.us .pl { fill: var(--accent); font-weight: 600; }
-  .lead { fill: none; stroke: rgba(255, 255, 255, 0.18); stroke-width: 1; }
-  .pt { opacity: 0; transition: opacity 0.5s calc(var(--i) * 80ms); }
-  .in .pt, html[data-motion="reduced"] .pt { opacity: 1; }
 
   /* By kind of site */
   .walls { padding: 10px 22px; }
