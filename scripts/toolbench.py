@@ -162,6 +162,8 @@ def check(case: dict, result: dict) -> tuple[bool, str | None]:
 
 
 async def read(web, arm: str, case: dict) -> dict:
+    from benchmark_evidence import EvidenceSink
+    evidence = EvidenceSink.from_environment(case, arm)
     overrides = {**COMMON, **ARMS[arm]}
     if case.get("identity") and arm in STITCHED:
         overrides["identity"] = case["identity"]
@@ -201,7 +203,7 @@ async def read(web, arm: str, case: dict) -> dict:
             stream.write(json.dumps({"site": case["site"], "url": case["url"], "expect": case.get("expect"),
                                      "arm": arm, "reason": reason, "receipt": receipt, "final_url": result.get("url"),
                                      "text_chars": len(text), "text_head": text[:1500]}, default=str) + "\n")
-    return {"arm": arm, "set": case["set"], "site": case["site"], "wall": case["wall"],
+    row = {"arm": arm, "set": case["set"], "site": case["site"], "wall": case["wall"],
             "kind": case["kind"], "url": case["url"], "login": bool(case.get("identity")),
             "status": receipt.get("status"), "valid": valid, "invalid_reason": reason,
             "failure": (receipt.get("failure") or {}).get("code"),
@@ -215,6 +217,9 @@ async def read(web, arm: str, case: dict) -> dict:
             # search stood in for a URL that answered not found.
             "hedge_won": (receipt.get("hedge") or {}).get("provider") if (receipt.get("hedge") or {}).get("won") else None,
             "rescued": bool(receipt.get("rescued"))}
+    if evidence is not None:
+        row["evidence"] = evidence.save(case, arm, result)
+    return row
 
 
 async def run(cases, state: Path, out: Path, workers: int, gap: float, arms: list[str],
