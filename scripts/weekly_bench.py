@@ -48,12 +48,14 @@ def summarize(rows):
         mine = [row for row in rows if row["arm"] == arm]
         valid = [row for row in mine if row["valid"]]
         latency = sorted(row["latency_ms"] for row in valid)
-        costs = [row["cost_usd"] for row in mine if row.get("cost_usd") is not None]
+        costs = [row.get("cost_usd") for row in mine]
+        unknown_costs = sum(cost is None for cost in costs)
         out[arm] = {"label": LABELS.get(arm, arm), "sites": len(mine), "read": len(valid),
                     "rate": round(len(valid) / len(mine), 4) if mine else None,
                     "median_s": round(statistics.median(latency) / 1000, 1) if latency else None,
                     "p90_s": round(latency[int(len(latency) * 0.9)] / 1000, 1) if latency else None,
-                    "cost_usd": round(sum(costs), 4)}
+                    "cost_usd": round(sum(costs), 4) if costs and not unknown_costs else None,
+                    "cost_unknown_rows": unknown_costs}
     return out
 
 

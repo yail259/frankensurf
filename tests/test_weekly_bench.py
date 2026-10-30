@@ -30,5 +30,16 @@ def test_a_week_is_summarised_per_arm():
             {"arm": "stitched_free", "valid": True, "latency_ms": 3000, "cost_usd": None}]
     out = weekly.summarize(rows)
     assert out["http"] == {"label": "Plain HTTP", "sites": 2, "read": 1, "rate": 0.5, "median_s": 1.0,
-                           "p90_s": 1.0, "cost_usd": 0}
+                           "p90_s": 1.0, "cost_usd": 0, "cost_unknown_rows": 0}
     assert out["stitched_free"]["label"] == "Frankensurf, free tools only" and out["stitched_free"]["rate"] == 1.0
+    assert out["stitched_free"]["cost_usd"] is None
+    assert out["stitched_free"]["cost_unknown_rows"] == 1
+
+
+def test_mixed_known_and_unknown_cost_is_not_reported_as_a_total():
+    weekly = load()
+    rows = [{"arm": "zyte", "valid": True, "latency_ms": 1000, "cost_usd": 0.01},
+            {"arm": "zyte", "valid": False, "latency_ms": 2000, "cost_usd": None}]
+    out = weekly.summarize(rows)["zyte"]
+    assert out["cost_usd"] is None
+    assert out["cost_unknown_rows"] == 1
