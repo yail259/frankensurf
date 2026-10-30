@@ -1,5 +1,8 @@
 """The weekly benchmark script: which arms run, and how a week is summarised (no reads here)."""
 import importlib.util
+import asyncio
+import io
+import json
 import sys
 from pathlib import Path
 import pytest
@@ -67,3 +70,21 @@ def test_benchmark_state_can_be_retained_without_reusing_old_state(tmp_path):
     with weekly.benchmark_state() as ephemeral:
         assert ephemeral.is_dir()
     assert not ephemeral.exists()
+
+
+def test_opt_in_evidence_retains_content_without_provider_receipt(monkeypatch):
+    weekly = load()
+    toolbench = weekly.toolbench
+    monkeypatch.setattr(toolbench, "check", lambda case, result: (True, None))
+    class Web:
+        async def read(self, url, policy_overrides):
+            return {"url": url, "title": "Page", "text": "observed page text",
+                    "receipt": {"status": "observed", "secret": "do-not-store"}}
+    case = {"site": "test", "url": "https://example.org/", "kind": "article", "set": "heldout7", "wall": "none"}
+    stream = io.StringIO()
+    row = asyncio.run(toolbench.read(Web(), "http", case, evidence=stream))
+    evidence = json.loads(stream.getvalue())
+    assert row["valid"] and evidence["valid"]
+    assert evidence["text"] == "observed page text"
+    assert evidence["url"] == case["url"]
+    assert "do-not-store" not in stream.getvalue()

@@ -161,7 +161,7 @@ def check(case: dict, result: dict) -> tuple[bool, str | None]:
     return valid, reason
 
 
-async def read(web, arm: str, case: dict) -> dict:
+async def read(web, arm: str, case: dict, evidence=None) -> dict:
     overrides = {**COMMON, **ARMS[arm]}
     if case.get("identity") and arm in STITCHED:
         overrides["identity"] = case["identity"]
@@ -193,6 +193,18 @@ async def read(web, arm: str, case: dict) -> dict:
     receipt = result.get("receipt") or {}
     observed = receipt.get("status") == "observed"
     valid, reason = check(case, result) if observed else (False, None)
+    if evidence is not None:
+        # Save only review fields, not the provider receipt or request headers.
+        # Page text and URLs can themselves contain sensitive data.
+        record = {"arm": arm, "site": case["site"], "url": case["url"],
+                  "case": {key: value for key, value in case.items() if key != "identity"},
+                  "kind": case.get("kind"), "expect": case.get("expect"),
+                  "expect_min": case.get("expect_min"), "status": receipt.get("status"),
+                  "valid": valid, "invalid_reason": reason,
+                  "final_url": result.get("url"), "title": result.get("title"),
+                  "text": result.get("text")}
+        evidence.write(json.dumps(record, ensure_ascii=False) + "\n")
+        evidence.flush()
     attempts = receipt.get("attempts") or [{}]
     if arm in STITCHED and not valid and os.environ.get("TOOLBENCH_RECEIPTS"):
         # Diagnosis: why the router missed, with the page it settled on.
@@ -218,8 +230,10 @@ async def read(web, arm: str, case: dict) -> dict:
 
 
 async def run(cases, state: Path, out: Path, workers: int, gap: float, arms: list[str],
-              done: set | None = None):
+              done: set | None = None, evidence=None):
     from frankensurf import Runtime
+    if evidence is not None and any(case.get("identity") for case in cases):
+        raise ValueError("text evidence is restricted to public cases")
     rng = random.Random(7)
     done = done or set()
     plans = []
@@ -246,7 +260,8 @@ async def run(cases, state: Path, out: Path, workers: int, gap: float, arms: lis
             lock = locks.setdefault(origin.removeprefix("www."), asyncio.Lock())
             async with lock:
                 for arm in order:
-                    row = await read(runtimes[arm], arm, case)
+                    row = (await read(runtimes[arm], arm, case, evidence=evidence) if evidence is not None
+                           else await read(runtimes[arm], arm, case))
                     rows.append(row)
                     with out.open("a", encoding="utf-8") as stream:
                         stream.write(json.dumps(row, sort_keys=True) + "\n")

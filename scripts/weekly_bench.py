@@ -8,12 +8,18 @@ when any paid key is. Writes benchmarks/weekly/<date>/rows.jsonl and summary.jso
 benchmarks/weekly/latest.json and history.json, which the docs page reads.
 
   PYTHONPATH=.:src python scripts/weekly_bench.py [--sample 20] [--where "GitHub Actions"]
+
+For local review, --retain-state NEW_DIRECTORY keeps runtime state, and adding
+--retain-text records returned public page text and check inputs in that
+directory. These files may contain sensitive data; protect and delete them
+according to the operator's retention policy. They are not published by this
+script and do not prove site access beyond the recorded observations.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import json
 import math
 import os
@@ -82,7 +88,11 @@ def main(argv=None):
     parser.add_argument("--workers", type=int, default=3)
     parser.add_argument("--retain-state", type=Path, metavar="NEW_DIRECTORY",
                         help="retain runtime state in a new private directory; may contain sensitive page data")
+    parser.add_argument("--retain-text", action="store_true",
+                        help="also retain returned page text for public cases; requires --retain-state")
     args = parser.parse_args(argv)
+    if args.retain_text and not args.retain_state:
+        parser.error("--retain-text requires --retain-state")
     import tomllib
     cases = [case for case in toolbench.heldout() if case["set"] == "heldout7"]
     if args.sample and args.sample < len(cases):
@@ -95,7 +105,10 @@ def main(argv=None):
     chosen = arms()
     with benchmark_state(args.retain_state) as state:
         rows_path.unlink(missing_ok=True)
-        rows = asyncio.run(toolbench.run(cases, state, rows_path, args.workers, 2.0, chosen))
+        evidence = (os.fdopen(os.open(state / "page-text.jsonl", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600),
+                              "w", encoding="utf-8") if args.retain_text else nullcontext(None))
+        with evidence as stream:
+            rows = asyncio.run(toolbench.run(cases, state, rows_path, args.workers, 2.0, chosen, evidence=stream))
     package = tomllib.loads((OUT.parents[1] / "pyproject.toml").read_text())["project"]["version"]
     summary = {"date": today, "where": args.where, "version": package,
                "set": "held-out set 7 (150 sites picked blind on 10 October 2026)", "sites": len(cases),
