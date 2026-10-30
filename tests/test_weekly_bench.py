@@ -72,19 +72,21 @@ def test_benchmark_state_can_be_retained_without_reusing_old_state(tmp_path):
     assert not ephemeral.exists()
 
 
-def test_opt_in_evidence_retains_content_without_provider_receipt(monkeypatch):
+def test_opt_in_evidence_can_replay_content_check_without_provider_receipt():
     weekly = load()
     toolbench = weekly.toolbench
-    monkeypatch.setattr(toolbench, "check", lambda case, result: (True, None))
+    text = "observed page text " * 50
     class Web:
         async def read(self, url, policy_overrides):
-            return {"url": url, "title": "Page", "text": "observed page text",
+            return {"url": url, "title": "Page", "text": text,
                     "receipt": {"status": "observed", "secret": "do-not-store"}}
-    case = {"site": "test", "url": "https://example.org/", "kind": "article", "set": "heldout7", "wall": "none"}
+    case = {"site": "test", "url": "https://example.org/", "kind": "article", "set": "heldout7", "wall": "none",
+            "expect": "observed", "expect_min": 3}
     stream = io.StringIO()
     row = asyncio.run(toolbench.read(Web(), "http", case, evidence=stream))
     evidence = json.loads(stream.getvalue())
     assert row["valid"] and evidence["valid"]
-    assert evidence["text"] == "observed page text"
+    assert evidence["text"] == text
     assert evidence["url"] == case["url"]
+    assert toolbench.check(evidence["case"], {"url": evidence["final_url"], "text": evidence["text"]}) == (True, None)
     assert "do-not-store" not in stream.getvalue()
