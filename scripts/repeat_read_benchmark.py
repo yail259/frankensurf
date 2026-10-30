@@ -69,6 +69,8 @@ async def measure_case(web, case, gap, sleep=asyncio.sleep, emit=None, timeout=9
             row["stop_reason"] = "origin_blocked"
         elif uncertain:
             row["stop_reason"] = "uncertain_outcome"
+        elif not valid:
+            row["stop_reason"] = "invalid_read"
         rows.append(row)
         if emit is not None:
             emit(row)

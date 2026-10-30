@@ -180,3 +180,18 @@ def test_repeat_sample_uses_distinct_origins():
     assert repeat.select_cases(cases, 2) == [cases[0], cases[2]]
     with pytest.raises(ValueError):
         repeat.select_cases(cases, 3)
+
+
+def test_repeat_read_does_not_retry_invalid_content():
+    load()
+    spec = importlib.util.spec_from_file_location("repeat_read_benchmark", SCRIPT.with_name("repeat_read_benchmark.py"))
+    repeat = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(repeat)
+    calls = []
+    class Web:
+        async def read(self, url, policy_overrides):
+            calls.append(url)
+            return {"url": url, "text": "", "receipt": {"status": "observed"}}
+    case = {"site": "test", "url": "https://example.org/", "kind": "article"}
+    rows = asyncio.run(repeat.measure_case(Web(), case, 2))
+    assert len(calls) == len(rows) == 1 and rows[0]["stop_reason"] == "invalid_read"
