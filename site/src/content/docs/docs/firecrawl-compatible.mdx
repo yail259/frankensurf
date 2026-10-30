@@ -65,10 +65,16 @@ and to check it on your own pages: `frankensurf compare urls.txt --against http:
 | `changeTracking` (`modes: ["git-diff"]`, `tag`) | Compared with the last scrape of the same URL and tag on this machine: `new`, `same` or `changed`, with `previousScrapeAt` and a unified diff. Kept in the state directory, so it survives restarts. |
 | `location.languages` | Sent as Accept-Language and used as the browser's locale. `location.country` isn't applied: Frankensurf has no proxies of its own in other countries ([egress](/docs/blocked/egress/) can add some). |
 | `proxy: "stealth"` | Starts from the stealth browsers (Scrapling, Camoufox, Patchright, nodriver) instead of plain HTTP. `basic` and `auto` are the usual cheapest-first route. |
+| `frankensurfFreshness` | Frankensurf extension for scrape: `now`, `hour`, `day` or `cached`. Omit it to use the server policy (normally `now`). `cached` can return an arbitrarily old stored result; it may also miss and fetch a fresh one. |
 | `webhook` (crawl, batch scrape) | `started`, `page`, `completed` and `failed` events, POSTed as `{success, type, id, data, metadata}`, filtered by `events`, with your `headers`. |
 
 Crawl, batch scrape and extract jobs are kept in the state directory: their results outlive the
 server, and a job that was running when it stopped comes back as `failed`, saying so.
+
+For scrapes, `metadata.frankensurf.cache_hit` and `freshness_seconds` report
+what happened when the runtime provides them. Unknown provider cost is returned
+as `null`, rather than as zero. The freshness extension is not a standard
+Firecrawl option and currently applies to individual scrapes.
 
 ## GPT Researcher
 
