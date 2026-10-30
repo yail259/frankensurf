@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import contextmanager
 import json
 import math
 import os
@@ -32,6 +33,20 @@ LABELS = {"http": "Plain HTTP", "jina_reader": "Jina Reader", "local": "Headless
           "firecrawl": "Firecrawl", "zyte": "Zyte", "stitched_free": "Frankensurf, free tools only",
           "stitched_paid": "Frankensurf, with paid fallbacks"}
 OUT = Path(__file__).resolve().parents[1] / "benchmarks" / "weekly"
+
+
+@contextmanager
+def benchmark_state(retain_at=None):
+    """Use isolated state, optionally keeping it for local evidence review."""
+    if retain_at is None:
+        with tempfile.TemporaryDirectory() as state:
+            yield Path(state)
+    else:
+        state = Path(retain_at).expanduser()
+        # A new directory avoids silently carrying cookies, cache or route memory
+        # between runs. Retained state may contain sensitive page data.
+        state.mkdir(mode=0o700, parents=True, exist_ok=False)
+        yield state
 
 
 def _key(name):
@@ -65,6 +80,8 @@ def main(argv=None):
     parser.add_argument("--sample", type=int, help="read only this many sites (a quick check)")
     parser.add_argument("--where", default="GitHub Actions (data-centre address)")
     parser.add_argument("--workers", type=int, default=3)
+    parser.add_argument("--retain-state", type=Path, metavar="NEW_DIRECTORY",
+                        help="retain runtime state in a new private directory; may contain sensitive page data")
     args = parser.parse_args(argv)
     import tomllib
     cases = [case for case in toolbench.heldout() if case["set"] == "heldout7"]
@@ -75,10 +92,10 @@ def main(argv=None):
     folder = OUT / today
     folder.mkdir(parents=True, exist_ok=True)
     rows_path = folder / "rows.jsonl"
-    rows_path.unlink(missing_ok=True)
     chosen = arms()
-    with tempfile.TemporaryDirectory() as state:
-        rows = asyncio.run(toolbench.run(cases, Path(state), rows_path, args.workers, 2.0, chosen))
+    with benchmark_state(args.retain_state) as state:
+        rows_path.unlink(missing_ok=True)
+        rows = asyncio.run(toolbench.run(cases, state, rows_path, args.workers, 2.0, chosen))
     package = tomllib.loads((OUT.parents[1] / "pyproject.toml").read_text())["project"]["version"]
     summary = {"date": today, "where": args.where, "version": package,
                "set": "held-out set 7 (150 sites picked blind on 10 October 2026)", "sites": len(cases),

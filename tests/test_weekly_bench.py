@@ -2,6 +2,7 @@
 import importlib.util
 import sys
 from pathlib import Path
+import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "weekly_bench.py"
 
@@ -52,3 +53,17 @@ def test_invalid_costs_are_unknown():
     out = weekly.summarize(rows)["zyte"]
     assert out["cost_usd"] is None
     assert out["cost_unknown_rows"] == 4
+
+
+def test_benchmark_state_can_be_retained_without_reusing_old_state(tmp_path):
+    weekly = load()
+    retained = tmp_path / "new-run"
+    with weekly.benchmark_state(retained) as state:
+        (state / "evidence.txt").write_text("observed")
+    assert (retained / "evidence.txt").read_text() == "observed"
+    with pytest.raises(FileExistsError):
+        with weekly.benchmark_state(retained):
+            pass
+    with weekly.benchmark_state() as ephemeral:
+        assert ephemeral.is_dir()
+    assert not ephemeral.exists()
