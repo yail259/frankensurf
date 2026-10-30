@@ -303,7 +303,9 @@ class WebPolicy:
     # Most -site: operators sent to an engine; the whole exclude list is enforced
     # on the results either way.
     search_exclude_operators: int = 3
-    search_terminal_failures: tuple[str, ...] = ("POLICY_DENIED", "BUDGET_EXHAUSTED")
+    # A denial applies to the attempted source; another source must still obey
+    # the same policy and may be permitted. Callers can make it terminal.
+    search_terminal_failures: tuple[str, ...] = ("BUDGET_EXHAUSTED",)
     browser_agent_max_steps: int = 40
     browser_agent_max_model_calls: int = 40
     browser_agent_max_actions: int = 80

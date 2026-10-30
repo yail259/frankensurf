@@ -93,6 +93,17 @@ def test_search_without_scrape_options_reads_nothing_and_v2_nests_under_web():
     assert web.search_policy.provider == "http"  # search pages themselves load over plain HTTP by default
 
 
+def test_failed_search_does_not_report_an_empty_success():
+    class FailedSearch(FakeWeb):
+        async def search(self, query, limit=10, policy=None):
+            return {"results": [], "receipt": {"status": "failed", "trace_id": "t-search",
+                    "failure": {"code": "SEARCH_UNAVAILABLE", "message": "internal details"}}}
+    status, out = call(FirecrawlCompat(FailedSearch()), "/v2/search", {"query": "example"})
+    assert status == 503 and out["success"] is False
+    assert out["error"] == "Search failed (SEARCH_UNAVAILABLE)."
+    assert out["frankensurf"]["trace_id"] == "t-search" and "data" not in out
+
+
 def test_request_timeout_is_a_reported_failure_not_a_page():
     status, out = call(FirecrawlCompat(FakeWeb(delay=2)), "/v1/scrape",
                        {"url": "https://example.com/slow", "timeout": 1000})

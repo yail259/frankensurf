@@ -34,7 +34,8 @@ TIMEOUT_MARGIN_SECONDS = 3.0
 # What the account endpoints report for credits and concurrency: serve has no limits of its own.
 UNMETERED = 1_000_000_000
 REASONS = {200: "OK", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 405: "Method Not Allowed",
-           408: "Request Timeout", 413: "Payload Too Large", 500: "Internal Server Error"}
+           408: "Request Timeout", 413: "Payload Too Large", 500: "Internal Server Error",
+           503: "Service Unavailable"}
 
 
 def _tried(receipt: dict) -> list[str]:
@@ -405,6 +406,11 @@ class FirecrawlCompat:
         search_policy = {**self.policy}
         search_policy.setdefault("provider", "http")
         found = await self.web.search(query, limit=limit, policy=WebPolicy(**search_policy))
+        receipt = found.get("receipt") or {}
+        if receipt.get("status") == "failed":
+            failure = (receipt.get("failure") or {}).get("code") or "SEARCH_UNAVAILABLE"
+            return 503, {"success": False, "error": f"Search failed ({failure}).",
+                         "frankensurf": {"trace_id": receipt.get("trace_id")}}
         items = [{"url": item.get("url"), "title": item.get("title"),
                   "description": item.get("snippet") or ""}
                  for item in (found.get("results") or [])[:limit] if item.get("url")]
