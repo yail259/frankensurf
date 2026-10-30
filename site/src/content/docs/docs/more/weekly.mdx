@@ -21,3 +21,22 @@ Paid tools appear when their keys are configured for the run.
 Raw rows for every week, and the script, are in the repository:
 [benchmarks/weekly/](https://github.com/yail259/frankensurf/tree/main/benchmarks/weekly) and
 [scripts/weekly_bench.py](https://github.com/yail259/frankensurf/blob/main/scripts/weekly_bench.py).
+
+## Optional local evidence
+
+For a public-only benchmark, an operator can create a new owner-only directory
+outside the repository and set `TOOLBENCH_EVIDENCE_DIR` to its absolute path.
+The benchmark saves the acquired content needed to repeat its validity checks,
+and includes a filename and SHA-256 digest in each row. Run
+`python scripts/verify_benchmark_evidence.py ROWS EVIDENCE_DIR` to replay those
+checks offline. Capture currently requires a POSIX filesystem with ownership
+and no-follow support; the operator can set `TOOLBENCH_EVIDENCE_MAX_BYTES` to
+the maximum size of each artifact. Reuse of a run directory is rejected.
+
+These files contain page content and URLs, can include sensitive or licensed
+material from the page, and must not be committed or published. Identity-backed
+cases are refused when capture is enabled. Set retention and deletion rules
+before collecting content. A matching digest links a row to its artifact; it
+is not a signature, an independent judge of content, a complete acquisition
+trace or a provider invoice. An oversized or failed write stops capture rather
+than silently saving a truncated artifact.
