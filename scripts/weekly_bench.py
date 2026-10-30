@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import os
 import statistics
 import sys
@@ -49,7 +50,7 @@ def summarize(rows):
         valid = [row for row in mine if row["valid"]]
         latency = sorted(row["latency_ms"] for row in valid)
         costs = [row.get("cost_usd") for row in mine]
-        unknown_costs = sum(cost is None for cost in costs)
+        unknown_costs = sum(type(cost) not in (int, float) or not math.isfinite(cost) or cost < 0 for cost in costs)
         out[arm] = {"label": LABELS.get(arm, arm), "sites": len(mine), "read": len(valid),
                     "rate": round(len(valid) / len(mine), 4) if mine else None,
                     "median_s": round(statistics.median(latency) / 1000, 1) if latency else None,

@@ -43,3 +43,12 @@ def test_mixed_known_and_unknown_cost_is_not_reported_as_a_total():
     out = weekly.summarize(rows)["zyte"]
     assert out["cost_usd"] is None
     assert out["cost_unknown_rows"] == 1
+
+
+def test_invalid_costs_are_unknown():
+    weekly = load()
+    rows = [{"arm": "zyte", "valid": True, "latency_ms": 1000, "cost_usd": value}
+            for value in (float("nan"), -1, True, "0.1")]
+    out = weekly.summarize(rows)["zyte"]
+    assert out["cost_usd"] is None
+    assert out["cost_unknown_rows"] == 4
