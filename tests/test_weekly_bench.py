@@ -112,3 +112,43 @@ def test_recheck_detects_missing_and_changed_evidence(tmp_path):
     evidence.write_text(json.dumps(saved) + "\n" + json.dumps(saved) + "\n")
     with pytest.raises(ValueError, match="duplicate"):
         verifier.recheck(rows, evidence)
+
+
+def test_repeat_read_distinguishes_requested_freshness_from_cache_hit():
+    load()
+    spec = importlib.util.spec_from_file_location("repeat_read_benchmark", SCRIPT.with_name("repeat_read_benchmark.py"))
+    repeat = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(repeat)
+    calls, emitted = [], []
+    class Web:
+        async def read(self, url, policy_overrides):
+            calls.append(policy_overrides)
+            # A request for cached data may still miss and perform a fresh read.
+            return {"url": url, "text": "observed " * 100,
+                    "receipt": {"status": "observed", "cache_hit": False}}
+    async def no_wait(gap):
+        pass
+    case = {"site": "test", "url": "https://example.org/", "kind": "article", "expect": "observed", "expect_min": 3}
+    rows = asyncio.run(repeat.measure_case(Web(), case, 2, sleep=no_wait, emit=emitted.append))
+    assert [row["phase"] for row in rows] == ["first", "fresh_repeat", "cached_repeat"]
+    assert [call["freshness"] for call in calls] == ["now", "now", "cached"]
+    assert all(call["allow_paid_fallbacks"] is False for call in calls)
+    assert all(row["valid"] for row in rows)
+    assert rows[-1]["cache_hit"] is False
+    assert emitted == rows
+
+
+def test_repeat_read_records_failures_without_exception_details():
+    load()
+    spec = importlib.util.spec_from_file_location("repeat_read_benchmark", SCRIPT.with_name("repeat_read_benchmark.py"))
+    repeat = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(repeat)
+    class Web:
+        async def read(self, url, policy_overrides):
+            raise RuntimeError("private error detail")
+    async def no_wait(gap):
+        pass
+    case = {"site": "test", "url": "https://example.org/", "kind": "article"}
+    rows = asyncio.run(repeat.measure_case(Web(), case, 0, sleep=no_wait))
+    assert len(rows) == 3 and all(row["failure"] == "RuntimeError" for row in rows)
+    assert "private error detail" not in json.dumps(rows)
