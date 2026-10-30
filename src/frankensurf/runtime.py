@@ -1899,7 +1899,7 @@ def _private_host(host) -> bool:
         return False
 
 
-async def _refuse_private(url):
+async def _refuse_private(url, *, fail_closed=False):
     """Raise when url points into a private network, by name, literal address
     or what its name resolves to (so a public name for 10.0.0.5 is refused)."""
     host = urlparse(url).hostname or ""
@@ -1908,9 +1908,37 @@ async def _refuse_private(url):
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(host, None)
     except (OSError, UnicodeError):
-        return  # Unresolvable: the request itself will fail.
+        if fail_closed:
+            raise WebFailure("POLICY_DENIED", "Browser target could not be resolved") from None
+        return  # Unresolvable: the HTTP request itself will fail.
     if any(_private_host(info[4][0]) for info in infos):
         raise WebFailure("POLICY_DENIED", "Name resolves to a private network address (block_private_network)")
+
+
+async def _guard_browser_context(context):
+    """Check browser HTTP and WebSocket targets before connecting.
+
+    This is defense in depth; DNS can change after validation and browser
+    transports outside Playwright routing require network-level isolation.
+    """
+    async def guard_request(route):
+        try:
+            await _refuse_private(route.request.url, fail_closed=True)
+        except Exception:
+            await route.abort()
+        else:
+            await route.continue_()
+
+    async def guard_socket(route):
+        try:
+            await _refuse_private(route.url, fail_closed=True)
+        except Exception:
+            await route.close()
+        else:
+            route.connect_to_server()
+
+    await context.route("**/*", guard_request)
+    await context.route_web_socket("**/*", guard_socket)
 
 
 async def _guard_hop(request) -> None:
@@ -2459,11 +2487,20 @@ class Runtime:
         capture = capture_listener = None
         deadline = time.monotonic() + policy.timeout_seconds
         try:
+            guarded = policy.block_private_network or self.block_private_network
+            if guarded and provider == "steel":
+                # A reused remote context may already contain service workers.
+                raise WebFailure("POLICY_DENIED", "Private-network guard requires a fresh browser context")
             browser = await self._browser(provider, policy)
             from .profiles import ACTIVE
             profile = ACTIVE.get() if policy.profile else None
             if profile is not None:
-                context = await browser.new_context(**profile.context_options())
+                options = profile.context_options()
+                if guarded:
+                    options["service_workers"] = "block"
+                context = await browser.new_context(**options)
+                if guarded:
+                    await _guard_browser_context(context)
                 page = await context.new_page()
             elif provider == "steel":
                 # Reuse one owned page. Upstream OSS instrumentation races on very fast
@@ -2479,7 +2516,11 @@ class Runtime:
                     first = policy.accept_language.split(",")[0].split(";")[0].strip()
                     locale = {"extra_http_headers": {"Accept-Language": policy.accept_language},
                               **({"locale": first} if first and first != "*" else {})}
+                if guarded:
+                    locale["service_workers"] = "block"
                 context = await browser.new_context(**locale)
+                if guarded:
+                    await _guard_browser_context(context)
                 page = await context.new_page()
             if policy.capture_json_responses:
                 capture = _JsonCapture(policy.capture_json_max_items, policy.capture_json_max_bytes)
