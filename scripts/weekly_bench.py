@@ -14,6 +14,8 @@ For local review, --retain-state NEW_DIRECTORY keeps runtime state, and adding
 directory. These files may contain sensitive data; protect and delete them
 according to the operator's retention policy. They are not published by this
 script and do not prove site access beyond the recorded observations.
+Recheck the saved content without network access with
+`python scripts/recheck_weekly_evidence.py ROWS NEW_DIRECTORY/page-text.jsonl`.
 """
 from __future__ import annotations
 

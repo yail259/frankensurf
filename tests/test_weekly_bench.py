@@ -90,3 +90,25 @@ def test_opt_in_evidence_can_replay_content_check_without_provider_receipt():
     assert evidence["url"] == case["url"]
     assert toolbench.check(evidence["case"], {"url": evidence["final_url"], "text": evidence["text"]}) == (True, None)
     assert "do-not-store" not in stream.getvalue()
+
+
+def test_recheck_detects_missing_and_changed_evidence(tmp_path):
+    load()  # makes scripts available for the verifier's toolbench import
+    spec = importlib.util.spec_from_file_location("recheck_weekly_evidence", SCRIPT.with_name("recheck_weekly_evidence.py"))
+    verifier = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verifier)
+    case = {"site": "test", "url": "https://example.org/", "kind": "article", "expect": "observed", "expect_min": 3}
+    row = {"arm": "http", "site": "test", "url": case["url"], "status": "observed", "valid": True, "invalid_reason": None}
+    saved = {**row, "case": case, "text": "observed " * 100, "final_url": case["url"]}
+    rows, evidence = tmp_path / "rows.jsonl", tmp_path / "evidence.jsonl"
+    rows.write_text(json.dumps(row) + "\n")
+    evidence.write_text(json.dumps(saved) + "\n")
+    assert verifier.recheck(rows, evidence)["mismatched"] == 0
+    saved["text"] = "blocked"
+    evidence.write_text(json.dumps(saved) + "\n")
+    assert verifier.recheck(rows, evidence)["mismatched"] == 1
+    evidence.write_text("")
+    assert verifier.recheck(rows, evidence)["missing_evidence"] == 1
+    evidence.write_text(json.dumps(saved) + "\n" + json.dumps(saved) + "\n")
+    with pytest.raises(ValueError, match="duplicate"):
+        verifier.recheck(rows, evidence)
