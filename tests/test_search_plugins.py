@@ -53,6 +53,37 @@ async def test_omitted_source_falls_back_with_exact_attribution_and_attempts(tmp
                          "install_with": "frankensurf install search"}}
 
 
+async def test_private_source_denial_falls_back_without_bypassing_guard(tmp_path, monkeypatch):
+    import frankensurf.runtime as runtime
+    original_guard = runtime._refuse_private
+    async def guard(url):
+        if "127.0.0.1" in url:
+            await original_guard(url)
+    monkeypatch.setattr(runtime, "_refuse_private", guard)
+    requested = []
+    def handle(request):
+        requested.append(request.url.host)
+        return httpx.Response(200, text=ddg(), headers={"content-type": "text/html"})
+    async with Runtime(tmp_path, transport=httpx.MockTransport(handle)) as web:
+        result = await web.search("used bike", policy=WebPolicy(
+            provider="http", block_private_network=True, search_good_results=1))
+    assert requested == ["html.duckduckgo.com"]
+    assert result["receipt"]["status"] == "observed"
+    assert result["receipt"]["search_attempts"][0]["failure"] == "POLICY_DENIED"
+    assert result["results"]
+
+
+async def test_source_denial_can_remain_terminal_by_policy(tmp_path):
+    requested = []
+    async with Runtime(tmp_path, transport=httpx.MockTransport(
+            lambda request: requested.append(request.url.host) or httpx.Response(200, text=ddg()))) as web:
+        result = await web.search("used bike", policy=WebPolicy(
+            provider="http", block_private_network=True,
+            search_terminal_failures=("POLICY_DENIED", "BUDGET_EXHAUSTED")))
+    assert not requested
+    assert result["receipt"]["failure"]["code"] == "POLICY_DENIED"
+
+
 async def test_explicit_source_never_substitutes(tmp_path):
     hosts = []
     def handle(request):
