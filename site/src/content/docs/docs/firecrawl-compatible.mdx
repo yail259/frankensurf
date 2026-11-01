@@ -223,9 +223,27 @@ URL in its credential. Create a Firecrawl API credential with:
   Docker, with `serve --host 0.0.0.0`)
 - **API Key:** the key you gave `serve`
 
-The credential's Test button works, and so do scrape, search, map and crawl, with or without a custom
-body. Checked with node 2.2.0 in n8n's Docker image on 18 October 2026: the credential test, a scrape
-and a search, run as a workflow.
+The credential's Test button works, and so do scrape, batch scrape, search, map, crawl, their status
+operations and the account credit read, with or without a custom body (turn on the node's **Use Custom
+Body** switch, or n8n ignores the JSON you typed).
+
+Checked on 25 October 2026 with node 2.2.0 in n8n 2.44.6 (installed from npm, not Docker) against
+Frankensurf 0.52.0 from PyPI, every operation run as a workflow: the credential test; scrape of
+example.com and a long Wikipedia article; search; map; crawl (3 pages) and its status; batch scrape
+(2 URLs) and its status; a custom-body scrape asking for `links` only (it came back with links and no
+markdown, as asked) and a custom-body map with `limit: 5`; the account credit read (`serve` answers it
+as unmetered). The earlier 18 October check ran the credential test, a scrape and a search in n8n's
+Docker image.
+
+Two things to know:
+
+- **A failed read shows n8n's generic error.** When no tool can read a page, `serve` answers 500 with
+  the reason and the tools it tried. n8n's API error handling replaces the message of any HTTP 500
+  with "The service was not able to process your request" (a fixed table in n8n-workflow), and the
+  detail stays in the failed execution's raw error data. That is n8n's behaviour, not something
+  Frankensurf can change.
+- **Extract needs a model.** The node's Extract operation reaches `serve`, which answers that extract
+  needs `--model` or `FRANKENSURF_AGENT_MODEL`. It was not run with a model.
 
 ## LangChain and LlamaIndex
 
