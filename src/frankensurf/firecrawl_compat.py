@@ -85,7 +85,8 @@ def _document(result: dict, url: str, formats: list[str]) -> dict:
         "title": result.get("title"), "sourceURL": url, "url": result.get("url") or url,
         "statusCode": receipt.get("http_status") or 200,
         "frankensurf": {"trace_id": receipt.get("trace_id"), "via": (_tried(receipt) or [None])[-1],
-                        "cost_usd": receipt.get("cost_usd") or 0}}
+                        "cost_usd": receipt.get("cost_usd"), "cache_hit": receipt.get("cache_hit"),
+                        "freshness_seconds": receipt.get("freshness_seconds")}}
     return document
 
 
@@ -203,6 +204,8 @@ class FirecrawlCompat:
         # the links format.
         overrides = {**self.policy, "prefer_markdown": True, "markdown_output": True, "include_links": True}
         body = body or {}
+        if "frankensurfFreshness" in body:
+            overrides["freshness"] = body["frankensurfFreshness"]
         shot = _screenshot_spec(body.get("formats") or [])
         if body.get("actions") or shot:
             # Actions and screenshots need a browser: Frankensurf's own local one.
@@ -235,6 +238,15 @@ class FirecrawlCompat:
         url = body.get("url")
         if not isinstance(url, str) or not url.startswith(("http://", "https://")):
             return 400, {"success": False, "error": "url must be an http(s) URL"}
+        if "frankensurfFreshness" in body:
+            from .runtime import WebPolicy
+            freshness = body["frankensurfFreshness"]
+            try:
+                if not isinstance(freshness, str):
+                    raise ValueError()
+                WebPolicy(freshness=freshness)
+            except (ValueError, TypeError):
+                return 400, {"success": False, "error": "invalid frankensurfFreshness"}
         raw_formats = body.get("formats") or ["markdown"]
         formats = _format_names(raw_formats)
         json_spec = next((f for f in raw_formats if isinstance(f, dict) and f.get("type") == "json"), None)

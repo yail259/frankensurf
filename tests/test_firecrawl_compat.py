@@ -55,6 +55,64 @@ def test_scrape_returns_markdown_and_metadata_in_firecrawl_shape():
     assert web.reads[0][1]["prefer_markdown"] is True
 
 
+def test_scrape_explicit_freshness_and_unknown_cost():
+    class CachedWeb(FakeWeb):
+        async def read(self, url, policy_overrides=None):
+            self.reads.append((url, policy_overrides))
+            result = observed(url)
+            result["receipt"].update(cost_usd=None, cache_hit=True, freshness_seconds=42)
+            return result
+    web = CachedWeb()
+    status, result = call(FirecrawlCompat(web), "/v2/scrape", {
+        "url": "https://example.com/article", "frankensurfFreshness": "cached"})
+    assert status == 200 and web.reads[0][1]["freshness"] == "cached"
+    metadata = result["data"]["metadata"]["frankensurf"]
+    assert metadata["cache_hit"] is True and metadata["freshness_seconds"] == 42
+    assert metadata["cost_usd"] is None
+
+
+def test_scrape_rejects_invalid_freshness_before_reading():
+    web = FakeWeb()
+    for value in ("stale-forever", None, True, 3, []):
+        status, result = call(FirecrawlCompat(web), "/v2/scrape", {
+            "url": "https://example.com/article", "frankensurfFreshness": value})
+        assert status == 400 and result["success"] is False
+    assert web.reads == []
+    status, _ = call(FirecrawlCompat(web), "/v2/scrape", {"url": "https://example.com/article"})
+    assert status == 200 and "freshness" not in web.reads[0][1]
+
+
+def test_scrape_cached_and_fresh_reads_reach_runtime_policy(tmp_path, monkeypatch):
+    from frankensurf import Runtime, providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+
+    calls = []
+    class Provider:
+        manifest = ProviderManifest("test_cache", "1")
+        async def acquire(self, request, services):
+            calls.append(request.url)
+            return {"url": request.url, "content": "<h1>Test article</h1>" + "Useful content " * 50,
+                    "content_type": "text/html", "http_status": 200}
+
+    provider = Provider()
+    registry = ProviderRegistry()
+    registry.register(provider)
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+
+    async def exercise():
+        async with Runtime(tmp_path) as web:
+            app = FirecrawlCompat(web, policy={"provider": "test_cache", "origin_min_interval_seconds": 0})
+            first = await app.scrape({"url": "https://example.com/article"})
+            cached = await app.scrape({"url": "https://example.com/article", "frankensurfFreshness": "cached"})
+            fresh = await app.scrape({"url": "https://example.com/article", "frankensurfFreshness": "now"})
+        return first, cached, fresh
+    first, cached, fresh = asyncio.run(exercise())
+    assert all(status == 200 and body["success"] for status, body in (first, cached, fresh))
+    assert cached[1]["data"]["metadata"]["frankensurf"]["cache_hit"] is True
+    assert fresh[1]["data"]["metadata"]["frankensurf"]["cache_hit"] is False
+    assert len(calls) == 2
+
+
 def test_only_main_content_is_ignored_and_the_whole_page_comes_back():
     # The article cut lost search and listing results; Firecrawl's SDKs send true by default.
     web = FakeWeb()
