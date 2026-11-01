@@ -57,3 +57,17 @@ def test_summary_separates_login_cases_and_reports_the_single_tool_union():
     assert summary["http"]["main_public"]["valid"] == 1 and summary["stitched_paid"]["main_login"]["valid"] == 1
     assert summary["zenrows"]["main_public"]["usd_per_1k_valid"] == 50.0
     assert summary["_union_of_single_tools"]["main_public"] == {"cases": 2, "valid": 2}
+
+
+def test_the_paid_cap_stops_paid_arms_and_counts_unknown_costs():
+    budget = toolbench.Budget(0.05, unknown_usd=0.02)
+    assert "firecrawl" in toolbench.PAID_ARMS and "stitched_paid" in toolbench.PAID_ARMS
+    assert "stitched_free" not in toolbench.PAID_ARMS
+    budget.charge({"arm": "firecrawl", "cost_usd": 0.004})
+    budget.charge({"arm": "zyte", "cost_usd": None})        # unknown is charged, not free
+    budget.charge({"arm": "jina_reader", "cost_usd": None})  # free arms cost nothing
+    assert round(budget.spent, 3) == 0.024 and budget.allows("zyte")
+    budget.charge({"arm": "stitched_paid", "cost_usd": None})
+    budget.charge({"arm": "stitched_paid", "cost_usd": 0.01})
+    assert not budget.allows("firecrawl") and budget.allows("stitched_free")
+    assert toolbench.Budget(None, 0.01).allows("zyte")
