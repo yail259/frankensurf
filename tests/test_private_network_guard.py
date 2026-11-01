@@ -38,3 +38,53 @@ async def test_environment_switch_turns_the_guard_on_for_every_read(tmp_path, mo
     async with Runtime(tmp_path, transport=httpx.MockTransport(handle)) as web:
         result = await web.read("http://localhost:8080/", WebPolicy(provider="http"))
     assert result["receipt"]["failure"]["code"] == "POLICY_DENIED"
+
+
+async def test_browser_guard_blocks_private_http_and_websocket_before_connecting():
+    from types import SimpleNamespace
+    from frankensurf.runtime import _guard_browser_context
+
+    class Context:
+        async def route(self, pattern, callback): self.http = callback
+        async def route_web_socket(self, pattern, callback): self.websocket = callback
+
+    class Route:
+        def __init__(self, url):
+            self.url = url
+            self.request = SimpleNamespace(url=url)
+            self.action = None
+        async def abort(self): self.action = "abort"
+        async def continue_(self): self.action = "continue"
+        async def close(self): self.action = "close"
+        def connect_to_server(self): self.action = "connect"
+
+    context = Context()
+    await _guard_browser_context(context)
+    for url, expected in [("http://127.0.0.1/admin", "abort"), ("https://1.1.1.1/", "continue")]:
+        route = Route(url)
+        await context.http(route)
+        assert route.action == expected
+    for url, expected in [("ws://127.0.0.1/socket", "close"), ("wss://1.1.1.1/socket", "connect")]:
+        route = Route(url)
+        await context.websocket(route)
+        assert route.action == expected
+
+
+async def test_browser_guard_rejects_unresolved_host(monkeypatch):
+    import asyncio
+    from frankensurf.runtime import _refuse_private, WebFailure
+    async def unresolved(*args, **kwargs): raise OSError("unresolved")
+    monkeypatch.setattr(asyncio.get_running_loop(), "getaddrinfo", unresolved)
+    with pytest.raises(WebFailure) as error:
+        await _refuse_private("https://unresolved.example/", fail_closed=True)
+    assert error.value.code == "POLICY_DENIED"
+
+
+async def test_guarded_steel_reused_context_is_rejected_before_connecting(tmp_path, monkeypatch):
+    from frankensurf.runtime import WebFailure
+    async with Runtime(tmp_path) as web:
+        async def unexpected(*args): raise AssertionError("must not connect to Steel")
+        monkeypatch.setattr(web, "_browser", unexpected)
+        with pytest.raises(WebFailure) as error:
+            await web._get_browser("https://example.com/", WebPolicy(block_private_network=True), "steel")
+    assert error.value.code == "POLICY_DENIED"

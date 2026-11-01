@@ -74,7 +74,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `egress_failures` | `BLOCKED`, `CAPTCHA`, `RATE_LIMITED` | Failures that start a pass through your other connections. |
 | `egress_tools` | `camoufox`, `scrapling`, `http` | Tools a pass through another connection uses; the wall vendor's best goes first. |
 | `allow_archive` | `False` | A stored copy (Internet Archive) as the very last resort; the result says when it was taken. |
-| `block_private_network` | `False` | Refuse loopback, private and link-local addresses, names that resolve to them, and redirects into them. |
+| `block_private_network` | `False` | Refuse loopback, private and link-local addresses and names that resolve to them. HTTP transport checks redirects. Local Playwright contexts also check routed HTTP and WebSocket requests and block service workers, but browser redirects can bypass interception. This is defense in depth, not network isolation: browser redirects, DNS rebinding and other providers or browser transports need separate protection. Reused Steel contexts are unavailable with this guard. |
 | `exclude_providers` | `()` | Skip these providers (the agent's try-harder lever). |
 | `try_harder` | `False` | Order the remaining providers strongest first, paid ones included when allowed. |
 | `retry_of_trace` | `None` | The trace this read retries, for the receipt. |
