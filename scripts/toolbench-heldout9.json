@@ -1,0 +1,921 @@
+{
+ "schema": "frankensurf.toolbench-heldout/v1",
+ "note": "Ninth held-out set, 28 October 2026: candidates written for it from general knowledge by Claude, before any page was read, to measure every tool and the router blind, paid tools included; 4389 hosts and their brands already read are excluded. Same rules: 800+ characters and the expect pattern at least 3 times. Some URLs may be dead or wrong; that counts against every arm alike. Use once. Corrected 29 October 2026, after the first run: where my URL was wrong for every tool (a 404 for all of them, or the site redirecting to a different page), the URL was replaced by the same page from the site's own navigation ('was' keeps the original), and every tool re-read it; reichelt geo-redirects to English, so its pattern also accepts 'resistor'. Two sites that no longer exist were dropped ('excluded'). The first run's rows are kept beside the corrected ones.",
+ "cases": [
+  {
+   "site": "insideevs",
+   "wall": "cars",
+   "url": "https://insideevs.com/news/",
+   "expect": "electric"
+  },
+  {
+   "site": "quikr",
+   "wall": "classifieds",
+   "url": "https://www.quikr.com/bikes-scooters/search?query=bike",
+   "expect": "bike"
+  },
+  {
+   "site": "paperswithcode",
+   "wall": "dev",
+   "url": "https://paperswithcode.com/search?q=segmentation",
+   "expect": "segmentation"
+  },
+  {
+   "site": "delicious-au",
+   "wall": "food",
+   "url": "https://www.delicious.com.au/search?q=laksa",
+   "expect": "laksa"
+  },
+  {
+   "site": "bund-de",
+   "wall": "gov",
+   "url": "https://www.bundesregierung.de/breg-de/aktuelles",
+   "expect": "themen",
+   "was": "https://www.bundesregierung.de/breg-de/themen"
+  },
+  {
+   "site": "workopolis",
+   "wall": "jobs",
+   "url": "https://www.workopolis.com/jobsearch/find-jobs?ak=plumber",
+   "expect": "plumber"
+  },
+  {
+   "site": "dailymotion",
+   "wall": "media",
+   "url": "https://www.dailymotion.com/search/cooking",
+   "expect": "cooking"
+  },
+  {
+   "site": "propublica",
+   "wall": "news",
+   "url": "https://www.propublica.org/topics/health-care",
+   "expect": "health"
+  },
+  {
+   "site": "onthehouse",
+   "wall": "property",
+   "url": "https://www.onthehouse.com.au/real-estate/sa/adelaide-5000",
+   "expect": "adelaide"
+  },
+  {
+   "site": "mitre10",
+   "wall": "retail_au",
+   "url": "https://www.mitre10.co.nz/shop/search?text=ladder&q=ladder",
+   "expect": "ladder",
+   "was": "https://www.mitre10.co.nz/search?q=ladder"
+  },
+  {
+   "site": "reichelt",
+   "wall": "retail_eu",
+   "url": "https://www.reichelt.de/index.html?ACTION=446&SEARCH=widerstand",
+   "expect": "widerstand|resistor",
+   "was_expect": "widerstand"
+  },
+  {
+   "site": "jd",
+   "wall": "retail_other",
+   "url": "https://search.jd.com/Search?keyword=%E8%80%B3%E6%9C%BA",
+   "expect": "耳机"
+  },
+  {
+   "site": "joann",
+   "wall": "retail_us",
+   "url": "https://www.joann.com/search?q=fabric",
+   "expect": "fabric"
+  },
+  {
+   "site": "indiehackers",
+   "wall": "social",
+   "url": "https://www.indiehackers.com/products",
+   "expect": "saas",
+   "was": "https://www.indiehackers.com/search?q=saas"
+  },
+  {
+   "site": "rail-europe",
+   "wall": "travel",
+   "url": "https://www.raileurope.com/en/destinations/italy/rome",
+   "expect": "rome"
+  },
+  {
+   "site": "driving-ca",
+   "wall": "cars",
+   "url": "https://driving.ca/reviews/",
+   "expect": "road test",
+   "was": "https://driving.ca/reviews/road-test"
+  },
+  {
+   "site": "locanto",
+   "wall": "classifieds",
+   "url": "https://www.locanto.com/q/?query=bike",
+   "expect": "bike"
+  },
+  {
+   "site": "cran",
+   "wall": "dev",
+   "url": "https://cran.r-project.org/web/packages/ggplot2/index.html",
+   "expect": "ggplot2"
+  },
+  {
+   "site": "kingarthur",
+   "wall": "food",
+   "url": "https://www.kingarthurbaking.com/search?query=sourdough",
+   "expect": "sourdough"
+  },
+  {
+   "site": "melbourne-vic-gov",
+   "wall": "gov",
+   "url": "https://www.melbourne.vic.gov.au/parking",
+   "expect": "parking"
+  },
+  {
+   "site": "hiringcafe",
+   "wall": "jobs",
+   "url": "https://hiring.cafe/?searchState=%7B%22searchQuery%22%3A%22nurse%22%7D",
+   "expect": "nurse"
+  },
+  {
+   "site": "trakt",
+   "wall": "media",
+   "url": "https://trakt.tv/search?query=severance",
+   "expect": "severance"
+  },
+  {
+   "site": "themarkup",
+   "wall": "news",
+   "url": "https://themarkup.org/series/privacy",
+   "expect": "privacy"
+  },
+  {
+   "site": "flatmates",
+   "wall": "property",
+   "url": "https://flatmates.com.au/rooms/melbourne",
+   "expect": "melbourne"
+  },
+  {
+   "site": "altronics",
+   "wall": "retail_au",
+   "url": "https://www.altronics.com.au/search/?q=multimeter",
+   "expect": "multimeter"
+  },
+  {
+   "site": "cyberport",
+   "wall": "retail_eu",
+   "url": "https://www.cyberport.de/tools/search-results.html?q=monitor",
+   "expect": "monitor"
+  },
+  {
+   "site": "reliancedigital",
+   "wall": "retail_other",
+   "url": "https://www.reliancedigital.in/search?q=television",
+   "expect": "television"
+  },
+  {
+   "site": "woodcraft",
+   "wall": "retail_us",
+   "url": "https://www.woodcraft.com/search?q=chisel",
+   "expect": "chisel"
+  },
+  {
+   "site": "tildes",
+   "wall": "social",
+   "url": "https://tildes.net/~comp",
+   "expect": "~comp"
+  },
+  {
+   "site": "wanderlog",
+   "wall": "travel",
+   "url": "https://wanderlog.com/list/geoCategory/1213/best-things-to-do-in-lisbon",
+   "expect": "lisbon"
+  },
+  {
+   "site": "honestjohn",
+   "wall": "cars",
+   "url": "https://www.honestjohn.co.uk/carbycar/skoda/octavia-2020/",
+   "expect": "octavia"
+  },
+  {
+   "site": "sbazar",
+   "wall": "classifieds",
+   "url": "https://www.sbazar.cz/hledej/kolo",
+   "expect": "kolo"
+  },
+  {
+   "site": "cocoapods",
+   "wall": "dev",
+   "url": "https://cocoapods.org/pods/Alamofire",
+   "expect": "alamofire"
+  },
+  {
+   "site": "thekitchn",
+   "wall": "food",
+   "url": "https://www.thekitchn.com/search?q=meatballs",
+   "expect": "meatball"
+  },
+  {
+   "site": "brisbane-qld-gov",
+   "wall": "gov",
+   "url": "https://www.brisbane.qld.gov.au/clean-and-green/rubbish-tips-and-bins",
+   "expect": "\\bbins?\\b"
+  },
+  {
+   "site": "jobspresso",
+   "wall": "jobs",
+   "url": "https://jobspresso.co/remote-work/",
+   "expect": "remote"
+  },
+  {
+   "site": "thetvdb",
+   "wall": "media",
+   "url": "https://thetvdb.com/search?query=fargo",
+   "expect": "fargo"
+  },
+  {
+   "site": "restofworld",
+   "wall": "news",
+   "url": "https://restofworld.org/series/ai-shapes-the-world/",
+   "expect": "\\bai\\b"
+  },
+  {
+   "site": "oneroof",
+   "wall": "property",
+   "url": "https://www.oneroof.co.nz/search/houses-for-sale/region_wellington-42_page_1",
+   "expect": "wellington",
+   "was": "https://www.oneroof.co.nz/search/houses-for-sale/region_wellington-35"
+  },
+  {
+   "site": "lincraft",
+   "wall": "retail_au",
+   "url": "https://www.lincraft.com.au/search?q=thread",
+   "expect": "thread"
+  },
+  {
+   "site": "bergfreunde",
+   "wall": "retail_eu",
+   "url": "https://www.bergfreunde.de/suche/?q=rucksack",
+   "expect": "rucksack"
+  },
+  {
+   "site": "firstcry",
+   "wall": "retail_other",
+   "url": "https://www.firstcry.com/search?q=stroller",
+   "expect": "stroller"
+  },
+  {
+   "site": "musiciansfriend",
+   "wall": "retail_us",
+   "url": "https://www.musiciansfriend.com/search?keyword=ukulele",
+   "expect": "ukulele"
+  },
+  {
+   "site": "kbin",
+   "wall": "social",
+   "url": "https://kbin.earth/m/technology",
+   "expect": "technolog"
+  },
+  {
+   "site": "culturetrip",
+   "wall": "travel",
+   "url": "https://theculturetrip.com/europe/spain/barcelona",
+   "expect": "barcelona"
+  },
+  {
+   "site": "auto-motor-sport",
+   "wall": "cars",
+   "url": "https://www.auto-motor-und-sport.de/marken-modelle/vw/golf/",
+   "expect": "golf"
+  },
+  {
+   "site": "okidoki",
+   "wall": "classifieds",
+   "url": "https://www.okidoki.ee/buy/all/?query=jalgratas",
+   "expect": "jalgratas"
+  },
+  {
+   "site": "opam",
+   "wall": "dev",
+   "url": "https://opam.ocaml.org/packages/",
+   "expect": "package"
+  },
+  {
+   "site": "minimalistbaker",
+   "wall": "food",
+   "url": "https://minimalistbaker.com/?s=hummus",
+   "expect": "hummus"
+  },
+  {
+   "site": "transport-nsw",
+   "wall": "gov",
+   "url": "https://transportnsw.info/tickets-fares/opal",
+   "expect": "opal"
+  },
+  {
+   "site": "nodesk",
+   "wall": "jobs",
+   "url": "https://nodesk.co/remote-jobs/engineering/",
+   "expect": "engineer"
+  },
+  {
+   "site": "mubi",
+   "wall": "media",
+   "url": "https://mubi.com/en/search/films?query=kurosawa",
+   "expect": "kurosawa"
+  },
+  {
+   "site": "semafor",
+   "wall": "news",
+   "url": "https://www.semafor.com/vertical/tech",
+   "expect": "tech"
+  },
+  {
+   "site": "propertypal",
+   "wall": "property",
+   "url": "https://www.propertypal.com/property-for-sale/belfast",
+   "expect": "belfast"
+  },
+  {
+   "site": "sheridan",
+   "wall": "retail_au",
+   "url": "https://www.sheridan.com.au/search?q=towel",
+   "expect": "towel"
+  },
+  {
+   "site": "globetrotter",
+   "wall": "retail_eu",
+   "url": "https://www.globetrotter.de/suche/?q=zelt",
+   "expect": "zelt"
+  },
+  {
+   "site": "bigbasket-alt-jiomart",
+   "wall": "retail_other",
+   "url": "https://www.jiomart.com/search/rice",
+   "expect": "rice"
+  },
+  {
+   "site": "fosstodon",
+   "wall": "social",
+   "url": "https://fosstodon.org/tags/linux",
+   "expect": "linux"
+  },
+  {
+   "site": "visitlisboa",
+   "wall": "travel",
+   "url": "https://www.visitlisboa.com/en/places",
+   "expect": "lisbo"
+  },
+  {
+   "site": "adac",
+   "wall": "cars",
+   "url": "https://www.adac.de/rund-ums-fahrzeug/autokatalog/marken-modelle/",
+   "expect": "modell"
+  },
+  {
+   "site": "ss-lv",
+   "wall": "classifieds",
+   "url": "https://www.ss.lv/lv/search-result/?q=velosipeds",
+   "expect": "velosiped"
+  },
+  {
+   "site": "juliahub",
+   "wall": "dev",
+   "url": "https://juliapackages.com/packages?search=plots",
+   "expect": "\\bplots?\\b"
+  },
+  {
+   "site": "maangchi",
+   "wall": "food",
+   "url": "https://www.maangchi.com/?s=kimchi",
+   "expect": "kimchi"
+  },
+  {
+   "site": "ipaustralia",
+   "wall": "gov",
+   "url": "https://www.ipaustralia.gov.au/trade-marks",
+   "expect": "trade mark"
+  },
+  {
+   "site": "authenticjobs",
+   "wall": "jobs",
+   "url": "https://authenticjobs.com/?search_keywords=designer",
+   "expect": "designer"
+  },
+  {
+   "site": "criterion",
+   "wall": "media",
+   "url": "https://www.criterion.com/search#stq=ozu",
+   "expect": "ozu"
+  },
+  {
+   "site": "crikey",
+   "wall": "news",
+   "url": "https://www.crikey.com.au/topic/politics/",
+   "expect": "politic"
+  },
+  {
+   "site": "immoweb",
+   "wall": "property",
+   "url": "https://www.immoweb.be/en/search/house/for-sale/gent/9000",
+   "expect": "\\bgent\\b"
+  },
+  {
+   "site": "mrtoys",
+   "wall": "retail_au",
+   "url": "https://www.mrtoys.com.au/catalogsearch/result/?q=lego",
+   "expect": "lego"
+  },
+  {
+   "site": "bauhaus",
+   "wall": "retail_eu",
+   "url": "https://www.bauhaus.info/suche/produkte?text=fliesen",
+   "expect": "fliesen"
+  },
+  {
+   "site": "courts-sg",
+   "wall": "retail_other",
+   "url": "https://www.courts.com.sg/search?q=aircon",
+   "expect": "aircon"
+  },
+  {
+   "site": "uline",
+   "wall": "retail_us",
+   "url": "https://www.uline.com/BL_1/Boxes",
+   "expect": "\\bbox(es)?\\b"
+  },
+  {
+   "site": "pixelfed",
+   "wall": "social",
+   "url": "https://pixelfed.social/discover/tags/sunset",
+   "expect": "sunset"
+  },
+  {
+   "site": "visitnorway",
+   "wall": "travel",
+   "url": "https://www.visitnorway.com/places-to-go/fjord-norway/",
+   "expect": "fjord"
+  },
+  {
+   "site": "autoplus",
+   "wall": "cars",
+   "url": "https://www.autoplus.fr/peugeot/208/",
+   "expect": "208"
+  },
+  {
+   "site": "anibis",
+   "wall": "classifieds",
+   "url": "https://www.anibis.ch/fr/q/velo",
+   "expect": "v[ée]lo"
+  },
+  {
+   "site": "sqlite-org",
+   "wall": "dev",
+   "url": "https://www.sqlite.org/lang_select.html",
+   "expect": "select"
+  },
+  {
+   "site": "hebbarskitchen",
+   "wall": "food",
+   "url": "https://hebbarskitchen.com/?s=dosa",
+   "expect": "dosa"
+  },
+  {
+   "site": "asic",
+   "wall": "gov",
+   "url": "https://moneysmart.gov.au/budgeting",
+   "expect": "budget"
+  },
+  {
+   "site": "idealist",
+   "wall": "jobs",
+   "url": "https://www.idealist.org/en/jobs?q=program%20manager",
+   "expect": "program"
+  },
+  {
+   "site": "storygraph",
+   "wall": "media",
+   "url": "https://app.thestorygraph.com/browse?search_term=murakami",
+   "expect": "murakami"
+  },
+  {
+   "site": "thenewdaily",
+   "wall": "news",
+   "url": "https://www.thenewdaily.com.au/news/",
+   "expect": "\\bnews\\b"
+  },
+  {
+   "site": "willhaben-immo",
+   "wall": "property",
+   "url": "https://www.immobilien.net/eigentumswohnungen/wien",
+   "expect": "wien",
+   "was": "https://www.immobilien.net/de/wohnung-mieten/wien"
+  },
+  {
+   "site": "autobarn",
+   "wall": "retail_au",
+   "url": "https://www.autobarn.com.au/search?q=wiper",
+   "expect": "wiper"
+  },
+  {
+   "site": "dm-de",
+   "wall": "retail_eu",
+   "url": "https://www.dm.de/search?query=zahnpasta",
+   "expect": "zahnpasta"
+  },
+  {
+   "site": "power-buy-th",
+   "wall": "retail_other",
+   "url": "https://www.powerbuy.co.th/en/search/television",
+   "expect": "television"
+  },
+  {
+   "site": "surlatable",
+   "wall": "retail_us",
+   "url": "https://www.surlatable.com/search?q=skillet",
+   "expect": "skillet"
+  },
+  {
+   "site": "discourse-meta",
+   "wall": "social",
+   "url": "https://meta.discourse.org/search?q=plugin",
+   "expect": "plugin"
+  },
+  {
+   "site": "newzealand-com",
+   "wall": "travel",
+   "url": "https://www.newzealand.com/int/queenstown/",
+   "expect": "queenstown"
+  },
+  {
+   "site": "quattroruote",
+   "wall": "cars",
+   "url": "https://www.quattroruote.it/listino/fiat/grande-panda",
+   "expect": "panda",
+   "was": "https://www.quattroruote.it/listino/fiat/panda"
+  },
+  {
+   "site": "tutti",
+   "wall": "classifieds",
+   "url": "https://www.tutti.ch/de/q/suche?query=velo",
+   "expect": "velo"
+  },
+  {
+   "site": "postgresql-alt-pgpedia",
+   "wall": "dev",
+   "url": "https://pgpedia.info/v/vacuum.html",
+   "expect": "vacuum"
+  },
+  {
+   "site": "olivemagazine",
+   "wall": "food",
+   "url": "https://www.olivemagazine.com/search/?q=risotto",
+   "expect": "risotto"
+  },
+  {
+   "site": "accc",
+   "wall": "gov",
+   "url": "https://www.accc.gov.au/consumers/buying-products-and-services/warranties",
+   "expect": "warrant"
+  },
+  {
+   "site": "devex",
+   "wall": "jobs",
+   "url": "https://www.devex.com/jobs/search?query=health",
+   "expect": "health"
+  },
+  {
+   "site": "librarything",
+   "wall": "media",
+   "url": "https://www.librarything.com/search.php?search=le+guin",
+   "expect": "le ?guin"
+  },
+  {
+   "site": "thespinoff",
+   "wall": "news",
+   "url": "https://thespinoff.co.nz/politics",
+   "expect": "politic"
+  },
+  {
+   "site": "sreality",
+   "wall": "property",
+   "url": "https://www.sreality.cz/hledani/prodej/byty/brno",
+   "expect": "brno"
+  },
+  {
+   "site": "torpedo7-alt-hunting",
+   "wall": "retail_au",
+   "url": "https://www.huntingandfishing.co.nz/catalogsearch/result/?q=rifle+scope",
+   "expect": "scope"
+  },
+  {
+   "site": "cultura",
+   "wall": "retail_eu",
+   "url": "https://www.cultura.com/search/results?search_query=roman",
+   "expect": "roman"
+  },
+  {
+   "site": "makro-za",
+   "wall": "retail_other",
+   "url": "https://www.makro.co.za/search/?text=braai",
+   "expect": "braai"
+  },
+  {
+   "site": "webstaurantstore",
+   "wall": "retail_us",
+   "url": "https://www.webstaurantstore.com/search/cutting-board.html",
+   "expect": "cutting board"
+  },
+  {
+   "site": "julia-discourse",
+   "wall": "social",
+   "url": "https://discourse.julialang.org/search?q=performance",
+   "expect": "performance"
+  },
+  {
+   "site": "australia-com",
+   "wall": "travel",
+   "url": "https://www.australia.com/en/places/sydney-and-surrounds/guide-to-sydney.html",
+   "expect": "sydney"
+  },
+  {
+   "site": "kbb-alt-nadaguides",
+   "wall": "cars",
+   "url": "https://www.jdpower.com/cars/2024/toyota/camry",
+   "expect": "camry"
+  },
+  {
+   "site": "mudah",
+   "wall": "classifieds",
+   "url": "https://www.mudah.my/malaysia/for-sale?q=basikal",
+   "expect": "basikal"
+  },
+  {
+   "site": "grafana",
+   "wall": "dev",
+   "url": "https://grafana.com/docs/grafana/latest/dashboards/",
+   "expect": "dashboard"
+  },
+  {
+   "site": "deliciousmagazine-uk",
+   "wall": "food",
+   "url": "https://www.deliciousmagazine.co.uk/?s=pie",
+   "expect": "\\bpies?\\b"
+  },
+  {
+   "site": "aucklandcouncil",
+   "wall": "gov",
+   "url": "https://www.aucklandcouncil.govt.nz/en/rubbish-recycling.html",
+   "expect": "rubbish",
+   "was": "https://www.aucklandcouncil.govt.nz/rubbish-recycling/Pages/default.aspx"
+  },
+  {
+   "site": "unjobs",
+   "wall": "jobs",
+   "url": "https://unjobs.org/themes/environment",
+   "expect": "environment"
+  },
+  {
+   "site": "isfdb",
+   "wall": "media",
+   "url": "https://www.isfdb.org/cgi-bin/se.cgi?arg=asimov&type=Name",
+   "expect": "asimov"
+  },
+  {
+   "site": "thejournal-ie",
+   "wall": "news",
+   "url": "https://www.thejournal.ie/tech/news/",
+   "expect": "technolog"
+  },
+  {
+   "site": "farmers-nz",
+   "wall": "retail_au",
+   "url": "https://www.farmers.co.nz/search?q=kettle",
+   "expect": "kettle"
+  },
+  {
+   "site": "nature-et-decouvertes",
+   "wall": "retail_eu",
+   "url": "https://www.natureetdecouvertes.com/recherche?q=jumelles",
+   "expect": "jumelles"
+  },
+  {
+   "site": "sharafdg",
+   "wall": "retail_other",
+   "url": "https://uae.sharafdg.com/?q=headphones&post_type=product",
+   "expect": "headphones"
+  },
+  {
+   "site": "chewy-alt-hollywoodfeed",
+   "wall": "retail_us",
+   "url": "https://www.hollywoodfeed.com/search?q=dog+treats",
+   "expect": "treat"
+  },
+  {
+   "site": "homeassistant-community",
+   "wall": "social",
+   "url": "https://community.home-assistant.io/search?q=zigbee",
+   "expect": "zigbee"
+  },
+  {
+   "site": "visitscotland",
+   "wall": "travel",
+   "url": "https://www.visitscotland.com/places-to-go/isle-of-skye",
+   "expect": "skye"
+  },
+  {
+   "site": "autotempest",
+   "wall": "cars",
+   "url": "https://www.autotempest.com/results?make=mazda&model=miata",
+   "expect": "miata"
+  },
+  {
+   "site": "yapo",
+   "wall": "classifieds",
+   "url": "https://www.yapo.cl/chile?q=bicicleta",
+   "expect": "bicicleta"
+  },
+  {
+   "site": "prometheus",
+   "wall": "dev",
+   "url": "https://prometheus.io/docs/prometheus/latest/querying/basics/",
+   "expect": "quer(y|ies)"
+  },
+  {
+   "site": "jamieoliver",
+   "wall": "food",
+   "url": "https://www.jamieoliver.com/search/?s=pasta",
+   "expect": "pasta"
+  },
+  {
+   "site": "nzta",
+   "wall": "gov",
+   "url": "https://www.nzta.govt.nz/driver-licences/",
+   "expect": "licence"
+  },
+  {
+   "site": "academicpositions",
+   "wall": "jobs",
+   "url": "https://academicpositions.com/jobs/field/computer-science",
+   "expect": "computer science"
+  },
+  {
+   "site": "standardebooks",
+   "wall": "media",
+   "url": "https://standardebooks.org/ebooks?query=austen",
+   "expect": "austen"
+  },
+  {
+   "site": "dailymaverick",
+   "wall": "news",
+   "url": "https://www.dailymaverick.co.za/section/business-maverick/",
+   "expect": "business"
+  },
+  {
+   "site": "boligsiden",
+   "wall": "property",
+   "url": "https://www.boligsiden.dk/by/aarhus",
+   "expect": "aarhus"
+  },
+  {
+   "site": "smiths-city",
+   "wall": "retail_au",
+   "url": "https://www.smithscity.co.nz/search?q=fridge",
+   "expect": "fridge"
+  },
+  {
+   "site": "clasohlson-alt-jula",
+   "wall": "retail_eu",
+   "url": "https://www.jula.se/sok/?query=borrmaskin",
+   "expect": "borrmaskin"
+  },
+  {
+   "site": "biccamera",
+   "wall": "retail_other",
+   "url": "https://www.biccamera.com/bc/category/?q=%83C%83%84%83z%83%93",
+   "expect": "イヤホン",
+   "was": "https://www.biccamera.com/bc/category/?q=%E3%82%A4%E3%83%A4%E3%83%9B%E3%83%B3"
+  },
+  {
+   "site": "vermontcountrystore",
+   "wall": "retail_us",
+   "url": "https://www.vermontcountrystore.com/search?q=slippers",
+   "expect": "slipper"
+  },
+  {
+   "site": "obsidian-forum",
+   "wall": "social",
+   "url": "https://forum.obsidian.md/search?q=sync",
+   "expect": "\\bsync\\b"
+  },
+  {
+   "site": "nationaltrust",
+   "wall": "travel",
+   "url": "https://www.nationaltrust.org.uk/visit/cornwall",
+   "expect": "cornwall"
+  },
+  {
+   "site": "carfax",
+   "wall": "cars",
+   "url": "https://www.carfax.com/Used-Honda-CR-V_w301",
+   "expect": "cr-v",
+   "was": "https://www.carfax.com/Used-Honda-CR-V_z1102"
+  },
+  {
+   "site": "segundamano-mx-alt-vivanuncios",
+   "wall": "classifieds",
+   "url": "https://www.vivanuncios.com.mx/s-bicicleta/v1q0p1",
+   "expect": "bicicleta"
+  },
+  {
+   "site": "regex101",
+   "wall": "dev",
+   "url": "https://regex101.com/library?search=email",
+   "expect": "email"
+  },
+  {
+   "site": "nigella",
+   "wall": "food",
+   "url": "https://www.nigella.com/search?q=chocolate",
+   "expect": "chocolate"
+  },
+  {
+   "site": "tfl",
+   "wall": "gov",
+   "url": "https://tfl.gov.uk/fares/contactless-and-oyster-fares",
+   "expect": "\\bfares?\\b"
+  },
+  {
+   "site": "higheredjobs",
+   "wall": "jobs",
+   "url": "https://www.higheredjobs.com/search/advanced_action.cfm?Keyword=biology",
+   "expect": "biology"
+  },
+  {
+   "site": "rateyourmusic",
+   "wall": "media",
+   "url": "https://rateyourmusic.com/search?searchterm=bjork",
+   "expect": "bj[öo]rk"
+  },
+  {
+   "site": "nation-africa",
+   "wall": "news",
+   "url": "https://nation.africa/kenya/business",
+   "expect": "business"
+  },
+  {
+   "site": "etuovi",
+   "wall": "property",
+   "url": "https://www.etuovi.com/myytavat-asunnot/tampere",
+   "expect": "tampere"
+  },
+  {
+   "site": "allphones",
+   "wall": "retail_au",
+   "url": "https://www.mobileciti.com.au/catalogsearch/result/?q=iphone",
+   "expect": "iphone"
+  },
+  {
+   "site": "biltema",
+   "wall": "retail_eu",
+   "url": "https://www.biltema.se/sok/?query=lampa",
+   "expect": "lampa"
+  },
+  {
+   "site": "muji-jp",
+   "wall": "retail_other",
+   "url": "https://www.muji.com/jp/ja/store/search?q=%E3%82%BF%E3%82%AA%E3%83%AB",
+   "expect": "タオル"
+  },
+  {
+   "site": "lehmans",
+   "wall": "retail_us",
+   "url": "https://www.lehmans.com/search?q=lantern",
+   "expect": "lantern"
+  },
+  {
+   "site": "level1techs",
+   "wall": "social",
+   "url": "https://forum.level1techs.com/search?q=truenas",
+   "expect": "truenas"
+  },
+  {
+   "site": "doc-nz",
+   "wall": "travel",
+   "url": "https://www.doc.govt.nz/parks-and-recreation/places-to-go/fiordland/",
+   "expect": "fiordland"
+  }
+ ],
+ "excluded": [
+  {
+   "site": "moosejaw",
+   "wall": "retail_us",
+   "url": "https://www.moosejaw.com/search?q=fleece",
+   "expect": "fleece",
+   "why": "the shop closed; moosejaw.com now redirects to a different store"
+  },
+  {
+   "site": "ingatlan-alt-ingatlannet",
+   "wall": "property",
+   "url": "https://www.ingatlannet.hu/elado/lakas/debrecen",
+   "expect": "debrecen",
+   "why": "the domain does not answer"
+  }
+ ]
+}

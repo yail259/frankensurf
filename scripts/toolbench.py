@@ -61,7 +61,8 @@ HELDOUT = {"heldout": Path(__file__).with_name("toolbench-heldout.json"),
            "heldout5": Path(__file__).with_name("toolbench-heldout5.json"),
            "heldout6": Path(__file__).with_name("toolbench-heldout6.json"),
            "heldout7": Path(__file__).with_name("toolbench-heldout7.json"),
-           "heldout8": Path(__file__).with_name("toolbench-heldout8.json")}
+           "heldout8": Path(__file__).with_name("toolbench-heldout8.json"),
+           "heldout9": Path(__file__).with_name("toolbench-heldout9.json")}
 COMMON = {"origin_cooldown_seconds": 0, "freshness": "now", "lightning": False, "allow_real_browser": False}
 ARMS = {
     "http": {"provider": "http"},
@@ -217,9 +218,30 @@ async def read(web, arm: str, case: dict) -> dict:
             "rescued": bool(receipt.get("rescued"))}
 
 
+# Arms that can spend money. A run-wide cap stops them; free arms carry on.
+PAID_ARMS = {arm for arm, overrides in ARMS.items() if overrides.get("allow_paid_fallbacks")}
+
+
+class Budget:
+    """Run-wide spending cap for paid arms. A read whose cost the provider doesn't
+    report is charged a pessimistic flat amount, so unknown never counts as free."""
+
+    def __init__(self, limit_usd: float | None, unknown_usd: float):
+        self.limit, self.unknown, self.spent = limit_usd, unknown_usd, 0.0
+
+    def allows(self, arm: str) -> bool:
+        return self.limit is None or arm not in PAID_ARMS or self.spent < self.limit
+
+    def charge(self, row: dict) -> None:
+        if row["arm"] in PAID_ARMS:
+            cost = row.get("cost_usd")
+            self.spent += cost if isinstance(cost, (int, float)) else self.unknown
+
+
 async def run(cases, state: Path, out: Path, workers: int, gap: float, arms: list[str],
-              done: set | None = None):
+              done: set | None = None, budget: Budget | None = None):
     from frankensurf import Runtime
+    budget = budget or Budget(None, 0.0)
     rng = random.Random(7)
     done = done or set()
     plans = []
@@ -246,7 +268,14 @@ async def run(cases, state: Path, out: Path, workers: int, gap: float, arms: lis
             lock = locks.setdefault(origin.removeprefix("www."), asyncio.Lock())
             async with lock:
                 for arm in order:
-                    row = await read(runtimes[arm], arm, case)
+                    if not budget.allows(arm):
+                        row = {"arm": arm, "set": case["set"], "site": case["site"], "wall": case["wall"],
+                               "kind": case["kind"], "url": case["url"], "status": "skipped", "valid": False,
+                               "invalid_reason": None, "failure": "BUDGET_STOP", "latency_ms": 0,
+                               "cost_usd": 0.0}
+                    else:
+                        row = await read(runtimes[arm], arm, case)
+                        budget.charge(row)
                     rows.append(row)
                     with out.open("a", encoding="utf-8") as stream:
                         stream.write(json.dumps(row, sort_keys=True) + "\n")
@@ -312,10 +341,17 @@ def main(argv=None):
     parser.add_argument("--label", default="run")
     parser.add_argument("--resume", type=Path, help="rows file to continue; finished (arm, URL) pairs are skipped")
     parser.add_argument("--sample", type=int, help="read only this many cases, spread evenly over the set")
+    parser.add_argument("--sites", nargs="*", help="read only these cases, by site name")
+    parser.add_argument("--max-paid-usd", type=float,
+                        help="stop paid arms once this much is spent or assumed spent this run")
+    parser.add_argument("--unknown-paid-usd", type=float, default=0.01,
+                        help="charged against --max-paid-usd for a paid read with no reported cost")
     args = parser.parse_args(argv)
     cases = frozen_main(args.rows) + heldout()
     if args.only_set:
         cases = [case for case in cases if case["set"] in args.only_set]
+    if args.sites:
+        cases = [case for case in cases if case["site"] in args.sites]
     if args.sample and args.sample < len(cases):
         step = len(cases) / args.sample
         cases = [cases[int(index * step)] for index in range(args.sample)]
@@ -323,8 +359,11 @@ def main(argv=None):
     out = args.resume or EVALS / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + args.label + ".jsonl")
     previous = [json.loads(line) for line in out.read_text().splitlines()] if args.resume else []
     done = {(row["arm"], row["url"]) for row in previous}
+    budget = Budget(args.max_paid_usd, args.unknown_paid_usd)
+    for row in previous:
+        budget.charge(row)
     rows = previous + asyncio.run(run(cases, args.state.expanduser(), out, args.workers, args.gap,
-                                      args.arms, done))
+                                      args.arms, done, budget))
     print(json.dumps({"rows": str(out), "summary": summarize(rows)}, indent=2))
 
 

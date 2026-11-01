@@ -382,6 +382,21 @@ def test_pictures_that_name_the_query_are_results_on_an_image_search():
     assert verdict["complete"]
 
 
+def test_between_unfinished_search_pages_the_one_naming_the_query_scores_higher():
+    url = "https://films.example.org/search/films?query=lighthouse"
+    films = "".join(f'<a href="/films/{n}">The Lighthouse {n}</a>' for n in range(5))
+    results = {"content": "<html><body>" + films + "</body></html>",
+               "text": "Search lighthouse " + " ".join(f"The Lighthouse {n} (19{n}0) drama" for n in range(5)),
+               "content_type": "text/html"}
+    consent = ("We value your privacy. We use cookies to enhance your browsing experience, serve ads "
+               "and analyse our traffic. Necessary cookies are always active. ") * 60
+    notice = {"content": "<html><body>" + films[:200] + "</body></html>", "text": "Search lighthouse " + consent,
+              "content_type": "text/html"}
+    first, second = assess(url, results), assess(url, notice)
+    assert not first["complete"] and not second["complete"]
+    assert first["score"] > second["score"]
+
+
 def test_results_on_the_sites_own_subdomains_count():
     from frankensurf.completeness import _same_site, item_links, result_group
     url = "https://substack.example/search/film%20photography"

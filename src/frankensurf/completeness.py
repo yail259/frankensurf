@@ -500,6 +500,11 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
     # "$0" and "$ 0.00" are a price that has not loaded yet, not a price.
     prices = sum(1 for price in found_prices if not _ZERO_PRICE.search(price))
     score = items * 100 + prices * 20 + min(len(text), 50_000) / 10
+    if kind == "search":
+        # Between unfinished search pages, the one that names what was searched
+        # for is the results; a longer one may be a cookie notice or menus.
+        lowered = text.lower()
+        score += 300 * min(sum(lowered.count(term) for term in query_terms(url, expect_terms)), 20)
     placeholder = _placeholder(text, len(found_prices) - prices, prices)
     if not placeholder:
         from .main_content import consent_only

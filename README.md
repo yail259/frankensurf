@@ -52,7 +52,8 @@ can point at it.
 </p>
 
 On 150 sites picked blind: 96% read right with paid fallbacks against 85% for Firecrawl's cloud on its
-own, and 88% with free tools only. Against a self-hosted Firecrawl on the same sites, 126 read against
+own, and 88% with free tools only. On a harder blind set of 148 less-known sites: 88.5% against 70.3%,
+and 81.8% free. Against a self-hosted Firecrawl on the same sites, 126 read against
 89 ([details](#against-self-hosted-firecrawl), losses included).
 
 ## Quick start
@@ -163,8 +164,27 @@ $0.98 on Standard (85%).
 [How that's worked out](https://frankensurf.dev/docs/more/cost/).
 
 `scripts/toolbench.py` runs each tool on its own, then Frankensurf, on the same pages with the same
-content checks. The newest set: 150 sites in 15 categories, picked before any was read, read once
-(11 October 2026, raw rows in [`benchmarks/2026-10-11/`](benchmarks/2026-10-11/)).
+content checks. The newest set: 148 less-known sites in 15 categories, picked before any was read,
+every tool on its own, paid ones included (28 October 2026, rows and corrections in
+[`benchmarks/2026-10-28-heldout9/`](benchmarks/2026-10-28-heldout9/)).
+
+| Tool | Sites read | Median | Cost per 1k |
+| --- | ---: | ---: | ---: |
+| Plain HTTP only | 41.9% | 0.9 s | free |
+| Jina Reader only | 68.2% | 3.3 s | free |
+| Firecrawl only | 70.3% | 4.3 s | $5.22 |
+| Zyte only | 70.3% | 9.5 s | not reported |
+| Frankensurf, free tools only | 81.8% | 4.8 s | $0 |
+| **Frankensurf, with paid fallbacks** | **88.5%** | **4.9 s** | **$0.96** |
+
+- Frankensurf read 28 sites Firecrawl missed; Firecrawl read 1 it missed.
+- Every tool's reads put together come to 84.5%; Frankensurf reads more than that, through retries
+  and rescues.
+- Its slowest tenth takes 33.0 s against Firecrawl's 10.9 s.
+- This set is harder than the last: every tool read 10 to 20 points less. A rerun the same evening
+  gave 87.2% and 79.7%.
+
+The set before (150 sites, 11 October 2026, rows in [`benchmarks/2026-10-11/`](benchmarks/2026-10-11/)):
 
 | Tool | Sites read | Median | Cost per 1k |
 | --- | ---: | ---: | ---: |
@@ -185,7 +205,7 @@ content checks. The newest set: 150 sites in 15 categories, picked before any wa
   earlier fresh sets.
 
 <details>
-<summary>Every tool on the same 150 sites</summary>
+<summary>Every tool on the 11 October set</summary>
 
 | Tool | Sites read | Median | Cost per 1k |
 | --- | ---: | ---: | ---: |
