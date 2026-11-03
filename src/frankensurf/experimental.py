@@ -7,8 +7,10 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import signal
 import sys
+import tempfile
 
 from . import browser_install
 from .runtime import WebFailure, _challenge, _status_failure, _validate_url, parse_content
@@ -240,6 +242,10 @@ async def _packet(url, policy, provider):
                  "PLAYWRIGHT_BROWSERS_PATH", "XDG_CACHE_HOME"}
     env = {key: value for key, value in os.environ.items() if key in permitted}
     env.update(PYTHONUNBUFFERED="1", PYTHONNOUSERSITE="1")
+    # Browsers keep their profiles under TMPDIR and delete them only on a clean close, so a
+    # killed read used to leave one behind. Each read gets its own TMPDIR, removed afterwards.
+    scratch = tempfile.mkdtemp(prefix="frankensurf-worker-")
+    env["TMPDIR"] = scratch
     try:
         process = await asyncio.create_subprocess_exec(str(executable), str(Path(__file__).with_name("provider_worker.py")),
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
@@ -247,6 +253,7 @@ async def _packet(url, policy, provider):
             stderr=None if os.environ.get("FRANKENSURF_DEBUG_WORKERS") == "1" else asyncio.subprocess.DEVNULL,
             env=env, start_new_session=True)
     except OSError:
+        shutil.rmtree(scratch, ignore_errors=True)
         raise WebFailure("PROVIDER_UNAVAILABLE", "Optional public provider interpreter could not be started") from None
     maximum = policy.max_bytes*2 + 12*1024*1024
     last_stage = None
@@ -286,6 +293,7 @@ async def _packet(url, policy, provider):
         try: os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError: pass
         if process.returncode is None: await process.wait()
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 def _validated_content_readiness(packet, policy):

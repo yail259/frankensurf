@@ -78,6 +78,26 @@ async def test_worker_protocol_excludes_environment_secrets_and_scrubs_library_o
     assert result['content']=='public'
 
 
+async def test_each_worker_gets_its_own_temp_dir_removed_even_when_killed(tmp_path,monkeypatch):
+    # Browsers leave profiles in TMPDIR when killed; over hundreds of reads that filled a tmpfs /tmp.
+    worker=tmp_path/'provider_worker.py'
+    worker.write_text("\n".join(["import os,sys,json,time","r=json.load(sys.stdin)","d=os.environ['TMPDIR']",
+        "open(os.path.join(d,'profile'),'w').write('x')","open(r['url'].split('#')[1],'w').write(d)",
+        "if 'hang' in r['url']: time.sleep(30)",
+        "print(json.dumps({'status':'ok','url':r['url'],'content':'public','content_type':'text/plain','http_status':200}))"]))
+    monkeypatch.setattr(experimental,'__file__',str(tmp_path/'experimental.py'))
+    monkeypatch.setenv('FRANKENSURF_PROVIDER_PYTHON',sys.executable)
+    monkeypatch.setattr(experimental.tempfile,'tempdir',str(tmp_path))
+    first,second=tmp_path/'first',tmp_path/'second'
+    await experimental._packet(URL+'#'+str(first),WebPolicy(provider='camoufox'),'camoufox')
+    with pytest.raises(WebFailure) as killed:
+        await experimental._packet(URL+'#'+str(second)+'hang',WebPolicy(provider='camoufox',timeout_seconds=1,provider_deadline_grace_seconds=0),'camoufox')
+    assert killed.value.code=='TIMEOUT'
+    used=[Path(first.read_text()),Path((tmp_path/(second.name+'hang')).read_text())]
+    assert used[0]!=used[1] and all(path.parent==tmp_path for path in used)
+    assert not any(path.exists() for path in used)
+
+
 async def test_measured_public_route_uses_scrapling_readiness_without_changing_explicit_override(tmp_path,monkeypatch):
     monkeypatch.setattr(experimental,'installed',lambda _:True)
     calls=[]
