@@ -2,7 +2,7 @@
   "name": "frankensurf",
   "displayName": "Frankensurf",
   "version": "0.52.0",
-  "description": "Access 96% of the web, cheaply and accurately, from Claude Code: read and search through 41 web tools, cheapest first, every page checked.",
+  "description": "Read and search the web from Claude Code through 41 web tools, cheapest first, with every page checked so challenge pages never pass as content.",
   "author": {
     "name": "yail259",
     "url": "https://github.com/yail259"
