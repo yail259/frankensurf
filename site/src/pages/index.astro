@@ -102,7 +102,7 @@ const weekly = [
   <title>Frankensurf</title>
   <link rel="icon" type="image/svg+xml" sizes="any" href="/favicon-stitched-wave.svg" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <meta name="description" content="Access 96% of the web, cheaply and accurately: a free, self-hosted alternative to Firecrawl with the same API. 96% of 150 sites picked blind; Firecrawl alone 85%." />
+  <meta name="description" content="Is your scraper saving Cloudflare pages? Self-hosted Firecrawl passed 18 of 150 challenge and wrong pages off as the real thing. Frankensurf checks every page: free, self-hosted, the same API." />
   <script is:inline>
     if (matchMedia("(prefers-reduced-motion: reduce)").matches || new URLSearchParams(location.search).get("motion") === "reduced") document.documentElement.dataset.motion = "reduced";
   </script>
@@ -117,13 +117,13 @@ const weekly = [
   <section class="hero" id="top">
     <canvas id="surf" aria-label="ASCII art: Frankenstein's monster surfing a barreling wave"></canvas>
     <div class="hero-copy">
-      <h1>Access <em class="horror">96%</em><br />of the web.</h1>
-      <p class="sub">Cheaply and accurately.<br />Free, self-hosted, Firecrawl-compatible.</p>
+      <h1>Is your scraper saving <em class="horror">Cloudflare pages?</em></h1>
+      <p class="sub">Self-hosted Firecrawl passed 18 of 150 challenge and wrong pages off as the real thing. Frankensurf checks every page, and tells you why when it can't read one.<br />Free, self-hosted, Firecrawl-compatible.</p>
       <div class="actions">
         <a class="btn primary" href={repo}>Star on GitHub<span class="stars"><span data-stars hidden></span><svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 17.4l-5.8 3.1 1.1-6.5L2.6 9.4l6.5-.9z" /></svg></span></a>
         <a class="btn" href="#router">See it route</a>
       </div>
-      <a class="proof" href="#targets"><span class="claim"><b>96%</b> of 150 sites picked blind</span><span>Firecrawl alone 85% · Zyte alone 86%</span><span class="arrow" aria-hidden="true">↓</span></a>
+      <a class="proof" href="https://github.com/yail259/frankensurf#against-self-hosted-firecrawl"><span class="claim"><b>18 vs 5</b> wrong pages passed on, of 150</span><span>Self-hosted Firecrawl vs Frankensurf on free tools · 23 Oct</span><span class="arrow" aria-hidden="true">↗</span></a>
     </div>
     <p class="hint" aria-hidden="true"><kbd>click</kbd> strike lightning · <kbd>move</kbd> over the water</p>
   </section>
@@ -166,10 +166,10 @@ const weekly = [
 
   <section class="container sec" id="targets">
     <div class="sec-head" data-reveal>
-      <h2>96% of sites. Picked <em class="horror">blind.</em></h2>
-      <p class="sec-sub">150 sites picked before any was read and read once: every tool on its own, then Frankensurf, the same day, the same content checks (11 October 2026). Frankensurf read 17 sites Firecrawl missed; Firecrawl read none it missed. With no paid tools at all, it matches the best paid tool on its own. Its median read took 2.9 s against Firecrawl's 4.6 s; its slowest tenth still takes longer, 26 s against 11 s.</p>
+      <h2>88.5% of sites. Picked <em class="horror">blind.</em></h2>
+      <p class="sec-sub">148 less-known sites picked before any was read and read once: every tool on its own, then Frankensurf, the same day, the same content checks (28 October 2026). Frankensurf read 28 sites Firecrawl missed; Firecrawl read 1 it missed. With no paid tools at all, it reads more than any paid tool on its own. Its median read took 4.9 s against Firecrawl's 4.3 s; its slowest tenth takes much longer, 33 s against 11 s.</p>
     </div>
-    <div class="panel rank" data-reveal role="list" aria-label="Share of 150 sites read right, each tool on its own and Frankensurf">
+    <div class="panel rank" data-reveal role="list" aria-label="Share of 148 sites read right, each tool on its own and Frankensurf">
       {ranked.map((r, i) => (
         <div class:list={["rank-row", { us: r.us }]} role="listitem">
           <span class="lbl">{r.name}</span>
@@ -177,14 +177,14 @@ const weekly = [
           <span class="val">{pct(r.all)}%</span>
         </div>
       ))}
-      <a class="bars-src" href={sources.bench.url}>Sites read right, of 150 · raw rows and script ↗</a>
+      <a class="bars-src" href={sources.bench.url}>Sites read right, of 148 · raw rows and script ↗</a>
     </div>
-    <h3 class="sec-h3" data-reveal>Ahead or level in every category.</h3>
+    <h3 class="sec-h3" data-reveal>Ahead in every group. Media alone was a loss, 7 sites to 8.</h3>
     <div class="stats" data-reveal>
       {stats.map((s) => <div class="stat"><span class="v">{s.value}</span><span class="l">{s.label}</span><span class="n">{s.note}</span></div>)}
     </div>
     <div class="panel bars" data-reveal>
-      <div class="bars-key"><span class="kt">Firecrawl Only</span><span class="kg">Frankensurf</span><a class="bars-src" href={sources.bench.url}>Share of 150 sites read right · source ↗</a></div>
+      <div class="bars-key"><span class="kt">Firecrawl Only</span><span class="kg">Frankensurf</span><a class="bars-src" href={sources.bench.url}>Share of 148 sites read right · source ↗</a></div>
       {readRight.map((f) => (
         <div class="bar-row">
           <span class="lbl">{f.label}</span>
@@ -201,7 +201,7 @@ const weekly = [
   <section class="container sec" id="versus">
     <div class="sec-head" data-reveal>
       <h2>Stronger <em class="horror">stitched.</em></h2>
-      <p class="sec-sub">Measured 11 October 2026. Frankensurf against each of its own providers used on its own, on the same 150 sites picked before any was read, the same day.</p>
+      <p class="sec-sub">Measured 28 October 2026. Frankensurf against each of its own providers used on its own, on the same 148 sites picked before any was read, the same day.</p>
     </div>
     <div class="panel vs" data-versus data-reveal>
       <div class="vs-tabs" role="tablist" aria-label="Frankensurf compared with one provider on its own">
@@ -214,7 +214,7 @@ const weekly = [
             <span class="vs-mid" aria-hidden="true">vs</span>
             <div class="vs-side"><span class="vs-v">{pct(t.all)}%</span><span class="vs-n"><img src={`/logos/${t.logo}`} alt="" width="20" height="20" loading="lazy" />{t.name} Only</span></div>
           </div>
-          <p class="vs-cap">of 150 fresh sites read right</p>
+          <p class="vs-cap">of 148 fresh sites read right</p>
           <dl class="vs-rows">
             <div><dt>Of sites any tool could read</dt><dd class:list={{ lose: t.unseen > usVersus.unseen }}>{usVersus.unseen.toFixed(1)}% vs {t.unseen.toFixed(1)}%</dd></div>
             <div><dt>Cost per 1,000 pages read</dt><dd>{usVersus.cost} vs {t.cost}</dd></div>

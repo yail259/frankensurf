@@ -11,7 +11,7 @@
 <h1 align="center">Frankensurf</h1>
 
 <p align="center">
-  <strong>Access 96% of the web, cheaply and accurately.</strong><br>
+  <strong>Is your scraper saving Cloudflare pages?</strong><br>
   A free, self-hosted alternative to Firecrawl: one container, the same API, and every page checked before your agent reads it.
 </p>
 

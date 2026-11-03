@@ -29,7 +29,7 @@ export const sources = {
   fsid: { label: "Frankensurf docs: human handoff", url: "/docs/blocked/handoff/" },
   zyte: { label: "Zyte API docs", url: "https://docs.zyte.com/zyte-api/" },
   apify: { label: "Apify: RAG Web Browser", url: "https://apify.com/apify/rag-web-browser" },
-  bench: { label: "Frankensurf tool benchmark, 11 Oct 2026", url: "https://github.com/yail259/frankensurf/tree/main/benchmarks/2026-10-11" },
+  bench: { label: "Frankensurf tool benchmark, 28 Oct 2026", url: "https://github.com/yail259/frankensurf/tree/main/benchmarks/2026-10-28-heldout9" },
   searchbench: { label: "Frankensurf search benchmark, 12 Oct 2026", url: "https://github.com/yail259/frankensurf/tree/main/benchmarks/2026-10-12-search" },
 } as const;
 
@@ -197,35 +197,37 @@ export const layers: {
 // Measured 11 Oct 2026 with v0.35 on 150 sites in 15 categories chosen before any
 // was read and read once (held-out set 7; benchmarks/2026-10-11/README.md).
 export const stats = [
-  { value: "96.0%", label: "of 150 fresh sites read right", note: "Firecrawl Only 84.7%" },
-  { value: "−74%", label: "dead ends vs Firecrawl Only", note: "6 vs 23 of 150 sites" },
-  { value: "¼", label: "the cost of Firecrawl Only", note: "$0.98 vs $4.28 per 1k pages" },
-  { value: "99%", label: "of sites any tool could read", note: "Firecrawl Only 87%" },
+  { value: "88.5%", label: "of 148 fresh sites read right", note: "Firecrawl Only 70.3%" },
+  { value: "−61%", label: "dead ends vs Firecrawl Only", note: "17 vs 44 of 148 sites" },
+  { value: "81.8%", label: "with free tools only", note: "more than any paid tool on its own" },
+  { value: "98%", label: "of sites any tool could read", note: "Firecrawl Only 83%" },
 ];
 
-// Share of sites failed (percent) on the same 150 fresh sites: today = Firecrawl
-// alone; target = Frankensurf with paid fallbacks.
+// Share of sites failed (percent) on the same 148 fresh sites (held-out set 9,
+// 28 Oct 2026): today = Firecrawl alone; target = Frankensurf with paid fallbacks.
 export const failures: { label: string; today: number; target: number; src: SourceKey }[] = [
-  { label: "All 150 sites", today: 15.3, target: 4.0, src: "bench" },
-  { label: "US retail (10)", today: 30.0, target: 10.0, src: "bench" },
-  { label: "UK and EU retail (10)", today: 10.0, target: 10.0, src: "bench" },
-  { label: "Australian and NZ retail (10)", today: 20.0, target: 10.0, src: "bench" },
-  { label: "Asian and other retail (10)", today: 10.0, target: 0.0, src: "bench" },
-  { label: "News (11)", today: 9.1, target: 0.0, src: "bench" },
-  { label: "Classifieds (6)", today: 16.7, target: 0.0, src: "bench" },
-  { label: "Developer sites (11)", today: 9.1, target: 0.0, src: "bench" },
-  { label: "Jobs (11)", today: 9.1, target: 0.0, src: "bench" },
-  { label: "Social (10)", today: 20.0, target: 10.0, src: "bench" },
-  { label: "Government (11)", today: 9.1, target: 0.0, src: "bench" },
-  { label: "Cars, property, travel, media, food (50)", today: 18.0, target: 4.0, src: "bench" },
+  { label: "All 148 sites", today: 29.7, target: 11.5, src: "bench" },
+  { label: "US retail (9)", today: 22.2, target: 0.0, src: "bench" },
+  { label: "UK and EU retail (10)", today: 70.0, target: 20.0, src: "bench" },
+  { label: "Australian and NZ retail (10)", today: 50.0, target: 10.0, src: "bench" },
+  { label: "Asian and other retail (10)", today: 50.0, target: 20.0, src: "bench" },
+  { label: "News (10)", today: 20.0, target: 10.0, src: "bench" },
+  { label: "Classifieds (10)", today: 40.0, target: 20.0, src: "bench" },
+  { label: "Developer sites (10)", today: 10.0, target: 0.0, src: "bench" },
+  { label: "Jobs (10)", today: 20.0, target: 10.0, src: "bench" },
+  { label: "Social (10)", today: 30.0, target: 20.0, src: "bench" },
+  { label: "Government (10)", today: 30.0, target: 10.0, src: "bench" },
+  { label: "Cars, property, travel, media, food (49)", today: 20.4, target: 10.2, src: "bench" },
 ];
 
-// Head to head, measured 11 Oct 2026 on held-out set 7 (150 sites chosen before
-// any was read, read once): each tool alone and Frankensurf the same day
-// (benchmarks/2026-10-11/toolbench-heldout7-*.jsonl). all = sites read right;
-// reach = share of the 146 sites at least one tool read; cost per 1,000 pages
-// read right. Frankensurf is the stitched router with paid fallbacks. ZenRows
-// and Scrapfly are left out: their plans had run out of credits. Every compared
+// Head to head, measured 28 Oct 2026 on held-out set 9 (148 less-known sites
+// chosen before any was read, read once, after the corrections recorded in
+// scripts/toolbench-heldout9.json): each tool alone and Frankensurf the same day
+// (benchmarks/2026-10-28-heldout9/). all = sites read right; unseen = share of
+// the 125 sites at least one tool read; cost per 1,000 pages read right, from
+// the costs each tool reported (Zyte reports none). Frankensurf is the stitched
+// router with paid fallbacks. ZenRows and Scrapfly are left out: one was
+// disabled, the other out of quota. Every compared
 // tool is also one of Frankensurf's own providers, so each is labelled
 // "<Tool> Only" (Frankensurf against that provider used on its own), never as a
 // rival (owner, 6 Oct 2026).
@@ -236,18 +238,18 @@ export const searchStats = [
   { value: "$0", label: "per 1,000 searches, free", note: "with your own search engine · no Docker" },
 ];
 
-export const usVersus = { all: [144, 150], unseen: 98.6, cost: "$0.98" };
+export const usVersus = { all: [131, 148], unseen: 98.4, cost: "$0.96 + Zyte" };
 // The same router with no paid tools at all, on the same sites.
-export const usFree: [number, number] = [132, 150];
+export const usFree: [number, number] = [121, 148];
 export const versus: { name: string; logo: string; all: [number, number]; unseen: number; cost: string }[] = [
-  { name: "Zyte", logo: "zyte.png", all: [129, 150], unseen: 88.4, cost: "not reported" },
-  { name: "Firecrawl", logo: "firecrawl.png", all: [127, 150], unseen: 87.0, cost: "$4.28" },
-  { name: "Jina Reader", logo: "jina.png", all: [110, 150], unseen: 75.3, cost: "free" },
-  { name: "Scrapling", logo: "scrapling.png", all: [103, 150], unseen: 70.5, cost: "free" },
-  { name: "Camoufox", logo: "camoufox.svg", all: [103, 150], unseen: 70.5, cost: "free" },
-  { name: "Plain HTTP", logo: "http.svg", all: [73, 150], unseen: 50.0, cost: "free" },
-  { name: "Headless Chromium", logo: "chromium.png", all: [61, 150], unseen: 41.8, cost: "free" },
-  { name: "Patchright", logo: "patchright.png", all: [58, 150], unseen: 39.7, cost: "free" },
+  { name: "Zyte", logo: "zyte.png", all: [104, 148], unseen: 83.2, cost: "not reported" },
+  { name: "Firecrawl", logo: "firecrawl.png", all: [104, 148], unseen: 83.2, cost: "$5.22" },
+  { name: "Jina Reader", logo: "jina.png", all: [101, 148], unseen: 80.8, cost: "free" },
+  { name: "Scrapling", logo: "scrapling.png", all: [87, 148], unseen: 69.6, cost: "free" },
+  { name: "Camoufox", logo: "camoufox.svg", all: [80, 148], unseen: 64.0, cost: "free" },
+  { name: "Plain HTTP", logo: "http.svg", all: [62, 148], unseen: 49.6, cost: "free" },
+  { name: "Headless Chromium", logo: "chromium.png", all: [58, 148], unseen: 46.4, cost: "free" },
+  { name: "Patchright", logo: "patchright.png", all: [51, 148], unseen: 34.5, cost: "free" },
 ];
 
 // How the stack changes itself. These describe shipped behaviour, so they carry no label.
