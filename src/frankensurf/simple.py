@@ -115,12 +115,14 @@ async def aread(url: str, *, paid: bool = False, max_cost: float | None = None, 
 
 async def abatch(urls: Iterable[str], *, paid: bool = False, max_cost: float | None = None,
                  main: bool = False, links: bool = False, markdown: bool = False,
-                 state_dir: str | None = None, **policy: Any) -> list[Page]:
-    """Read many pages, paced per site; results keep the order of urls."""
+                 state_dir: str | None = None, concurrency: int | None = None,
+                 **policy: Any) -> list[Page]:
+    """Read many pages: different sites at once (up to concurrency, default 6),
+    one site's pages in turn with its pacing; results keep the order of urls."""
     from .runtime import Runtime, default_state_dir
     async with Runtime(state_dir or default_state_dir()) as web:
-        results = await web.batch(list(urls), policy_overrides=_overrides(paid, max_cost, main, links, policy,
-                                                                          markdown))
+        results = await web.batch(list(urls), concurrency=concurrency,
+                                  policy_overrides=_overrides(paid, max_cost, main, links, policy, markdown))
     return [Page(result) for result in results]
 
 
