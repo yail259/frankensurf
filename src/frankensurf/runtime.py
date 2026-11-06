@@ -115,6 +115,11 @@ class WebPolicy:
     # gets a rendered read; the page with clearly more content is returned
     # (see Runtime._second_opinion). 0 disables.
     second_opinion_text_chars: int = 5000
+    # A plain-HTTP page that ships client-side templates (script type
+    # text/template and kin) with at least this many unfilled placeholders gets
+    # that rendered read however long its text: its grid is drawn after load.
+    # 0 disables.
+    second_opinion_template_placeholders: int = 20
     # After an automatic read, check the page's structure (see completeness.py).
     # A search page without item links or prices, or a page with almost no
     # text, is re-read with the next providers on this ladder (paid ones only
@@ -248,6 +253,10 @@ class WebPolicy:
     # searched for its item list (module discovery, no extra read) and the
     # draft module comes back too, ready to save.
     auto_items: bool = False
+    # With auto_items on a shop platform's collection page (the platform named
+    # by the page's own markup), also read the platform's public listing JSON
+    # (Shopify's products.json): one small extra read (see platform_feeds.py).
+    platform_listing_json: bool = True
     # Most auto items returned (None: the drafted module's limit, 200); a page
     # with more says so in items_truncated and items_total.
     max_items: int | None = None
@@ -564,6 +573,7 @@ class WebPolicy:
         _require(type(self.allow_real_browser) is bool, "allow_real_browser must be a boolean")
         _require(type(self.use_egress_pool) is bool, "use_egress_pool must be a boolean")
         _require(type(self.rescue_not_found) is bool, "rescue_not_found must be a boolean")
+        _require(type(self.platform_listing_json) is bool, "platform_listing_json must be a boolean")
         _require(_is_codes(self.egress_failures), "egress_failures must be a tuple of nonempty codes")
         _require(_is_provider_ids(self.egress_tools), "egress_tools must be distinct provider IDs")
         _require(_is_number(self.real_browser_wait_seconds),
@@ -761,7 +771,8 @@ class WebPolicy:
         _require(all(_is_int(value, 0) for value in (
                      self.max_images, self.settle_ms, self.html_shell_min_text_chars,
                      self.rendered_min_text_chars, self.html_shell_large_bytes,
-                     self.html_shell_large_min_text_chars, self.second_opinion_text_chars)),
+                     self.html_shell_large_min_text_chars, self.second_opinion_text_chars,
+                     self.second_opinion_template_placeholders)),
                  "resource counts must be nonnegative integers")
         _require(_is_int(self.max_bytes, 1) and _is_int(self.max_image_bytes, 1),
                  "byte budgets must be positive integers")
@@ -1318,6 +1329,49 @@ def _page_links(html: str, base: str, limit: int) -> list[dict]:
     return found
 
 
+_LINK_WORD = re.compile(r"[^\W_]+")
+# A link may say more than the URL asked for (/clearance-sale for /clearance),
+# but not much more: past this many extra words it is some other page.
+_HOME_LINK_MAX_EXTRA_WORDS = 2
+
+
+def _home_link_for(home_result, home, url, words):
+    """The one link on the home page whose path names every word the wrong URL
+    asked for, with the fewest other words; None when there is none or a tie.
+
+    A link to the URL itself, to the home page, to a page with a query, or to
+    another site never counts."""
+    from .completeness import _same_site, _item_like
+    wanted = set((words or "").lower().split())
+    content = home_result.get("content") or ""
+    if not wanted or "html" not in str(home_result.get("content_type") or ""):
+        return None
+    base = home_result.get("url") or home
+    requested = urlparse(url)
+    best, best_key, tied = None, None, False
+    for link in _page_links(content, base, 5000):
+        parsed = urlparse(link["url"])
+        path = parsed.path.rstrip("/")
+        if (parsed.query or not path or path == requested.path.rstrip("/")
+                or not _same_site(parsed.hostname, requested.hostname) or _item_like(parsed.path)):
+            continue
+        segments = [part.lower() for part in path.split("/") if part]
+        last = set(_LINK_WORD.findall(segments[-1]))
+        if not wanted <= last:
+            continue
+        extra = len(last - wanted)
+        if extra > _HOME_LINK_MAX_EXTRA_WORDS:
+            continue
+        # Fewest extra words, then the shallowest path.
+        key = (extra, len(segments))
+        candidate = f"{parsed.scheme}://{parsed.netloc}{parsed.path}"
+        if best_key is None or key < best_key:
+            best, best_key, tied = candidate, key, False
+        elif key == best_key and candidate.rstrip("/") != best.rstrip("/"):
+            tied = True
+    return None if tied else best
+
+
 def _nothing_on_page(response, parsed) -> bool:
     structured = parsed.get("structured")
     has_data = (any(structured.values()) if isinstance(structured, dict) else bool(structured))
@@ -1417,6 +1471,9 @@ _ERROR_PHRASES = (
     "the page you were looking for doesn't exist", "the page you're looking for doesn't exist",
     "the page you are looking for does not exist", "an unexpected error has occurred",
     "we couldn't find the page you were looking for", "this page doesn't exist")
+_NOT_FOUND_TITLES = frozenset({
+    "404", "404 error", "404 not found", "404 page not found", "404 - page not found", "error 404",
+    "page not found"})
 _ERROR_TEXT_MAX = 4000
 # An error title is strong evidence even under a site's cookie banner and footer.
 _ERROR_TITLE_TEXT_MAX = 20000
@@ -1433,8 +1490,12 @@ def _site_error(title, text, requested_url, final_url):
         return True
     body = (text or "").strip().lower()
     parts = re.split(r"\s+[|\-–—:]\s+", (title or "").strip().lower().lstrip("# ").strip())
-    if (len(body) < _ERROR_TITLE_TEXT_MAX
-            and any(part.strip(" .!") in _ERROR_TITLES for part in parts if part)):
+    titled = [part.strip(" .!") for part in parts if part]
+    if len(body) < _ERROR_TITLE_TEXT_MAX and any(part in _ERROR_TITLES for part in titled):
+        return True
+    # A title that names the 404 itself is the site's not-found page however much
+    # menu, cart and "you may also like" chrome a shop renders around it.
+    if any(part in _NOT_FOUND_TITLES for part in titled):
         return True
     return len(body) < _ERROR_TEXT_MAX and any(phrase in body for phrase in _ERROR_PHRASES)
 
@@ -1796,8 +1857,31 @@ def _wants_second_opinion(result, policy, provider):
             or receipt.get("status") != "observed" or receipt.get("method") != "http"
             or receipt.get("cache_hit") or "html" not in (result.get("content_type") or "")):
         return False
-    return ("<script" in (result.get("content") or "")
-            and len((result.get("text") or "").strip()) < policy.second_opinion_text_chars)
+    content = result.get("content") or ""
+    if "<script" not in content:
+        return False
+    return (len((result.get("text") or "").strip()) < policy.second_opinion_text_chars
+            or (policy.second_opinion_template_placeholders > 0
+                and _client_templates(content) >= policy.second_opinion_template_placeholders))
+
+
+# Client-side templates a script fills in the browser (Mustache, Handlebars,
+# Underscore, Vue x-templates): <script type="text/template"> and kin. A page
+# that ships rich ones renders its main content, often a product grid, after
+# load, while the menus around it make the unrendered page look long enough.
+_CLIENT_TEMPLATE = re.compile(
+    r"<script\b[^>]*\btype\s*=\s*[\"']?text/(?:template|x-template|html|x-handlebars(?:-template)?|"
+    r"x-mustache(?:-template)?|x-tmpl|x-jsrender|x-underscore-template)[\"']?[^>]*>(.*?)</script>",
+    re.I | re.S)
+# Small templates (a cart badge, one tooltip) are everywhere; a grid's is not
+# (WebPolicy.second_opinion_template_placeholders).
+_TEMPLATE_PLACEHOLDER = re.compile(r"\{\{|<%[=-]?")
+
+
+def _client_templates(content: str) -> int:
+    """Placeholders in the page's client-side templates, still unfilled."""
+    return sum(len(_TEMPLATE_PLACEHOLDER.findall(body))
+               for body in _CLIENT_TEMPLATE.findall(content[:3_000_000]))
 
 
 def _automatic_observed(result, policy, provider):
@@ -1856,6 +1940,23 @@ def _suggest_handoff(receipt):
                    "for a person to clear; the read resumes once the wall is gone",
             "or": "if an older copy will do, retry with allow_archive=True for the Internet "
                   "Archive's latest stored copy (receipt.archived says when it was taken)"}
+
+
+# Why a connection failed, when the error says: the answer is the site's (no
+# such address, a broken TLS setup), so the receipt names it rather than
+# blaming the tool.
+_DNS_FAILURE = re.compile(r"ERR_NAME_NOT_RESOLVED|Name or service not known|nodename nor servname|"
+                          r"getaddrinfo failed|No address associated|Temporary failure in name resolution", re.I)
+_TLS_FAILURE = re.compile(r"ERR_SSL_|SSL_ERROR|\bSSL\b|\bTLS\b|tlsv1 alert|CERTIFICATE_VERIFY_FAILED", re.I)
+
+
+def _connection_failure_message(exc, default):
+    message = str(exc) or repr(exc)
+    if _DNS_FAILURE.search(message):
+        return "The site's address does not resolve (no DNS record for the host)"
+    if _TLS_FAILURE.search(message):
+        return "The site's server failed the secure connection (TLS handshake error)"
+    return default
 
 
 def _navigation_failure(message):
@@ -2415,7 +2516,7 @@ class Runtime:
         except httpx.TimeoutException as exc:
             raise WebFailure("TIMEOUT", "HTTP request timed out") from exc
         except httpx.HTTPError as exc:
-            raise WebFailure("PROVIDER_DOWN", "HTTP request failed") from exc
+            raise WebFailure("PROVIDER_DOWN", _connection_failure_message(exc, "HTTP request failed")) from exc
         finally:
             if signing is not None:
                 SIGNER.reset(signing)
@@ -2607,10 +2708,12 @@ class Runtime:
         except PWError as exc:
             code = _navigation_failure(str(exc))
             if code:
-                raise WebFailure(code, "Target refused the page", response_url=url) from exc
+                raise WebFailure(code, _connection_failure_message(exc, "Target refused the page"),
+                                 response_url=url) from exc
             if _BROWSER_MISSING.search(str(exc)):
                 raise WebFailure("PROVIDER_UNAVAILABLE", _BROWSER_MISSING_MESSAGE) from exc
-            raise WebFailure("PROVIDER_DOWN", "Browser connection or execution failed") from exc
+            raise WebFailure("PROVIDER_DOWN", _connection_failure_message(
+                exc, "Browser connection or execution failed")) from exc
         except (httpx.HTTPError, KeyError, ValueError) as exc:
             raise WebFailure("PROVIDER_DOWN", "Browser connection or execution failed") from exc
         finally:
@@ -3695,6 +3798,7 @@ class Runtime:
                                             workload_assertions, retry_of)
             result = await self._rescue(url, result, policy, provider, adapter, policy_overrides)
             self._auto_items(url, result, policy, policy_overrides)
+            await self._platform_items(url, result, policy, policy_overrides)
             return result
         if policy is None:
             # The module's operational defaults; anything the caller set wins.
@@ -3757,6 +3861,29 @@ class Runtime:
         record["home_trace_id"] = home_receipt.get("trace_id")
         if home_receipt.get("status") != "observed":
             return give_up()
+        # The home page's own menus usually link the page the URL meant
+        # (/clearance is /clearance-sale, /gaming-mice is /collections/gaming-mice):
+        # that page itself beats search results for its words.
+        linked = _home_link_for(home_result, home, url, words) if after == "NOT_FOUND" else None
+        if linked is not None and linked.split("#")[0] != (receipt.get("final_url") or url).split("#")[0]:
+            found = await self.read(linked, inner_policy, module=False, policy_overrides=inner)
+            found_receipt = found.get("receipt") or {}
+            costs.append(found_receipt.get("cost_usd", 0))
+            record.update(via="home page link", link_url=linked, link_trace_id=found_receipt.get("trace_id"))
+            verdict = assess(linked, found) if found_receipt.get("status") == "observed" else {}
+            if verdict.get("complete"):
+                found_receipt["cost_usd"] = _total_cost(costs)
+                found_receipt["rescued"] = {"from": url, "after": after, "query": words, "via": "home page link",
+                                            "link_url": linked, "home_trace_id": record["home_trace_id"],
+                                            "trace_id": receipt.get("trace_id")}
+                found_receipt["next_step"] = {
+                    "reason": "rescued",
+                    "how": (f"The URL asked for answered not found, so this is the page the site's "
+                            f"home page links for '{words}'. Check it is the page you meant.")}
+                self._annotate_trace(found_receipt, "rescued")
+                if adapter is None:
+                    self._grade(linked, found, effective)
+                return found
         search = find_search(home_result, home)
         if search is not None and search.get("template"):
             from urllib.parse import quote, quote_plus
@@ -3946,6 +4073,81 @@ class Runtime:
             if len(texts) >= limit:
                 break
         return texts
+
+    async def _platform_items(self, url, result, policy, policy_overrides):
+        """With auto_items on a shop platform's collection page (recognised from
+        the page's own markup): the items from the platform's public listing JSON
+        (see platform_feeds.py), which lists the collection even when the page's
+        grid is drawn by a script the read never ran. One small extra read; when
+        it fails, the page's own items stand."""
+        from .routes import request_policy
+        try:
+            effective, _ = request_policy(policy, policy_overrides)
+        except Exception:
+            return
+        receipt = result.get("receipt") or {}
+        content_type = str(result.get("content_type") or "")
+        if (not effective.auto_items or not effective.platform_listing_json
+                or receipt.get("status") != "observed" or not isinstance(url, str)
+                or ("html" not in content_type and "markdown" not in content_type)):
+            return
+        from . import platform_feeds
+        page_url = result.get("url") or url
+        target = platform_feeds.listing_json_url(result.get("content") or "", page_url)
+        if target is None:
+            return
+        inner = {**(policy_overrides or {}), "auto_items": False, "rescue_not_found": False,
+                 "completeness_escalation": False} if policy is None else None
+        inner_policy = (replace(policy, auto_items=False, rescue_not_found=False, completeness_escalation=False)
+                        if policy is not None else None)
+        feed = await self.read(target, inner_policy, "http", "json", module=False, policy_overrides=inner)
+        feed_receipt = feed.get("receipt") or {}
+        record = {"platform": platform_feeds.platform(result.get("content") or ""), "url": target,
+                  "trace_id": feed_receipt.get("trace_id")}
+        found = (platform_feeds.items(feed.get("structured"), page_url, result.get("content") or "")
+                 if feed_receipt.get("status") == "observed" else None)
+        if found is None:
+            record["used"] = False
+            record["failure"] = (feed_receipt.get("failure") or {}).get("code") or "not the platform's JSON"
+            receipt["platform_items"] = record
+            return
+        costs = [receipt.get("cost_usd"), feed_receipt.get("cost_usd")]
+        receipt["cost_usd"] = None if None in costs else _total_cost(costs)
+        from .module_discovery import items_quality
+        page_items = result.get("items") or []
+        result["items"] = found[:200]
+        check = {"grade": "good", "count": len(result["items"]), "source": "platform_json",
+                 "reason": (f"the store's own {record['platform']} listing JSON for this collection"
+                            + (" lists no products" if not found else ""))}
+        if found:
+            check = {**items_quality(result["items"], result, page_url), "source": "platform_json",
+                     "reason": check["reason"]}
+        result["items_quality"] = check
+        record.update(used=True, count=len(found), page_items=len(page_items))
+        receipt["platform_items"] = record
+        # A module drafted from the page's markup found other items (or none):
+        # not one to save for this listing.
+        result.pop("auto_module", None)
+        auto = receipt.get("auto_items")
+        if isinstance(auto, dict):
+            auto.pop("save", None)
+            auto.update(found=bool(found), count=len(result["items"]), quality=check, source="platform_json")
+        page = receipt.get("quality")
+        if found and isinstance(page, dict) and {"no_items", "empty_listing"} & set(page.get("flags") or ()):
+            # The listing the page could not show is read after all.
+            page["flags"] = [flag for flag in page["flags"] if flag not in ("no_items", "empty_listing")]
+            page.pop("empty_listing", None)
+            if page.get("grade") == "partial" and not page["flags"]:
+                page["grade"] = "good"
+        if not found:
+            if isinstance(page, dict) and page.get("grade") == "good":
+                # The store lists nothing here: the read is right, but it is not a listing.
+                page["grade"] = "partial"
+            if isinstance(page, dict) and "empty_listing" not in (page.get("flags") or ()):
+                page["flags"] = [*page.get("flags", []), "empty_listing"]
+        self._annotate_trace(receipt, "platform_items")
+        if isinstance(page, dict):
+            self._annotate_trace(receipt, "quality")
 
     def _module_satisfied(self, result, url, terms):
         """True when the active module's assertions pass on this page."""
@@ -4757,8 +4959,15 @@ class Runtime:
         second_receipt = second.get("receipt") or {}
         first_chars = len((first.get("text") or "").strip())
         second_chars = len((second.get("text") or "").strip())
+        # Clearly more content: much more text, or (a product grid filled into a
+        # page whose menus were already long) many more prices.
+        from .completeness import _PRICE
+        first_prices = len(_PRICE.findall(first.get("text") or ""))
+        second_prices = len(_PRICE.findall(second.get("text") or ""))
         rendered_wins = (second_receipt.get("status") == "observed"
-                         and second_chars >= max(first_chars * 1.5, first_chars + 1000))
+                         and (second_chars >= max(first_chars * 1.5, first_chars + 1000)
+                              or (second_chars >= first_chars
+                                  and second_prices >= max(first_prices * 2, first_prices + 10))))
         chosen, other = (second, first) if rendered_wins else (first, second)
         other_receipt = other.get("receipt") or {}
         receipt = chosen["receipt"]
@@ -4768,7 +4977,8 @@ class Runtime:
             "kept": receipt.get("method"), "other": other_receipt.get("method"),
             "other_status": other_receipt.get("status"),
             "other_trace_id": other_receipt.get("trace_id"),
-            "text_chars": {"http": first_chars, "rendered": second_chars}}
+            "text_chars": {"http": first_chars, "rendered": second_chars},
+            "prices": {"http": first_prices, "rendered": second_prices}}
         costs = [receipt.get("cost_usd"), other_receipt.get("cost_usd")]
         receipt["cost_usd"] = None if None in costs else _total_cost(costs)
         return chosen
@@ -5702,7 +5912,11 @@ class Runtime:
             plan_state["refused"] = True
         if exc.code == "NOT_FOUND" and anonymous:
             plan_state["not_found"] = plan_state.get("not_found", 0) + 1
-            if plan_state["walls"] or (plan_state.get("refused") and plan_state["not_found"] == 1) or (
+            # After a wall one 404 is suspect, but two tools that got past it and
+            # both met the site's not-found page are the answer: the climb stops
+            # there instead of ending on whatever the last tool happened to meet.
+            if (plan_state["walls"] and plan_state["not_found"] < 2) or (
+                    plan_state.get("refused") and plan_state["not_found"] == 1) or (
                     plan_state["not_found"] == 1 and candidate in ("http", "scrapling_http")):
                 terminal, suspect = False, True
         if exc.code in ("AUTH_REQUIRED", "AUTH_EXPIRED") and anonymous:

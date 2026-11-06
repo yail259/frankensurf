@@ -31,6 +31,16 @@ page = await web.read(url, policy_overrides={"auto_items": True})
 page["items"][:3]; page["receipt"]["auto_items"]   # {"found", "count", "source"}
 ```
 
+On a shop platform's collection page, recognised from the page's own markup
+(Shopify's storefront markers or its asset paths), `auto_items` also reads the
+platform's public listing JSON beside the page (`/collections/<handle>/products.json`),
+one small extra read: it lists the collection even when the page's grid is drawn
+by a script the read never ran. Its items replace the page's, `items_quality.source`
+is `platform_json` and `receipt.platform_items` records the read; when the JSON
+is refused or missing, the page's own items stand. `platform_listing_json: false`
+turns it off. A listing that says it is empty ("No products available") carries
+an `empty_listing` flag in its quality grade.
+
 ### Your own fields on each item
 
 Add a schema and every item also carries the fields you name. The schema is either a small
