@@ -421,10 +421,11 @@ def _same_site(host, other):
     return same(host, other)
 
 
-def markdown_records(text, url):
+def markdown_records(text, url, *, keep_text=False):
     """Records from markdown or text: repeated blocks that each open with a
     link to a different same-site page. Blocks are grouped by which typed
-    fields they carry; the largest well-typed group is the listing."""
+    fields they carry; the largest well-typed group is the listing.
+    keep_text adds each record's own text as "_text" (for record_schema)."""
     text = text or ""
     host = urlparse(url).hostname or ""
     page = url.split("#")[0].rstrip("/")
@@ -507,7 +508,11 @@ def markdown_records(text, url):
             template = page_template(siblings(url), url)
         except Exception:
             template = None  # Template subtraction is a refinement; a bad cache entry never stops a read.
-    return _dominant(records, template)
+    found = _dominant(records, template)
+    if not keep_text:
+        for record in found:
+            record.pop("_text", None)
+    return found
 
 
 def _prose(line):
@@ -625,7 +630,8 @@ def _dominant(records, template=None):
     out = []
     for record in records:
         if id(record) in chosen and not is_ad(record):
-            out.append({key: value for key, value in record.items() if not key.startswith("_") and key != "sponsored"})
+            kept = {key: value for key, value in record.items() if not key.startswith("_") and key != "sponsored"}
+            out.append({**kept, "_text": "\n".join(record["_lines"])})
     return out
 
 

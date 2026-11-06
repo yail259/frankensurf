@@ -549,7 +549,14 @@ class WebPolicy:
         _require(_is_number(self.hedge_after_seconds), "hedge_after_seconds must be finite and nonnegative")
         _require(type(self.lightning) is bool, "lightning must be a boolean")
         if self.extract_schema is not None:
+            from .record_schema import is_hint_schema, to_json_schema
             from .schema_extract import check_schema
+            if is_hint_schema(self.extract_schema):
+                # {"salary": "price", ...}: the small form, kept as a JSON Schema with x-hint.
+                try:
+                    object.__setattr__(self, "extract_schema", to_json_schema(self.extract_schema))
+                except ValueError as error:
+                    _require(False, "extract_schema: " + str(error))
             check_schema(self.extract_schema)
         _require(_is_int(self.hedge_racers, 1) and self.hedge_racers <= 3, "hedge_racers must be 1 to 3")
         _require(type(self.use_wall_priors) is bool, "use_wall_priors must be a boolean")
@@ -3797,7 +3804,8 @@ class Runtime:
             return
         from .routes import request_policy
         effective, _ = request_policy(policy, policy_overrides)
-        output = selected.extract(result, url, query_terms=query_terms(url, effective.expect_terms))
+        output = selected.extract(result, url, query_terms=query_terms(url, effective.expect_terms),
+                                  schema=effective.extract_schema)
         validation = (evaluate_workload_assertions(output, selected.assertions)
                       if selected.assertions is not None else None)
         result["items"] = output["items"]
@@ -3845,7 +3853,7 @@ class Runtime:
                 record = found["drafts"][0]["module"]
                 if effective.max_items is not None:
                     record["items"]["limit"] = effective.max_items
-                output = SiteModule.from_record(record).extract(result, url)
+                output = SiteModule.from_record(record).extract(result, url, schema=effective.extract_schema)
         finally:
             SIBLINGS.reset(token)
         if not found["drafts"]:
@@ -3872,6 +3880,15 @@ class Runtime:
         if output.get("truncated"):
             receipt["auto_items"].update(truncated=True, total=output["total"],
                                          limit=record["items"]["limit"])
+        if effective.extract_schema:
+            receipt["auto_items"]["schema"] = self._schema_summary(effective.extract_schema, output["items"])
+
+    @staticmethod
+    def _schema_summary(schema, items):
+        """How much of a caller's schema the items filled: fields asked, values found, values asked."""
+        asked = len((schema or {}).get("properties") or {})
+        filled = sum(len((item.get("extracted") or {}).get("data") or {}) for item in items)
+        return {"fields": asked, "filled": filled, "of": asked * len(items)}
 
     def _sibling_texts(self, url, limit=3):
         """The texts of other pages of url's site already in the read cache,
