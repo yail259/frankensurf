@@ -658,6 +658,16 @@ def items_quality(items, result, url) -> dict:
     return {**check, "reason": reason or "items link to this site, are named in the page and distinct"}
 
 
+_TYPED = ("price", "was_price", "availability", "stock_count", "date", "rating", "count", "location")
+
+
+def _typed_kinds(items):
+    """The typed fields (beyond name and link) most items carry: a listing's
+    rows share at least one; a list of links shares none."""
+    return {kind for kind in _TYPED
+            if sum(1 for item in items if item.get(kind) not in (None, "")) >= 0.6 * len(items)}
+
+
 def discover(result, url, *, module_id=None, limit=3, search=None):
     """Draft site modules from one read result. Each draft is validated and run
     against the same page; drafts that extract nothing are dropped. JSON feeds
@@ -700,6 +710,8 @@ def discover(result, url, *, module_id=None, limit=3, search=None):
                 continue
         if _link_farm([item.get("name") for item in output["items"]]):
             continue
+        if candidate["source"]["kind"] == "html" and not _typed_kinds(output["items"]):
+            continue  # Rows that are a name and a link only (a menu, a category list) are navigation.
         check = verify_items(output["items"], result, url)
         if check["grade"] == "poor":
             continue

@@ -257,6 +257,9 @@ class WebPolicy:
     # by the page's own markup), also read the platform's public listing JSON
     # (Shopify's products.json): one small extra read (see platform_feeds.py).
     platform_listing_json: bool = True
+    # Most auto items returned (None: the drafted module's limit, 200); a page
+    # with more says so in items_truncated and items_total.
+    max_items: int | None = None
     max_cost_usd: float | None = None
     # A paid call that bills more than the cap (a PDF with more pages than
     # estimated) still returns its valid content, with receipt.budget saying
@@ -472,6 +475,8 @@ class WebPolicy:
         _require(type(self.warm_up_on_wall) is bool, "warm_up_on_wall must be a boolean")
         _require(_is_number(self.site_session_hours), "site_session_hours must be finite and nonnegative")
         _require(type(self.auto_items) is bool, "auto_items must be a boolean")
+        _require(self.max_items is None or (_is_int(self.max_items, 1) and self.max_items <= 500),
+                 "max_items must be an integer from 1 to 500")
         _require(_is_int(self.search_merge_sources, 1) and self.search_merge_sources <= 10,
                  "search_merge_sources must be an integer from 1 to 10")
         _require(type(self.search_ladder) is bool, "search_ladder must be a boolean")
@@ -553,7 +558,14 @@ class WebPolicy:
         _require(_is_number(self.hedge_after_seconds), "hedge_after_seconds must be finite and nonnegative")
         _require(type(self.lightning) is bool, "lightning must be a boolean")
         if self.extract_schema is not None:
+            from .record_schema import is_hint_schema, to_json_schema
             from .schema_extract import check_schema
+            if is_hint_schema(self.extract_schema):
+                # {"salary": "price", ...}: the small form, kept as a JSON Schema with x-hint.
+                try:
+                    object.__setattr__(self, "extract_schema", to_json_schema(self.extract_schema))
+                except ValueError as error:
+                    _require(False, "extract_schema: " + str(error))
             check_schema(self.extract_schema)
         _require(_is_int(self.hedge_racers, 1) and self.hedge_racers <= 3, "hedge_racers must be 1 to 3")
         _require(type(self.use_wall_priors) is bool, "use_wall_priors must be a boolean")
@@ -3919,7 +3931,8 @@ class Runtime:
             return
         from .routes import request_policy
         effective, _ = request_policy(policy, policy_overrides)
-        output = selected.extract(result, url, query_terms=query_terms(url, effective.expect_terms))
+        output = selected.extract(result, url, query_terms=query_terms(url, effective.expect_terms),
+                                  schema=effective.extract_schema)
         validation = (evaluate_workload_assertions(output, selected.assertions)
                       if selected.assertions is not None else None)
         result["items"] = output["items"]
@@ -3957,8 +3970,19 @@ class Runtime:
         if not effective.auto_items or receipt.get("status") != "observed" or not isinstance(url, str):
             return
         from .module_discovery import discover, items_quality
+        from .records import SIBLINGS
         from .site_modules import SiteModule
-        found = discover(result, url, limit=1)
+        # Template subtraction: the site's other cached pages show what every page repeats.
+        token = SIBLINGS.set(self._sibling_texts)
+        try:
+            found = discover(result, url, limit=1)
+            if found["drafts"]:
+                record = found["drafts"][0]["module"]
+                if effective.max_items is not None:
+                    record["items"]["limit"] = effective.max_items
+                output = SiteModule.from_record(record).extract(result, url, schema=effective.extract_schema)
+        finally:
+            SIBLINGS.reset(token)
         if not found["drafts"]:
             check = items_quality([], result, url)
             result["items_quality"] = check
@@ -3969,15 +3993,86 @@ class Runtime:
                 page["grade"] = "partial"
                 page["flags"] = [*page.get("flags", []), "no_items"]
             return
-        record = found["drafts"][0]["module"]
-        output = SiteModule.from_record(record).extract(result, url)
         check = items_quality(output["items"], result, url)
         result["items"] = output["items"]
         result["items_quality"] = check
+        if output.get("truncated"):
+            # More rows than the limit: say so, with how many the page holds.
+            result["items_truncated"] = True
+            result["items_total"] = output["total"]
         result["auto_module"] = record
         receipt["auto_items"] = {"found": True, "count": output["count"], "quality": check,
                                  "source": record["sources"]["listing"]["kind"],
                                  "save": "site_modules put with result.auto_module to reuse it"}
+        if output.get("truncated"):
+            receipt["auto_items"].update(truncated=True, total=output["total"],
+                                         limit=record["items"]["limit"])
+        if effective.extract_schema:
+            receipt["auto_items"]["schema"] = self._schema_summary(effective.extract_schema, output["items"])
+
+    @staticmethod
+    def _schema_summary(schema, items):
+        """How much of a caller's schema the items filled: fields asked, values found, values asked."""
+        asked = len((schema or {}).get("properties") or {})
+        filled = sum(len((item.get("extracted") or {}).get("data") or {}) for item in items)
+        return {"fields": asked, "filled": filled, "of": asked * len(items)}
+
+    def _sibling_texts(self, url, limit=3):
+        """The texts of other pages of url's site already in the read cache,
+        newest first (for template subtraction in records). Reads nothing from
+        the network; an empty list when no sibling page is cached."""
+        folder = self.state_dir / "cache"
+        host = (urlparse(url).hostname or "").lower().removeprefix("www.")
+        page = url.split("#")[0].rstrip("/")
+        index = getattr(self, "_cache_urls", None)
+        if index is None:
+            index = self._cache_urls = {}
+        try:
+            files = list(os.scandir(folder))
+        except OSError:
+            return []
+        candidates = []
+        for entry in files:
+            if not entry.name.endswith(".json"):
+                continue
+            try:
+                stamp = entry.stat().st_mtime
+            except OSError:
+                continue
+            known = index.get(entry.name)
+            if known is None or known[0] != stamp:
+                # A cached result starts with its url: the head of the file is enough.
+                try:
+                    with open(entry.path, encoding="utf-8", errors="replace") as stream:
+                        head = stream.read(4096)
+                except OSError:
+                    continue
+                found = re.search(r'"url":\s*"((?:[^"\\]|\\.)*)"', head)
+                known = index[entry.name] = (stamp, json.loads(f'"{found.group(1)}"') if found else "")
+            other = known[1]
+            if (other and other.split("#")[0].rstrip("/") != page
+                    and (urlparse(other).hostname or "").lower().removeprefix("www.") == host):
+                candidates.append((stamp, other, entry.path))
+        texts, seen = [], set()
+        for _, other, path in sorted(candidates, reverse=True):
+            if other in seen:
+                continue  # One read is cached under several freshness keys.
+            try:
+                cached = json.loads(Path(path).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if (cached.get("receipt") or {}).get("status") != "observed":
+                continue
+            seen.add(other)
+            content_type = str(cached.get("content_type") or "")
+            text = (cached.get("markdown")
+                    or (cached.get("content") if content_type and "html" not in content_type else None)
+                    or cached.get("text"))
+            if isinstance(text, str) and text:
+                texts.append(text)
+            if len(texts) >= limit:
+                break
+        return texts
 
     async def _platform_items(self, url, result, policy, policy_overrides):
         """With auto_items on a shop platform's collection page (recognised from

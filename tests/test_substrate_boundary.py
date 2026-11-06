@@ -17,7 +17,7 @@ CORE = frozenset({
     "browser_install", "crawl4ai_config", "crawl4ai_preflight", "crawl4ai_provider", "crawl4ai_worker", "egress",
     "experimental", "installer",
     "handoff", "hosted_providers", "identity",
-    "identity_snapshots", "interactions", "local_search", "main_content", "managed_browsers", "site_feeds", "mcp_server", "module_discovery", "records", "pagination", "plugin_admin", "plugin_catalog", "profiles",
+    "identity_snapshots", "interactions", "local_search", "main_content", "managed_browsers", "site_feeds", "mcp_server", "module_discovery", "records", "record_schema", "pagination", "plugin_admin", "plugin_catalog", "profiles",
     "provider_worker", "providers", "public_entry", "real_browser", "recovery", "repair",
     "route_memory", "routes", "runtime", "scrapling_ready", "search", "search_checks", "search_plugins",
     "site_watch",

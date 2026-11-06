@@ -41,6 +41,42 @@ is refused or missing, the page's own items stand. `platform_listing_json: false
 turns it off. A listing that says it is empty ("No products available") carries
 an `empty_listing` flag in its quality grade.
 
+### Your own fields on each item
+
+Add a schema and every item also carries the fields you name. The schema is either a small
+object of field names to type hints, or a JSON Schema (properties with `type`, `format`,
+`description`, and an optional `x-hint`):
+
+```python
+schema = {"role": "title", "salary": "price", "location": "location",
+          "remote": "boolean", "posted": "date"}
+page = await web.read(url, policy_overrides={"auto_items": True, "extract_schema": schema})
+page["items"][0]["extracted"]
+# {"data": {"role": "Senior Engineer", "salary": 120000, "location": "Springfield, NSW",
+#           "remote": True, "posted": "2 days ago"},
+#  "sources": {"role": "item.name", "salary": "item.price", "location": "item.location",
+#              "remote": "text:Remote", "posted": "item.date"},
+#  "missing": []}
+```
+
+Hints: `title`, `text`, `price`, `number`, `integer`, `date`, `location`, `url`, `image`,
+`boolean`, `rating`, `count`, `availability`, `currency`. In a JSON Schema with no hint, the
+field's type, format and name suggest one (`fee` is a price, `city` a location, a `boolean` is a
+boolean).
+
+No model is used. Each field is filled, in this order:
+
+1. **By hint**, from what the item already has: `price` (or `was_price` when the field is named
+   like one, e.g. `was` or `rrp`), `date`, `location`, `name`, and so on. A boolean named like
+   stock (`in_stock`) reads the item's `availability`.
+2. **By label**, from a "Label: value" line in the item's own text, whose label is most like the
+   field's name or description (`Pay:` or `Salary:` for `salary`, `Venue:` for `location`).
+3. **For a boolean**, from a short line that is the field's own word (`Remote`, `Free entry`).
+
+`sources` says where each value came from, and `missing` lists what nothing filled. A boolean
+the item doesn't mention is missing, never guessed `false`. `receipt.auto_items.schema` counts
+how much was filled.
+
 ## Let Frankensurf draft one
 
 Most listing pages carry their rows as data for their own frontend: JSON-LD,
