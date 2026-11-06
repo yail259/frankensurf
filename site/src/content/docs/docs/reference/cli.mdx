@@ -86,6 +86,16 @@ says so: `items_truncated` is `true` and `items_total` is how many it holds.
 frankensurf read https://shop.example/clearance --items --max-items 500
 ```
 
+`--schema FILE.json` with `--items` also fills your own fields on each item, as `extracted`
+(`data`, `sources`, `missing`). The file is a JSON Schema, or field names to type hints:
+
+```bash
+echo '{"role": "title", "salary": "price", "location": "location", "remote": "boolean", "posted": "date"}' > jobs.json
+frankensurf read https://jobs.example/search?q=widget --items --schema jobs.json
+```
+
+See [Site modules](/docs/read/site-modules/#your-own-fields-on-each-item) for how fields are filled.
+
 `map URL` (`--query`, `--limit`) and `crawl URL` (`--limit`, `--max-depth`, `--include-path`, `--exclude-path`,
 `--entire-domain`, `--ignore-robots`): see [Map and crawl](/docs/crawl/).
 

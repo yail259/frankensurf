@@ -93,6 +93,10 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     (JSON-LD, microdata, Open Graph, its own JSON), with missing, sources and valid. A page
     missing a required property counts as incomplete, so the read climbs to a stronger tool.
     No model is used: a property the page never publishes stays missing.
+    schema may also be field names to type hints ({"role": "title", "salary":
+    "price", "remote": "boolean", "posted": "date"}). With items=True each item
+    gets extracted: {data, sources, missing}, filled from the item's typed fields
+    and its labelled text ("Salary: ..."), no model.
     A saved site module matching the URL shapes the read by default (see the
     site_modules tool): the result gains items and receipt.module. module names
     one, "none" turns modules off, module_override runs an unsaved module once.
