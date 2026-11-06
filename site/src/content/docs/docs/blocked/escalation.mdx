@@ -60,8 +60,13 @@ loads results with JavaScript serves only its header and footer as text. So when
 an automatic read lands on plain HTTP with scripts and under 5,000 characters of
 text (`second_opinion_text_chars`), Frankensurf also asks a browser and keeps
 whichever page has clearly more content (at least 1.5 times as much, and 1,000
-characters more). `receipt.second_opinion` shows both. If the render fails or
-isn't better, the HTTP page stands; the only cost is time.
+characters more, or at least as much text with twice the prices and 10 more).
+A longer page gets the same check when it ships client-side templates
+(`<script type="text/template">` and kin) with at least 20 unfilled
+placeholders (`second_opinion_template_placeholders`): its product grid is drawn
+after load while its menus already make the page look long.
+`receipt.second_opinion` shows both. If the render fails or isn't better, the
+HTTP page stands; the only cost is time.
 
 ### Completeness
 
@@ -164,12 +169,15 @@ Frankensurf searches the site itself for what the URL asked for: its query
 (`?q=air+fryer` is "air fryer", in any of the usual parameter names), the words
 of its last path segment (`/p/brass-desk-lamp-123` is "brass desk lamp"), or the
 one query value that is plain words.
-It reads the site's home page, finds its search (schema.org `SearchAction`, the
-search form, or the search box itself), and reads the results. They stand only
-when they are complete and mention those words:
+It reads the site's home page first. When exactly one link there names every
+one of those words in its last path segment with at most two more (`/clearance`
+is `/clearance-sale`), that page is read and stands when it is complete
+(`via` is `home page link`). Otherwise it finds the site's search (schema.org
+`SearchAction`, the search form, or the search box itself) and reads the
+results. They stand only when they are complete and mention those words:
 
 - `receipt.rescued` says it happened: `from` (the URL you asked for), `query`,
-  `via` and `search_url`; the quality grade carries a `rescued` flag and
+  `via` and `search_url` (or `link_url`); the quality grade carries a `rescued` flag and
   `receipt.next_step` says these are search results, not the page itself.
 - When the search finds nothing that fits, the read stays `NOT_FOUND` and
   `receipt.rescue` says what was tried.

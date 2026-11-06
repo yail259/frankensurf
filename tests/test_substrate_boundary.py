@@ -13,6 +13,7 @@ CORE = frozenset({
     "__init__", "__main__", "actions", "adapters", "bot_auth",
     "browser_use_action_provider", "browser_use_action_worker", "browser_use_binding",
     "browser_use_config", "browser_use_provider", "browser_use_worker", "cli", "completeness",
+    "platform_feeds",
     "browser_install", "crawl4ai_config", "crawl4ai_preflight", "crawl4ai_provider", "crawl4ai_worker", "egress",
     "experimental", "installer",
     "handoff", "hosted_providers", "identity",
