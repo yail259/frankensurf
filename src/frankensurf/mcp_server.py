@@ -334,11 +334,18 @@ async def paginate(url: str, adapter: str,
 @server.tool()
 async def batch(urls: list[str], provider: str | None = None, adapter: str | None = None,
                 identity: str | None = None, include_images: bool = False,
-                freshness: str = "now") -> list[dict]:
-    """Bounded batch retrieval with per-result receipts and named identity policy enforcement."""
+                freshness: str = "now", items: bool = False,
+                concurrency: int | None = None) -> list[dict]:
+    """Read many URLs in one call: use this instead of parallel read calls.
+
+    Different sites are read at once (up to concurrency, default 6); one site's
+    URLs take turns with its pacing, the first one scouting the route. Every
+    result keeps its own receipt, in input order. items=True returns listing
+    items per page, as read does."""
     async with runtime() as web:
         results = await web.batch(urls, WebPolicy(provider=provider, identity=identity,
-            include_images=include_images, freshness=freshness), adapter=adapter)
+            include_images=include_images, freshness=freshness, auto_items=items), adapter=adapter,
+            **({"concurrency": concurrency} if concurrency is not None else {}))
         for result in results:
             result.pop("content", None)
         return results

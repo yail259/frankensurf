@@ -2197,7 +2197,7 @@ class Runtime:
     configured browser, never exports cookies.
     """
     def __init__(self, state_dir: str | Path = "state", steel_api_url: str | None = None,
-                 local_cdp_url: str | None = None, concurrency: int = 4,
+                 local_cdp_url: str | None = None, concurrency: int = 6,
                  per_domain: int = 1, domain_delay: float = 0.25,
                  transport=None, identity_registry: str | Path | None = None,
                  plugin_catalog=None, plugin_config_path: str | Path | None = None):
@@ -3647,28 +3647,9 @@ class Runtime:
     # with fake pages turn it off; tests/test_completeness.py turns it on.
     completeness_enabled = True
 
-    def _pacing_path(self):
-        return self.state_dir / "origin-pacing.json"
-
     def _pacing_load(self):
-        try:
-            data = json.loads(self._pacing_path().read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
-            return {}
-
-    def _pacing_save(self, data):
-        now = time.time()
-        data = {key: entry for key, entry in data.items()
-                if isinstance(entry, dict) and max(entry.get("next_at", 0), entry.get("cooldown_until", 0)) > now}
-        try:
-            self.state_dir.mkdir(parents=True, exist_ok=True)
-            fd, temporary = tempfile.mkstemp(prefix=".origin-pacing-", dir=self.state_dir)
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump(data, stream, sort_keys=True)
-            os.replace(temporary, self._pacing_path())
-        except OSError:
-            pass
+        from . import pacing
+        return pacing.load(self.state_dir)
 
     def _hints_path(self):
         return self.state_dir / "origin-routes.json"
@@ -4406,6 +4387,16 @@ class Runtime:
 
     async def _read_paced(self, url, policy, provider, adapter, policy_overrides,
                           workload_assertions, effective):
+        # One read per origin at a time on this machine (pacing.py): batches,
+        # other Runtimes and other processes sharing the state directory queue.
+        from . import pacing
+        key = self._pacing_key(url, effective) if self.pacing_enabled and isinstance(url, str) else None
+        async with pacing.turn(self.state_dir, key, effective.origin_min_interval_seconds):
+            return await self._read_paced_turn(url, policy, provider, adapter, policy_overrides,
+                                               workload_assertions, effective)
+
+    async def _read_paced_turn(self, url, policy, provider, adapter, policy_overrides,
+                               workload_assertions, effective):
         key = self._pacing_key(url, effective) if self.pacing_enabled and isinstance(url, str) else None
         cooling = None  # The cool-down failure, when only the site's known connection may try.
         if key is not None and (effective.origin_min_interval_seconds or effective.origin_cooldown_seconds):
@@ -4501,15 +4492,16 @@ class Runtime:
             self._record_origin_hint(url, effective, result.get("receipt") or {})
             _suggest_handoff(result.get("receipt") or {})
         if key is not None and (effective.origin_min_interval_seconds or effective.origin_cooldown_seconds):
-            data = self._pacing_load()
-            entry = dict(data.get(key) or {})
-            entry["next_at"] = time.time() + effective.origin_min_interval_seconds
             code = ((result.get("receipt") or {}).get("failure") or {}).get("code")
-            if code in effective.origin_cooldown_failures and effective.origin_cooldown_seconds:
-                entry["cooldown_until"] = time.time() + effective.origin_cooldown_seconds
-                entry["code"] = code
-            data[key] = entry
-            self._pacing_save(data)
+
+            def finished(entry):
+                entry["next_at"] = time.time() + effective.origin_min_interval_seconds
+                if code in effective.origin_cooldown_failures and effective.origin_cooldown_seconds:
+                    entry["cooldown_until"] = time.time() + effective.origin_cooldown_seconds
+                    entry["code"] = code
+            # Under the pacing lock: other reads' turns in the file are kept.
+            from . import pacing
+            pacing.update(self.state_dir, key, finished)
         return result
 
     def _egress_client(self, egress):
@@ -7720,10 +7712,29 @@ class Runtime:
         return await asyncio.gather(*(limited(url) for url in urls[:policy.max_images]))
 
     async def batch(self, urls: list[str], policy: WebPolicy | None = None, adapter: str | None = None,
-                    **read_options) -> list[dict]:
+                    *, concurrency: int | None = None, on_result=None, **read_options) -> list[dict]:
+        """Read many URLs: different sites at once (up to ``concurrency``, default
+        the Runtime's), one site's URLs in turn with its pacing. ``on_result(index,
+        result)`` is called as each URL finishes; the list keeps the input order."""
+        if concurrency is not None and (type(concurrency) is not int or concurrency < 1):
+            raise ValueError("concurrency must be a positive integer")
+
+        def done(index, result):
+            if on_result is not None:
+                on_result(index, result)
+            return result
         if policy and (policy.identity or policy.provider == "local_cdp"):
             # One canonical profile lease per operation; serialize named batch jobs.
-            return [await self.read(url,policy,adapter=adapter,**read_options) for url in urls]
+            return [done(index, await self.read(url, policy, adapter=adapter, **read_options))
+                    for index, url in enumerate(urls)]
+        limit = asyncio.Semaphore(concurrency) if concurrency is not None else self._global
+        from . import pacing
+        from .routes import request_policy
+        try:
+            effective, _ = request_policy(policy, read_options.get("policy_overrides"))
+            interval = effective.origin_min_interval_seconds
+        except Exception:
+            effective, interval = None, 0
         # The first URL per site scouts: it climbs the ladder alone, and the rest
         # of that site wait for it, then start from the route it found (route
         # hints and clearance) instead of each climbing from the bottom at once.
@@ -7737,18 +7748,26 @@ class Runtime:
             if index != scout:
                 await scouted.wait()
             try:
-                return await paced(url, domain)
+                return done(index, await paced(url, domain))
             finally:
                 if index == scout:
                     scouted.set()
 
         async def paced(url, domain):
             sem = self._domain_sems.setdefault(domain, asyncio.Semaphore(self._per_domain_count))
-            async with self._global, sem:
-                delay = self._domain_next.get(domain, 0) - time.monotonic()
-                if delay > 0: await asyncio.sleep(delay)
-                self._domain_next[domain] = time.monotonic() + self._domain_delay
-                result = await self.read(url, replace(policy, include_images=False) if policy and policy.include_images else policy, adapter=adapter, **read_options)
+            # A site's queue waits for its turn outside the worker pool, so one
+            # slow or busy site never holds slots other sites could use.
+            async with sem:
+                if self.pacing_enabled and interval and isinstance(url, str):
+                    try:
+                        await pacing.ready(self.state_dir, self._pacing_key(url, effective), interval)
+                    except (ValueError, TypeError):
+                        pass
+                async with limit:
+                    delay = self._domain_next.get(domain, 0) - time.monotonic()
+                    if delay > 0: await asyncio.sleep(delay)
+                    self._domain_next[domain] = time.monotonic() + self._domain_delay
+                    result = await self.read(url, replace(policy, include_images=False) if policy and policy.include_images else policy, adapter=adapter, **read_options)
             if policy and policy.include_images and result["receipt"]["status"] == "observed":
                 result["images"] = await self.download_images(result["image_urls"], policy)
                 self._save_trace(result)

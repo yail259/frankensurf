@@ -496,7 +496,18 @@ async def run(args):
             elif args.operation == "trace":
                 result = web.trace(args.urls[0])
             elif args.operation == "batch":
-                result = await web.batch(args.urls, policy, adapter=args.adapter)
+                options = {"concurrency": args.concurrency} if args.concurrency is not None else {}
+                if args.jsonl:
+                    import sys
+
+                    def on_result(index, page):
+                        line = _batch_line(args.urls[index], index, page, bool(args.items))
+                        sys.stdout.write(json.dumps(line, ensure_ascii=False) + "\n")
+                        sys.stdout.flush()
+                    options["on_result"] = on_result
+                result = await web.batch(args.urls, policy, adapter=args.adapter, **options)
+                if args.jsonl:
+                    return result
             elif args.operation == "paginate":
                 result = await web.paginate(
                     args.urls[0], args.adapter,
@@ -661,6 +672,15 @@ def build_parser():
     parser.add_argument("--items", action="store_true", default=None,
         help="read, batch: also return items from a listing page with no saved module (name, url, price,"
              " was_price, availability, ...), items_quality, and auto_module to save with module add")
+    parser.add_argument("--concurrency", type=int, default=None,
+        help="batch: how many different sites to read at once (default 6); one site's URLs always"
+             " take turns with its pacing")
+    parser.add_argument("--jsonl", action="store_true",
+        help="batch: print one JSON line per URL as it finishes (url, status, grade, failure, trace_id;"
+             " items with --items) instead of one JSON array at the end")
+    parser.add_argument("--urls-file", metavar="FILE",
+        help="batch: read URLs from FILE, one per line ('-' for stdin; blank lines and # comments"
+             " skipped). With no URLs given, batch also reads them from piped stdin")
     parser.add_argument("--max-items", type=int,
         help="read, batch: most items --items returns (default 200, at most 500); more on the page"
              " sets items_truncated and items_total")
@@ -791,9 +811,54 @@ def build_parser():
     return parser
 
 
+def _url_lines(stream):
+    return [line.strip() for line in stream if line.strip() and not line.lstrip().startswith("#")]
+
+
+def _batch_urls(args):
+    """URLs from --urls-file (or '-'), or from piped stdin when none were given."""
+    import sys
+    if args.urls_file == "-":
+        return _url_lines(sys.stdin)
+    if not args.urls_file and not args.urls and sys.stdin is not None:
+        try:
+            return [] if sys.stdin.isatty() else _url_lines(sys.stdin)
+        except (OSError, ValueError):  # No usable stdin: the usual "requires a URL" error follows.
+            return []
+    if args.urls_file:
+        with open(args.urls_file, encoding="utf-8") as stream:
+            return _url_lines(stream)
+    return []
+
+
+def _batch_line(url, index, result, items):
+    """One --jsonl line: what an agent needs to act on this URL."""
+    receipt = result.get("receipt") or {}
+    failure = receipt.get("failure") or None
+    line = {"index": index, "url": url, "final_url": result.get("url"),
+            "status": receipt.get("status"),
+            "grade": (receipt.get("quality") or {}).get("grade"),
+            "failure": {"code": failure.get("code"), "message": failure.get("message")}
+                       if isinstance(failure, dict) else failure,
+            "trace_id": receipt.get("trace_id"), "title": result.get("title")}
+    if items:
+        line["items"] = result.get("items")
+        line["items_quality"] = result.get("items_quality")
+    return line
+
+
 def parse_args(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+    if (args.concurrency is not None or args.jsonl or args.urls_file) and args.operation != "batch":
+        parser.error("--concurrency, --jsonl and --urls-file are supported only for batch")
+    if args.concurrency is not None and args.concurrency < 1:
+        parser.error("--concurrency must be at least 1")
+    if args.operation == "batch":
+        try:
+            args.urls = [*args.urls, *_batch_urls(args)]
+        except OSError as error:
+            parser.error(f"--urls-file: {error}")
     if args.operation == "profile-list":
         if args.urls:
             parser.error("profile-list takes no arguments")

@@ -119,6 +119,26 @@ Search adds `--search-source-candidate`, `--search-source-allow`,
 `--max-cost USD` caps what one operation may spend (`max_cost_usd`). Fields
 without a flag are set from Python or MCP.
 
+## Batch
+
+`batch` reads different sites at once and one site's URLs in turn: the first URL of a
+site goes alone and finds the route, then the rest follow it, each starting
+`origin_min_interval_seconds` (2 s) after the last one finished. A site waiting for its
+turn holds no worker, so one busy site never slows the others. The turn is shared by
+every read on the machine that uses the same `--state`, separate `frankensurf read`
+processes included, so running reads side by side is never faster than one `batch`.
+
+| Option | What it does |
+| --- | --- |
+| `--concurrency N` | How many different sites to read at once (default 6). |
+| `--jsonl` | Print one JSON line per URL as it finishes, instead of one array at the end: `index`, `url`, `final_url`, `status`, `grade`, `failure` (`code`, `message`), `trace_id`, `title`, and `items`, `items_quality` with `--items`. |
+| `--urls-file FILE` | Read URLs from a file, one per line; blank lines and `#` comments are skipped. `-` reads stdin, and so does a `batch` given no URLs with stdin piped in. |
+
+```bash
+frankensurf batch --urls-file shops.txt --items --jsonl
+cat urls.txt | frankensurf batch --jsonl
+```
+
 ## Other options
 
 | Option | What it does |
