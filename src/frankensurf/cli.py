@@ -36,6 +36,7 @@ _POLICY_ARGUMENTS = {
     "links": "include_links",
     "markdown_output": "markdown_output",
     "items": "auto_items",
+    "max_items": "max_items",
     "max_links": "max_links",
     "scroll_screens": "scroll_screens",
     "search_source_candidates": "search_source_candidates",
@@ -680,6 +681,9 @@ def build_parser():
     parser.add_argument("--urls-file", metavar="FILE",
         help="batch: read URLs from FILE, one per line ('-' for stdin; blank lines and # comments"
              " skipped). With no URLs given, batch also reads them from piped stdin")
+    parser.add_argument("--max-items", type=int,
+        help="read, batch: most items --items returns (default 200, at most 500); more on the page"
+             " sets items_truncated and items_total")
     parser.add_argument("--scroll-screens", type=int,
         help="Scroll this many screens before capture so lazy content loads")
     parser.add_argument("--expect", action="append",
@@ -687,8 +691,9 @@ def build_parser():
     parser.add_argument("--agent-task",
         help="Task for the browser agent, e.g. 'search for sony a7iii'; the agent may finish on any allowed page")
     parser.add_argument("--schema", metavar="FILE",
-        help="read: a JSON Schema file; fills result.extracted from the page's JSON-LD, microdata,"
-             " meta tags and own JSON, and climbs to a stronger tool while a required field is missing")
+        help="read: a JSON Schema file, or a JSON object of field names to type hints ({\"salary\": \"price\"});"
+             " fills result.extracted from the page's JSON-LD, microdata, meta tags and own JSON, and climbs to"
+             " a stronger tool while a required field is missing. With --items, each item gets extracted too")
     parser.add_argument("--main", action="store_true", default=None,
         help="Also return main_text: the article without menus, footers and banners")
     parser.add_argument("--markdown", action="store_true", default=None,

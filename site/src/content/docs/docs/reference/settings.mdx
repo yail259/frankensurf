@@ -50,6 +50,9 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `main_content` | `False` | Also return `main_text`: the article without menus, footers and banners. |
 | `interactions` | `()` | Safe browser actions on browser reads: `dismiss_consent` (reject, never accept), `load_more`, `reveal`. |
 | `auto_items` | `False` | Items from any listing page with no saved module, found in the page's own data; the draft module comes back too. |
+| `platform_listing_json` | `True` | With `auto_items` on a shop platform's collection page (named by the page's own markup), also read the platform's public listing JSON (Shopify's `products.json`). |
+
+| `max_items` | `None` | Most items `auto_items` returns (`None`: 200; at most 500). A page with more sets `items_truncated` and `items_total`. |
 | `max_image_bytes` | 20 MB | Largest image accepted. |
 | `image_max_attempts` | `2` | Attempts per image. |
 | `image_retry_delay_seconds` | `0.25` | Delay between image attempts. |
@@ -117,7 +120,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `hedge_after_seconds` | `2.0` | After this long without a page, a read is raced by hedge_racers free tools (smart lightning); 0 turns it off. |
 | `hedge_racers` | `2` | Free tools that race a read with no page after hedge_after_seconds (smart lightning), 1 to 3. |
 | `lightning` | `False` | Start the read and two other free tools at once and keep the first complete page; escalation races four. |
-| `rescue_not_found` | `True` | After NOT_FOUND, search the site itself for what the URL asked for and return the results when they mention it (receipt.rescued). |
+| `rescue_not_found` | `True` | After NOT_FOUND, read the home page's one link naming what the URL asked for, else search the site itself, and return the page or results when they fit (receipt.rescued). |
 | `interact_on_escalation` | `True` | Pages that need a choice or show only a consent notice get one local-browser read with the safe actions first. |
 | `warm_up_on_wall` | `True` | A public read that ends at a wall gets one more try through the site's home page. |
 | `site_session_hours` | `24.0` | Hours the local browser keeps each site's cookies; 0 turns it off. |
@@ -145,6 +148,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `html_shell_large_min_text_chars` | `1000` | ... with less text than this is also an app shell. |
 | `rendered_min_text_chars` | `50` | A rendered page with less text than this is `EMPTY_PAGE`. |
 | `second_opinion_text_chars` | `5000` | Below this much text, a plain HTTP page with scripts is also rendered and the fuller page kept; 0 turns it off. |
+| `second_opinion_template_placeholders` | `20` | A plain HTTP page whose client-side templates hold this many unfilled placeholders is also rendered, however long its text; 0 turns it off. |
 | `navigation_page` | `1` | Page 1 to 3 through a site's own Next navigation (seeded routes only). |
 | `public_entry_url` | `None` | Entry page a `camoufox_entry` route visits first. |
 | `public_entry_continue_failures` | `BLOCKED` | Entry-page failures that still continue to the target. |

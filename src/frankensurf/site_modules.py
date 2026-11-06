@@ -440,20 +440,36 @@ class SiteModule:
                 or any(marker in title for marker in self.invalid.get("title", ()))
                 or any(marker in body for marker in self.invalid.get("text", ())))
 
-    def extract(self, result, url, *, query_terms=()):
-        """The module's output for one observed page: items, next page, assertions."""
+    def extract(self, result, url, *, query_terms=(), schema=None):
+        """The module's output for one observed page: items, next page, assertions.
+        schema (a caller's fields, record_schema) adds extracted to each item."""
         base = result.get("url") or url
         output = {"items": [], "count": 0, "first": {}, "matching_query": []}
         if self.items:
             spec = self.sources[self.items["from"]]
-            rows = _source_rows(spec, result, base)[:self.items["limit"]]
+            counted = {}
+            rows = _source_rows(spec, result, base, counted)
+            total = counted.get("total", len(rows))
+            rows = rows[:self.items["limit"]]
+            if total > len(rows):
+                # Capped: how many rows the page holds, so a caller can ask for more.
+                output.update(truncated=True, total=total)
             items = [_map_fields(row, self.items["fields"], base) for row in rows]
             join = self.items.get("join")
             if join:
                 others = _source_rows(self.sources[join["from"]], result, base)
                 _join(items, others, join, base)
+            if schema:
+                # Each item keeps its row (text, or JSON keys as labels) until its fields are filled.
+                for item, row in zip(items, rows):
+                    item["_row"] = row
             if spec.get("detect") or spec["kind"] == "markdown":
                 items = _typed(items, rows, spec)
+            if schema:
+                from .record_schema import fill_items
+                kept = [item.pop("_row") for item in items]
+                fill_items(schema, items, [str(row.get("_text") or "") if isinstance(row, dict) else "" for row in kept],
+                           [None if spec["kind"] in ("html", "markdown") else row for row in kept])
             items = [item for item in items if any(value not in (None, "", [], {}) for value in item.values())]
             output.update(items=items, count=len(items), first=items[0] if items else {})
             if query_terms:
@@ -574,7 +590,9 @@ def _next_flight(content):
 _DECODERS = {"next_flight": _next_flight}
 
 
-def _source_rows(spec, result, base):
+def _source_rows(spec, result, base, counted=None):
+    """The source's rows on the page (at most _MAX_ITEMS). counted, when
+    given, gets "total": how many the page holds when that is more."""
     kind = spec["kind"]
     if kind == "jsonld":
         for block in _jsonld_blocks(result.get("structured")):
@@ -603,7 +621,10 @@ def _source_rows(spec, result, base):
         content_type = str(result.get("content_type") or "")
         text = (result.get("content") if "html" not in content_type and content_type else None) \
             or result.get("markdown") or result.get("text") or ""
-        return markdown_records(text, base)[:_MAX_ITEMS]
+        rows = markdown_records(text, base, keep_text=True)
+        if counted is not None:
+            counted["total"] = len(rows)
+        return rows[:_MAX_ITEMS]
     from bs4 import BeautifulSoup
     soup = BeautifulSoup((result.get("content") or "")[:4_000_000], "html.parser")
     if kind == "embedded_json":
@@ -617,7 +638,10 @@ def _source_rows(spec, result, base):
                 return _as_rows(value)
         return []
     rows = []
-    for element in soup.select(spec["item_selector"])[:_MAX_ITEMS]:
+    elements = soup.select(spec["item_selector"])
+    if counted is not None:
+        counted["total"] = len(elements)
+    for element in elements[:_MAX_ITEMS]:
         row = {}
         for field, rule in spec["fields"].items():
             target = element.select_one(rule["selector"]) if rule.get("selector") else element
@@ -645,7 +669,7 @@ def _typed(items, rows, spec):
     from .records import DEFAULT, _OPTIONAL, enrich, is_ad
     kept = []
     for item, row in zip(items, rows):
-        if "_text" in row:
+        if "_text" in row and spec["kind"] == "html":
             enrich(item, row["_text"], spec.get("detect") or DEFAULT)
         else:
             item.update({key: row[key] for key in _OPTIONAL if row.get(key) not in (None, "") and key not in item})

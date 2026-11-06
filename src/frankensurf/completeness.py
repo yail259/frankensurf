@@ -311,6 +311,14 @@ _UNRENDERED = re.compile(r"\{\{\s*[\w.$]+\s*\}\}|\$\{\s*[\w.]+\s*\}|\b(?:NaN|und
 _INTERACTION_GATE = re.compile(
     r"(?i)\b(?:select|choose|pick|enter|add)\b[^.!?]{0,80}?\bto (?:see|view|get|show|check)\b"
     r"[^.!?]{0,30}?\b(?:prices?|pricing|rates?|fares?|availability|cost|quotes?)\b")
+# A listing that says it is empty: its grid (often drawn by a script) showed
+# nothing, so the products, menus and "top sellers" around it are not the list.
+_EMPTY_LISTING = re.compile(
+    r"(?i)\b(?:no products (?:are )?(?:available|found|to show|in this (?:collection|category))"
+    r"|there are no products(?: listed)?(?: in this (?:collection|category))?"
+    r"|this (?:collection|category) is (?:currently )?empty"
+    r"|no (?:products|items) (?:match|matched) your (?:search|selection|filters?)"
+    r"|0 (?:products|items) found)\b")
 
 
 def _placeholder(text: str, zero_prices: int, prices: int) -> str | None:
@@ -569,6 +577,10 @@ def assess(url: str, result: dict, *, min_items: int = 10, min_prices: int = 4,
             # Real page, but its prices wait for a choice (guests, dates, a
             # postcode): no stronger read tool will show them.
             verdict["needs_interaction"] = " ".join(gate.group(0).split())[:160]
+    if kind != "item" and article is None:
+        empty = _EMPTY_LISTING.search(text[:500_000])
+        if empty:
+            verdict["empty_listing"] = " ".join(empty.group(0).split())
     # Only a page that looks like results can be the wrong results; an
     # incomplete one may still be loading them, so it escalates as before.
     if kind == "search" and complete:
@@ -592,6 +604,8 @@ def quality(verdict: dict | None, receipt: dict | None = None) -> dict:
         flags.append("navigation")
     if verdict.get("needs_interaction"):
         flags.append("needs_interaction")
+    if verdict.get("empty_listing"):
+        flags.append("empty_listing")
     if (receipt or {}).get("archived"):
         flags.append("archived")
     if (receipt or {}).get("rescued"):
@@ -603,7 +617,7 @@ def quality(verdict: dict | None, receipt: dict | None = None) -> dict:
     else:
         grade = "good"
     out = {"grade": grade, "kind": verdict.get("kind"), "flags": flags}
-    for key in ("reason", "article", "item_links", "prices", "text_chars"):
+    for key in ("reason", "article", "empty_listing", "item_links", "prices", "text_chars"):
         if verdict.get(key) is not None:
             out[key] = verdict[key]
     return out
