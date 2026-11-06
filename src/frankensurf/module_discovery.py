@@ -296,7 +296,8 @@ def _html_candidates(content, url, terms):
                 groups.setdefault(f"{element.name}.{name}", []).append(element)
     found = []
     for selector, elements in groups.items():
-        if not 4 <= len(elements) <= 400 or _CHROME_PATH.search(selector.split(".", 1)[1]):
+        # Long category pages show hundreds of rows; only the first 40 are checked.
+        if not 4 <= len(elements) <= 2000 or _CHROME_PATH.search(selector.split(".", 1)[1]):
             continue
         sample = elements[:40]
         rows = []
@@ -338,9 +339,12 @@ def _html_candidates(content, url, terms):
     return found
 
 
-def _sub_selector(elements, test):
-    """The tag.class inside each row whose element passes test, most common first."""
-    counts = {}
+def _sub_selector(elements, test, name_test=None):
+    """The tag.class inside each row whose element passes test, most common
+    first, then the tightest (least text). name_test limits which of the
+    element's classes may name it: a price element's "price" class, not the
+    layout class it shares with the title."""
+    counts, sizes = {}, {}
     for element in elements[:30]:
         seen = set()
         for inner in element.find_all(True, class_=True):
@@ -348,12 +352,13 @@ def _sub_selector(elements, test):
                 continue
             for name in inner.get("class") or ():
                 key = f"{inner.name}.{name}"
-                if _CLASS.fullmatch(name) and key not in seen:
+                if _CLASS.fullmatch(name) and key not in seen and (name_test is None or name_test(name)):
                     seen.add(key)
                     counts[key] = counts.get(key, 0) + 1
+                    sizes[key] = sizes.get(key, 0) + len(inner.get_text(" ", strip=True))
     if not counts:
         return None
-    best, hits = max(counts.items(), key=lambda pair: pair[1])
+    best, hits = max(counts.items(), key=lambda pair: (pair[1], -sizes[pair[0]] / pair[1]))
     return best if hits >= 0.6 * min(len(elements), 30) else None
 
 
@@ -384,12 +389,30 @@ def _html_source(candidate):
             break
     if candidate["priced"]:
         price = _sub_selector(elements, lambda node: re.search(r"(?i)price", " ".join(node.get("class") or ()))
-                              and _PRICE_TEXT.search(node.get_text(" ", strip=True)))
-        if price:
-            fields["price"] = {"selector": price}
+                              and _PRICE_TEXT.search(node.get_text(" ", strip=True)),
+                              name_test=lambda name: re.search(r"(?i)price", name))
+        # No price element: the row's own text gives the price (detect, below).
+        fields["price"] = {"selector": price} if price else {}
     if candidate["imaged"]:
         fields["image"] = {"selector": "img", "attribute": _IMAGE_ATTRIBUTES}
-    return {"kind": "html", "item_selector": candidate["selector"], "fields": fields}
+    from .records import DEFAULT
+    return {"kind": "html", "item_selector": candidate["selector"], "fields": fields, "detect": list(DEFAULT)}
+
+
+def _markdown_candidates(result, url, content_type):
+    """Repeated cards in a text-only page (a reader's markdown, plain text):
+    there is no markup to select from, so the module reads the cards by shape."""
+    if "html" in content_type:
+        return []
+    from .records import markdown_records
+    rows = markdown_records(result.get("content") or result.get("text") or "", result.get("url") or url)
+    if len(rows) < _MIN_ROWS:
+        return []
+    fields = {role: role for role in ("name", "url") if all(row.get(role) for row in rows)}
+    for role in ("price", "image"):
+        if sum(1 for row in rows if row.get(role) is not None) >= (0.3 if role == "price" else 0.6) * len(rows):
+            fields[role] = role
+    return [{"source": {"kind": "markdown"}, "fields": fields, "rows": len(rows), "score": len(rows)}]
 
 
 def _module_id(url):
@@ -402,7 +425,9 @@ def draft(url, candidate, *, module_id=None, notes=None, search=None):
     """A site module record for one candidate list on the page at url."""
     parsed = urlparse(url)
     origin = f"{parsed.scheme}://{parsed.netloc}"
-    types = {"name": "text", "url": "url", "price": "number", "image": "url"}
+    # Page text is read as prices (a currency marker or nothing); feed JSON keeps numbers.
+    types = {"name": "text", "url": "url", "image": "url",
+             "price": "price" if candidate["source"]["kind"] in ("html", "markdown") else "number"}
     record = {
         "schema": "frankensurf.site-module/v1",
         "id": module_id or _module_id(url),
@@ -609,6 +634,30 @@ def verify_items(items, result, url) -> dict:
     return {"grade": grade, "count": n, "score": round(score, 2), **shares}
 
 
+def items_quality(items, result, url) -> dict:
+    """verify_items for items found without a saved module, with a reason: also
+    poor when the page shows prices but most items carry none, or when the page
+    looks like a listing (many prices) and no items came out."""
+    from .records import page_prices
+    shown = page_prices(result.get("text") or "")
+    if not items:
+        listing = shown >= 6
+        return {"grade": "poor", "count": 0, "score": 0.0, "page_prices": shown,
+                "reason": (f"the page looks like a listing ({shown} prices) but no repeated items were found"
+                           if listing else "no items")}
+    check = verify_items(items, result, url)
+    priced = sum(1 for item in items if isinstance(item.get("price"), (int, float)) and item["price"] > 0)
+    reason = None
+    if shown >= max(3, len(items) // 2) and priced < 0.5 * len(items):
+        check = {**check, "grade": "poor"}
+        reason = f"most items have no price ({priced} of {len(items)}) though the page shows {shown}"
+    elif check["grade"] != "good":
+        weak = [name for name, floor in (("linked", 0.8), ("named", 0.5), ("distinct", 0.8))
+                if check.get(name) is not None and check[name] < floor]
+        reason = "low shares: " + ", ".join(f"{name} {check[name]}" for name in weak) if weak else "mixed checks"
+    return {**check, "reason": reason or "items link to this site, are named in the page and distinct"}
+
+
 def discover(result, url, *, module_id=None, limit=3, search=None):
     """Draft site modules from one read result. Each draft is validated and run
     against the same page; drafts that extract nothing are dropped. JSON feeds
@@ -620,7 +669,7 @@ def discover(result, url, *, module_id=None, limit=3, search=None):
             if "html" in content_type or not content_type else [])
     pool = candidates(result, url) + [
         {"source": _html_source(item), "fields": None, "rows": item["rows"], "score": item["score"]}
-        for item in html]
+        for item in html] + _markdown_candidates(result, url, content_type)
     for candidate in pool:
         if candidate["fields"] is None:
             candidate["fields"] = {role: role for role in candidate["source"]["fields"]}

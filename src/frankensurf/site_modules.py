@@ -174,8 +174,11 @@ def _validate_sources(raw):
             allowed = {"kind", "url_contains", "path"}
             checked = {"kind": kind, "url_contains": _text(spec.get("url_contains"), 300),
                        "path": _path(spec.get("path"))}
+        elif kind == "markdown":
+            # Repeated cards in the page's markdown or text (records.markdown_records).
+            allowed, checked = {"kind"}, {"kind": kind}
         elif kind == "html":
-            allowed = {"kind", "item_selector", "fields"}
+            allowed = {"kind", "item_selector", "fields", "detect"}
             fields = spec.get("fields")
             if not isinstance(fields, dict) or not 0 < len(fields) <= 40:
                 _invalid("An html source needs 1 to 40 fields")
@@ -194,8 +197,15 @@ def _validate_sources(raw):
                     **({"attribute": [_identifier(name) for name in attribute]} if attribute else {})}
             checked = {"kind": kind, "item_selector": _selector(spec.get("item_selector")),
                        "fields": checked_fields}
+            if spec.get("detect") is not None:
+                # Typed-field detectors run over each row's text (records.DETECTORS).
+                from .records import DETECTORS
+                detect = spec["detect"]
+                if not isinstance(detect, list) or len(detect) > 20 or set(detect) - set(DETECTORS):
+                    _invalid("detect lists field detectors: " + ", ".join(sorted(DETECTORS)))
+                checked["detect"] = list(dict.fromkeys(detect))
         else:
-            _invalid("Site module source kind must be jsonld, embedded_json, captured_json or html")
+            _invalid("Site module source kind must be jsonld, embedded_json, captured_json, html or markdown")
         if set(spec) - allowed:
             _invalid("Unknown site module source setting")
         sources[name] = checked
@@ -213,8 +223,8 @@ def _validate_field_map(raw):
         if not isinstance(rule, dict) or set(rule) - {"path", "type"}:
             _invalid()
         kind = rule.get("type", "auto")
-        if kind not in ("auto", "text", "number", "url"):
-            _invalid("Field type must be auto, text, number or url")
+        if kind not in ("auto", "text", "number", "url", "price"):
+            _invalid("Field type must be auto, text, number, url or price")
         fields[name] = {"path": _path(rule.get("path")), "type": kind}
     return fields
 
@@ -435,12 +445,15 @@ class SiteModule:
         base = result.get("url") or url
         output = {"items": [], "count": 0, "first": {}, "matching_query": []}
         if self.items:
-            rows = _source_rows(self.sources[self.items["from"]], result, base)
-            items = [_map_fields(row, self.items["fields"], base) for row in rows[:self.items["limit"]]]
+            spec = self.sources[self.items["from"]]
+            rows = _source_rows(spec, result, base)[:self.items["limit"]]
+            items = [_map_fields(row, self.items["fields"], base) for row in rows]
             join = self.items.get("join")
             if join:
                 others = _source_rows(self.sources[join["from"]], result, base)
                 _join(items, others, join, base)
+            if spec.get("detect") or spec["kind"] == "markdown":
+                items = _typed(items, rows, spec)
             items = [item for item in items if any(value not in (None, "", [], {}) for value in item.values())]
             output.update(items=items, count=len(items), first=items[0] if items else {})
             if query_terms:
@@ -585,6 +598,12 @@ def _source_rows(spec, result, base):
         value = _json_after(text, spec.get("marker")) if text else None
         value = _walk(value, spec["path"]) if value is not None else None
         return _as_rows(value) if value is not None else []
+    if kind == "markdown":
+        from .records import markdown_records
+        content_type = str(result.get("content_type") or "")
+        text = (result.get("content") if "html" not in content_type and content_type else None) \
+            or result.get("markdown") or result.get("text") or ""
+        return markdown_records(text, base)[:_MAX_ITEMS]
     from bs4 import BeautifulSoup
     soup = BeautifulSoup((result.get("content") or "")[:4_000_000], "html.parser")
     if kind == "embedded_json":
@@ -611,8 +630,30 @@ def _source_rows(spec, result, base):
                 row[field] = " ".join(value) if isinstance(value, list) else value
             else:
                 row[field] = target.get_text(" ", strip=True)
+        if spec.get("detect"):
+            # Struck-through prices are the old price, whatever the site calls them.
+            for struck in element.select("s, del, strike"):
+                struck.insert(0, "was ")
+            row["_text"] = element.get_text("\n", strip=True)[:20_000]
         rows.append(row)
     return rows
+
+
+def _typed(items, rows, spec):
+    """Items with the typed fields their rows make evident (records.DETECTORS),
+    and without sponsored entries."""
+    from .records import DEFAULT, _OPTIONAL, enrich, is_ad
+    kept = []
+    for item, row in zip(items, rows):
+        if "_text" in row:
+            enrich(item, row["_text"], spec.get("detect") or DEFAULT)
+        else:
+            item.update({key: row[key] for key in _OPTIONAL if row.get(key) not in (None, "") and key not in item})
+        if is_ad(item):
+            continue
+        item.pop("sponsored", None)
+        kept.append(item)
+    return kept
 
 
 def _coerce(value, kind, base):
@@ -629,6 +670,11 @@ def _coerce(value, kind, base):
             return None
         number = float(found.group(0).replace(",", ""))
         return int(number) if number.is_integer() else number
+    if kind == "price":
+        # Only an amount with a currency marker (or a bare number) is a price:
+        # never a model number or a rating beside it.
+        from .records import parse_price
+        return parse_price(value)
     if kind == "text":
         return None if value is None else (" ".join(str(value).split()))[:_TEXT_MAX]
     if isinstance(value, str):
