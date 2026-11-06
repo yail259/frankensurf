@@ -18,6 +18,7 @@ was_price, availability, stock_count) so shopping pages read as before.
 """
 from __future__ import annotations
 
+import contextvars
 import re
 from urllib.parse import urljoin, urlparse
 
@@ -46,8 +47,11 @@ _WAS_BEFORE = re.compile(r"(?i)(?:\bwas|\brrp|\blist(?:\s+price)?|\breg(?:ular)?
 _WAS_AFTER = re.compile(r"(?i)^\W{0,3}(?:rrp|list\s+price)\b(?![\s:]{0,4}(?:[$£€₹]|[A-Z]{1,3}\s?\$|\d))")
 _SAVE_BEFORE =re.compile(r"(?i)\b(?:save|saving|you\s+save|discount)\W{0,4}$")
 _SAVE_AFTER = re.compile(r"(?i)^\s*(?:off\b|discount\b)")
-_THRESHOLD_BEFORE = re.compile(r"(?i)(?:\bover|\babove|\bspend|\bmin(?:imum)?|\boff|\borders?\s+of|\+)\W{0,3}$")
-_FEE_AFTER = re.compile(r"(?i)^\W{0,3}(?:shipping|postage|delivery\s+fee|p&p|per\s+month|/\s*mo|a\s+month|pm\b)")
+_THRESHOLD_BEFORE = re.compile(r"(?i)(?:\bover|\babove|\bspend|\bmin(?:imum)?|\boff|\borders?\s+of|\bafter|\+)"
+                               r"\W{0,3}$")
+_THRESHOLD_AFTER = re.compile(r"(?i)^\W{0,3}(?:(?:min(?:imum)?\s+)?spend|or\s+more|and\s+over)\b")
+_FEE_AFTER = re.compile(r"(?i)^\W{0,3}(?:shipping|postage|delivery\s+fee|p&p|per\s+month|/\s*mo|a\s+month|pm\b)"
+                        r"|^\s*/\s*\d*\s*(?:k?g|m?l|oz|lb|ea|each|unit|item|piece|pc)\b")  # a unit price
 _RANGE_JOIN = re.compile(r"^\s*(?:-|–|—|to)\s*$")
 
 
@@ -75,7 +79,8 @@ def prices(text):
         role = ("approx" if match.group("approx")
                 else "was" if _WAS_BEFORE.search(before) or _WAS_AFTER.search(after)
                 else "save" if _SAVE_BEFORE.search(before) or _SAVE_AFTER.search(after)
-                else "other" if _THRESHOLD_BEFORE.search(before) or _FEE_AFTER.search(after)
+                else "other" if (_THRESHOLD_BEFORE.search(before) or _THRESHOLD_AFTER.search(after)
+                                 or _FEE_AFTER.search(after))
                 else "price")
         entry = {"value": int(value) if value.is_integer() else value, "currency": _currency(match),
                  "role": role, "start": match.start(), "end": match.end(),
@@ -101,14 +106,113 @@ def _bare_number(text):
     return int(value) if value.is_integer() else value
 
 
-def offer(text):
+# Offer clauses: "Mouse from $129 Delivered, White $159 (Was $259)" names two
+# offers. Commas, semicolons, " / " and " | " end a clause; a bracket ends one
+# only when it holds a price of its own ("(Was $259)" and "($299.95 RRP)" stay
+# with the price before them). A comma inside a number ("$1,299") is no break.
+_CLAUSE_BREAK = re.compile(r"\s*(?:;|,(?!\d)|\s/\s|\s\|\s)\s*")
+_BRACKETED = re.compile(r"\(([^()]*)\)|\[([^\[\]]*)\]")
+_LABEL_EDGE = re.compile(r"(?i)^(?:from|was|now|only|just|rrp|save|delivered|shipped|each|for|at|and|or|plus|"
+                         r"with|in)\b\W*|\W*\b(?:from|was|now|only|just|rrp|save|delivered|shipped|each|for|at|"
+                         r"and|or|plus|with|in)$")
+_BREAK = "\x00"
+
+
+def _plain_prices(text):
+    return [entry for entry in prices(text) if entry["value"] > 0 and entry["role"] == "price"]
+
+
+def clauses(text):
+    """The offer clauses in text: pieces that each hold one price now, with the
+    words naming it and its own was price or saving. A piece with no amount
+    names the offer after it; a piece with only a was price or a saving
+    belongs to the offer before it."""
+    text = text or ""
+    marked = _BRACKETED.sub(lambda found: (_BREAK + found.group(0) + _BREAK)
+                            if _plain_prices(found.group(1) or found.group(2) or "") else found.group(0), text)
+    pieces = [piece.strip() for part in marked.split(_BREAK) for piece in _CLAUSE_BREAK.split(part)]
+    out, pending = [], []
+    for piece in pieces:
+        if not piece:
+            continue
+        found = [entry for entry in prices(piece) if entry["value"] > 0]
+        if any(entry["role"] == "price" for entry in found) and (pending or not out or _words(_label(piece))):
+            out.append(" ".join(pending + [piece]))
+            pending = []
+        elif found and out:
+            # "..., was $60" is the was price of the offer before, and "US $236 / A $360"
+            # (a price with no words of its own) is that offer in another currency.
+            out[-1] += " " + piece
+        else:
+            pending.append(piece)  # A label ("White,") or a was price that leads ("RRP $199, now $99").
+    if pending:
+        if out:
+            out[-1] += " " + " ".join(pending)
+        else:
+            out.append(" ".join(pending))
+    return out
+
+
+def _label(clause):
+    """The words that name an offer: its clause without amounts or price words."""
+    text = re.sub(r"(?i)\b(?:was|rrp|save|list\s+price)\b", " ", _PRICE.sub(" ", clause))
+    text = re.sub(r"\(\s*[^\w()]*\)|\[\s*[^\w\[\]]*\]", " ", text)
+    text = " ".join(re.sub(r"[()\[\]]", " ", text).split()).strip(" ,;:/|+-–—~")
+    while True:
+        shorter = _LABEL_EDGE.sub("", text).strip(" ,;:/|+-–—~")
+        if shorter == text:
+            return text
+        text = shorter
+
+
+def _words(text):
+    return {word for word in re.findall(r"[^\W_]{2,}", (text or "").lower())}
+
+
+def offer(text, *, title=None):
     """The price now, the was price and the currency evident in one block of text.
 
     The price now is the first plain price. A was price comes from an explicit
     was/RRP/list price above it, or a saving that agrees with two prices (or
     one: "$79 Save $10" was $89). Amounts that are thresholds, fees or
     converted guides are never the price, and a number with no currency
-    marker is never a price."""
+    marker is never a price.
+
+    Text that names several offers ("from $129, White $159 (Was $259)") is
+    read clause by clause: each pairs its own price and was price, never one
+    from another clause. offers lists them (label, price, was_price); the
+    price is the clause whose label best matches title, else the first."""
+    # Several offers share one line (a deal title): the title when it shows
+    # prices (a card's text may split them over lines), else the line the
+    # price now comes from, is read clause by clause.
+    line = title if title and _plain_prices(title) else next(
+        (line for line in (text or "").split("\n") if _plain_prices(line)), "")
+    parts = clauses(line)
+    if len(parts) < 2:
+        return _offer(text)
+    offers = []
+    for part in parts:
+        found = _offer(part)
+        if "price" in found:
+            offers.append({"label": _label(part), **found})
+    if len(offers) < 2:
+        return _offer(text) if not offers else {key: value for key, value in offers[0].items() if key != "label"}
+    # A title that is itself the line of offers names them all: the first leads.
+    name = _words(title) if title and not _plain_prices(title) else set()
+    chosen, best = offers[0], 0.0
+    for candidate in offers:
+        words = _words(candidate["label"])
+        score = len(words & name) / len(words | name) if words and name else 0.0
+        if score > best:
+            chosen, best = candidate, score
+    out = {key: value for key, value in chosen.items() if key != "label"}
+    out["offers"] = [{key: value for key, value in entry.items() if key in ("label", "price", "was_price", "price_max",
+                                                                           "currency")} for entry in offers]
+    return out
+
+
+def _offer(text):
+    """offer() for text that names one offer."""
     # "$0" is a price that has not loaded (or an empty cart), not a price.
     found = [entry for entry in prices(text) if entry["value"] > 0]
     plain = [entry for entry in found if entry["role"] == "price"]
@@ -260,7 +364,9 @@ def detect(text, names=DEFAULT, *, title=None):
         detector = DETECTORS.get(name)
         if detector is None:
             continue
-        for key, value in detector(body if name == "location" else text).items():
+        found = (detector(text, title=title) if name == "offer"
+                 else detector(body if name == "location" else text))
+        for key, value in found.items():
             fields.setdefault(key, value)
     return fields
 
@@ -291,6 +397,14 @@ _NOT_ITEM_LINK = re.compile(r"(?i)login|log-in|signin|sign-in|account|register|w
 _BUTTON = re.compile(r"(?i)^(?:add\s+to\s+(?:cart|basket|wishlist)|buy(?:\s+now)?|view(?:\s+details)?|details|"
                      r"compare|more|read\s+more|shop\s+now|apply(?:\s+now)?|save|share|special|sale|new|hot)\W*$")
 MIN_RECORDS = 3
+# Other pages of the same site, for template subtraction: a callable from a
+# page URL to the texts of its cached sibling pages, set by the runtime around
+# discovery (no reads of its own). None, or no sibling cached, skips the check.
+SIBLINGS = contextvars.ContextVar("frankensurf_record_siblings", default=None)
+# Typed fields that are numbers: navigation carries none of them.
+_NUMERIC = frozenset({"price", "was_price", "date", "rating", "count", "stock_count"})
+# A record whose confidence falls below this is dropped (see _confidence).
+MIN_CONFIDENCE = 0.5
 
 
 def _plain(text):
@@ -315,7 +429,8 @@ def markdown_records(text, url):
     host = urlparse(url).hostname or ""
     page = url.split("#")[0].rstrip("/")
     blocks, current, seen = [], None, set()
-    for line in text.splitlines()[:40_000]:
+    lines = text.splitlines()[:40_000]
+    for number, line in enumerate(lines):
         starts = []
         for found in _LINK.finditer(line):
             if found.group(1):
@@ -332,7 +447,8 @@ def markdown_records(text, url):
         opener = next((start for start in starts if start[0] not in seen), None)
         if opener is not None and (current is None or opener[0] != current["url"]):
             seen.add(opener[0])
-            current = {"url": opener[0], "names": [], "alts": [], "image": None, "lines": []}
+            current = {"url": opener[0], "names": [], "alts": [], "image": None, "lines": [], "start": number,
+                       "label": opener[1]}
             blocks.append(current)
         if current is None:
             continue
@@ -360,7 +476,7 @@ def markdown_records(text, url):
         # A label ("[In stock](...)", "(6 new offers)", "$58.88") is not a name.
         names = [name for name in block["names"] + block["alts"] if 3 <= len(name) <= 300 and not _BUTTON.match(name)
                  and not (len(name) <= 20 and availability(name)) and not re.fullmatch(r"\(.*\)", name)
-                 and len(re.findall(r"[^\W\d_]", _PRICE.sub("", name))) >= 3]
+                 and len(re.findall(r"[^\W\d_]", _COUNT.sub("", _RATING.sub("", _PRICE.sub("", name))))) >= 3]
         if not names:
             continue
         # The title is the shortest full label (the longer ones are blurbs).
@@ -371,26 +487,122 @@ def markdown_records(text, url):
             record["image"] = block["image"]
         typed = detect(body, title=name)
         record.update(typed)
+        # The record's signature counts only card facts: a price in running
+        # prose ("book online at $80 for ...") is page text, not a field.
+        terse = "\n".join(line for line in block["lines"] if line == name or not _prose(line))
         following = next((line for line in block["lines"][block["lines"].index(name) + 1:]
                           if line != name), None) if name in block["lines"] else None
         if (following and 2 <= len(following) <= 60 and ":" not in following and not _BUTTON.match(following)
                 and not re.search(r"\d", following) and not detect(following, title=None)):
             record["subtitle"] = following
-        record["_shape"] = frozenset(key for key in typed if key not in ("sponsored", "count_of"))
+        record["_shape"] = frozenset(key for key in detect(terse, title=name) if key not in ("sponsored", "count_of"))
+        record["_lines"] = block["lines"]
+        record["_position"] = block["start"] / max(1, len(lines))
+        record["_label"] = block["label"]
         records.append(record)
-    return _dominant(records)
+    template = None
+    siblings = SIBLINGS.get()
+    if siblings is not None and len(records) >= MIN_RECORDS:
+        try:
+            template = page_template(siblings(url), url)
+        except Exception:
+            template = None  # Template subtraction is a refinement; a bad cache entry never stops a read.
+    return _dominant(records, template)
 
 
-def _dominant(records):
+def _prose(line):
+    """A line of running prose, not a card fact: a long sentence."""
+    words = line.split()
+    return len(line) > 200 or (len(words) >= 10 and line.rstrip().endswith((".", "!", "?")))
+
+
+def _key(line):
+    return " ".join(line.lower().split())
+
+
+def page_template(texts, url):
+    """What a site repeats on every page (menus, footers, banners): the lines
+    and link targets of its other pages' texts. Returns (lines, links), or None
+    when there is no other page."""
+    lines, links = set(), set()
+    for text in texts or ():
+        for line in (text or "").splitlines()[:40_000]:
+            for found in _LINK.finditer(line):
+                if not found.group(1):
+                    links.add(urljoin(url, found.group(3)).split("#")[0].rstrip("/"))
+            plain = _key(_plain(line))
+            if len(plain) >= 3:
+                lines.add(plain)
+    return (lines, links) if lines or links else None
+
+
+def _templated(record, template):
+    """True when a record is the site's template: its link or name and most
+    of its lines also sit on another page of the site."""
+    lines, links = template
+    own = [_key(line) for line in record["_lines"] if len(line) >= 3]
+    if not own:
+        return False
+    shared = sum(1 for line in own if line in lines)
+    return ((record["url"].rstrip("/") in links or _key(record["name"]) in lines)
+            and shared >= 0.5 * len(own))
+
+
+def _confidence(members, template):
+    """Each member's confidence that it is a record of the group's listing,
+    from three signals stacked (each one multiplies):
+
+    - field signature: the group's records share at least two field kinds
+      (the link and a typed field, e.g. link+price or link+date) across most
+      members; a group that does not is navigation (0), and a member missing
+      some of the shared kinds is less likely one of them (0.5 to 1);
+    - template: a member whose link and lines also sit on another cached page
+      of the site is boilerplate (0.6: a product can be on two pages), and a
+      group that is mostly boilerplate is the site's template (0);
+    - position and link density: a member at the top or bottom of the page
+      whose link is short and internal and that carries no numeric field is
+      navigation (0.3).
+    """
+    kinds = [record["_shape"] | {"link"} for record in members]
+    counts = {}
+    for shape in kinds:
+        for kind in shape:
+            counts[kind] = counts.get(kind, 0) + 1
+    shared = {kind for kind, hits in counts.items() if hits >= 0.6 * len(members)}
+    if len(shared) < 2:
+        return [0.0] * len(members)
+    templated = [_templated(record, template) for record in members] if template else [False] * len(members)
+    if template and sum(templated) >= 0.8 * len(members):
+        return [0.0] * len(members)
+    out = []
+    for record, shape, boiler in zip(members, kinds, templated):
+        confidence = 0.5 + 0.5 * len(shape & shared) / len(shared)
+        if boiler:
+            confidence *= 0.6
+        position = record["_position"]
+        if (position < 0.15 or position > 0.85) and not (record["_shape"] & _NUMERIC) \
+                and len(str(record.get("_label") or record["name"]).split()) <= 4 \
+                and len([part for part in urlparse(record["url"]).path.split("/") if part]) <= 2:
+            confidence *= 0.3
+        out.append(round(confidence, 2))
+    return out
+
+
+def _dominant(records, template=None):
     """The records that share the page's repeated shape: grouped by the typed
-    fields they carry, the group with the most fields times rows wins.
-    Plain link lists (menus, tags, crumbs) carry no fields and lose."""
+    fields they carry, the group with the most fields times rows wins, after
+    each group drops its members of low confidence (_confidence). Plain link
+    lists (menus, tags, crumbs) carry no fields and lose."""
     groups = {}
     for record in records:
         for key in record["_shape"]:
             groups.setdefault(key, []).append(record)
     best, best_score = [], 0
     for key, members in groups.items():
+        if len(members) < MIN_RECORDS:
+            continue
+        scored = _confidence(members, template)
+        members = [record for record, confidence in zip(members, scored) if confidence >= MIN_CONFIDENCE]
         if len(members) < MIN_RECORDS:
             continue
         shared = sum(1 for other in groups if len([m for m in members if other in m["_shape"]]) >= 0.6 * len(members))
@@ -419,8 +631,8 @@ def _dominant(records):
 
 # ---- items ----
 
-_OPTIONAL = ("was_price", "price_max", "currency", "availability", "stock_count", "date", "rating", "count",
-             "count_of", "location", "subtitle")
+_OPTIONAL = ("was_price", "price_max", "currency", "offers", "availability", "stock_count", "date", "rating",
+             "count", "count_of", "location", "subtitle")
 
 
 def enrich(item, text, names=DEFAULT):
@@ -431,6 +643,12 @@ def enrich(item, text, names=DEFAULT):
         item["sponsored"] = True
     if item.get("price") in (None, "") and "price" in found:
         item["price"] = found["price"]
+    elif found.get("offers") and isinstance(item.get("price"), (int, float)):
+        # The item's own price picks its offer: the was price is that offer's only.
+        own = next((entry for entry in found["offers"] if entry["price"] == item["price"]), {})
+        found.pop("was_price", None)
+        if own.get("was_price"):
+            found["was_price"] = own["was_price"]
     for key in _OPTIONAL:
         if key in found and item.get(key) in (None, ""):
             item[key] = found[key]

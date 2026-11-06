@@ -38,7 +38,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
                profile: str | None = None, try_harder_than: str | None = None,
                expect_terms: list[str] | None = None, card_images: bool | None = None,
                module: str | None = None, module_override: dict | None = None,
-               allow_archive: bool | None = None, items: bool | None = None,
+               allow_archive: bool | None = None, items: bool | None = None, max_items: int | None = None,
                main_content: bool | None = None, lightning: bool | None = None,
                allow_real_browser: bool | None = None, schema: dict | None = None,
                links: bool | None = None, markdown: bool | None = None,
@@ -64,7 +64,10 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     from a listing page with no saved module: the page's own data first, else its
     repeated rows or cards, sponsored entries left out. items_quality grades them
     (good, partial or poor, with a reason). result.auto_module is the drafted
-    module, which site_modules put saves for every later read.
+    module, which site_modules put saves for every later read. max_items caps
+    the items (default 200, at most 500); a page with more says so in
+    items_truncated and items_total. Text naming several offers ("from $129,
+    White $159 (Was $259)") gives offers: [{label, price, was_price}].
     allow_archive=True lets a walled page come from the Internet Archive's latest
     stored copy as the last resort; receipt.archived says when it was taken. Not
     live: don't use it for prices or stock.
@@ -99,6 +102,7 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
         "identity": identity, "allow_handoff": allow_handoff, "profile": profile,
         "expect_terms": tuple(expect_terms) if expect_terms else None,
         "card_images": card_images, "allow_archive": allow_archive, "auto_items": items,
+        "max_items": max_items,
         "include_links": links, "markdown_output": markdown,
         "main_content": main_content, "lightning": lightning,
         "allow_real_browser": allow_real_browser, "extract_schema": schema})

@@ -162,3 +162,159 @@ def test_items_quality_says_why():
     assert poor["grade"] == "poor" and "no price" in poor["reason"]
     empty = items_quality([], text_result("$10 $20 $30 $40 $50 $60 $70"), SHOP)
     assert empty["grade"] == "poor" and "looks like a listing" in empty["reason"]
+
+
+# ---- several offers in one title ----
+
+def test_each_offer_clause_pairs_its_own_prices():
+    title = "Zapper Mouse from $129 Delivered, Glide Edition $159 (Was $259) @ Fake Store"
+    # The title names both offers: the first leads, and the other's was price is not its own.
+    assert offer(title, title=title) == {
+        "price": 129, "offers": [{"label": "Zapper Mouse", "price": 129},
+                                 {"label": "Glide Edition @ Fake Store", "price": 159, "was_price": 259}]}
+    # A name that matches one clause picks it, with that clause's was price.
+    picked = offer(title, title="Glide Edition Mouse")
+    assert picked["price"] == 159 and picked["was_price"] == 259 and len(picked["offers"]) == 2
+    assert offer("Zapper Mouse $49; Zapper Pad $19 (RRP $39)") == {
+        "price": 49, "offers": [{"label": "Zapper Mouse", "price": 49},
+                                {"label": "Zapper Pad", "price": 19, "was_price": 39}]}
+
+
+def test_one_offer_stays_one_offer():
+    # A was price after a comma, a price in another currency, a threshold and a unit price.
+    assert offer("Flux Keyboard $1,299, was $1,599") == {"price": 1299, "was_price": 1599}
+    assert offer("Flux Suite US $236 / A $360 (Was US $295), 20% off panels") == {
+        "price": 236, "currency": "USD", "was_price": 295}
+    assert offer("Flux Pad $9 + Delivery ($0 with Membership/ $59 Spend)") == {"price": 9}
+    assert offer("Flux Beans $25 ($2.50/100g)") == {"price": 25}
+    assert offer("Made-up Mouse $142.50 ($299.95 RRP) Delivered") == {"price": 142.5, "was_price": 299.95}
+
+
+def test_multi_offer_deal_cards_keep_was_prices_apart():
+    cards = "\n\n".join(
+        f"## [Flux Widget {n} from ${100 + n} Delivered, Pro Kit ${150 + n} (Was ${250 + n}) @ Fake Store]"
+        f"(https://deals.example/node/{n})\n\nPosted {n + 1} days ago" for n in range(4))
+    records = markdown_records(cards, "https://deals.example/tag/widget")
+    assert len(records) == 4
+    assert records[0]["price"] == 100 and "was_price" not in records[0]
+    assert records[0]["offers"][1] == {"label": "Pro Kit @ Fake Store", "price": 150, "was_price": 250}
+
+
+def test_multi_offer_html_titles_split_over_markup():
+    rows = "".join(
+        f'<h2 class="deal-title"><a href="/node/{n}">Flux Widget {n} from <em>${100 + n}</em> Delivered, '
+        f'Pro Kit <em>${150 + n}</em> (Was <em>${250 + n}</em>) @ Fake Store</a></h2>' for n in range(5))
+    _, items = extract(html_result(f"<html><body>{rows}</body></html>", "https://deals.example/tag/widget"),
+                       "https://deals.example/tag/widget")
+    assert items[0]["price"] == 100 and "was_price" not in items[0]
+    assert [offer["price"] for offer in items[0]["offers"]] == [100, 150]
+
+
+def test_html_rows_that_are_only_links_are_navigation():
+    tiles = "".join(f'<li class="range-tile"><a href="/range/{n}-flux-gadgets">Flux Gadgets Range {n}</a></li>'
+                    for n in range(30))
+    page = f"<html><body><ul>{tiles}</ul><p>{'Flux gadgets for every room. ' * 100}</p></body></html>"
+    assert discover(html_result(page), SHOP)["drafts"] == []
+
+
+def test_an_items_own_price_picks_its_offer():
+    from frankensurf.records import enrich
+    item = enrich({"name": "Pro Kit", "price": 150}, "Flux Widget from $100, Pro Kit $150 (Was $250)")
+    assert item["price"] == 150 and item["was_price"] == 250
+    item = enrich({"name": "Flux Widget", "price": 100}, "Flux Widget from $100, Pro Kit $150 (Was $250)")
+    assert item["price"] == 100 and "was_price" not in item
+
+
+# ---- confidence: menus and page text are not records ----
+
+SERVICES = ("- [Gift cards](https://www.gadgetbarn.example/gift-cards)\n  from $10\n"
+            "- [Warranty plans](https://www.gadgetbarn.example/warranty)\n  from $29\n"
+            "- [Setup service](https://www.gadgetbarn.example/setup)\n  from $49\n"
+            "- [Trade-in](https://www.gadgetbarn.example/trade-in)\n  from $5\n")
+
+
+def test_prices_in_running_prose_are_not_card_fields():
+    blurbs = [("repairs", "Book a repair online and we charge a flat rate of $80 for the health check of your computer."),
+              ("pickup", "Our drivers collect your computer and we charge $110 for diagnostics and the new parts."),
+              ("upgrades", "We upgrade your computer with new parts and charge $60 for the labour on top of parts.")]
+    text = "# Gadget Barn\n\n" + "\n\n".join(
+        f"- [{name.title()}](https://www.gadgetbarn.example/{name})\n\n{blurb}" for name, blurb in blurbs)
+    assert markdown_records(text, SHOP) == []
+
+
+def test_template_subtraction_drops_what_every_page_of_the_site_repeats():
+    from frankensurf.records import SIBLINGS
+    page = f"# Gadget Barn\n\n{SERVICES}\n## Clearance\n\nNothing on clearance today, check back soon.\n"
+    sibling = f"# Gadget Barn\n\n{SERVICES}\n## About\n\nA made-up shop.\n"
+    assert len(markdown_records(page, SHOP)) == 4  # Without a sibling page the menu looks like a listing.
+    token = SIBLINGS.set(lambda url: [sibling])
+    try:
+        assert markdown_records(page, SHOP) == []
+        # Real cards stay, even when the sibling page shows some of the same products.
+        shop = shop_markdown()
+        overlap = sibling + shop[shop.index("[![Flux Widget Model 0]"):shop.index("[![Flux Widget Model 2]")]
+        SIBLINGS.set(lambda url: [overlap])
+        assert len(markdown_records(shop, SHOP)) == 5
+        SIBLINGS.set(lambda url: [])  # No sibling cached: the check is skipped.
+        assert len(markdown_records(page, SHOP)) == 4
+    finally:
+        SIBLINGS.reset(token)
+
+
+def test_short_link_lists_at_the_page_edge_with_no_numbers_are_navigation():
+    offices = "\n".join(f"- [{city} office](https://jobs.example/offices/{city.lower()})\n\n  {city}, NSW\n"
+                        for city in ("Springfield", "Shelbyville", "Ogdenville", "Brockway"))
+    cards = "\n\n".join(
+        f"### [Senior Widget Engineer {n}](https://jobs.example/job/{n})\n\nAcme Imaginary Co\n\n"
+        f"Capital City, NSW\n\nPosted {n + 1} days ago\n\nFull time\n\nApply by email" for n in range(6))
+    records = markdown_records(f"# Jobs\n\n## Our offices\n\n{offices}\n\n## Openings\n\n{cards}",
+                               "https://jobs.example/search?q=widget")
+    assert [record["url"] for record in records] == [f"https://jobs.example/job/{n}" for n in range(6)]
+
+
+# ---- the item cap ----
+
+def test_capped_items_say_how_many_the_page_holds():
+    module, items = extract(text_result(shop_markdown()))
+    capped = {**module, "items": {**module["items"], "limit": 2}}
+    output = SiteModule.from_record(capped).extract(text_result(shop_markdown()), SHOP)
+    assert output["count"] == 2 and output["truncated"] is True and output["total"] == 5
+    assert "truncated" not in SiteModule.from_record(module).extract(text_result(shop_markdown()), SHOP)
+
+
+async def test_read_max_items_and_cached_siblings(tmp_path, monkeypatch):
+    import pytest
+    from frankensurf import providers
+    from frankensurf.providers import ProviderManifest, ProviderRegistry
+    from frankensurf.runtime import Runtime, WebPolicy
+
+    about, empty = "https://www.gadgetbarn.example/about", "https://www.gadgetbarn.example/empty"
+    pages = {SHOP: shop_markdown(), about: f"# Gadget Barn\n\n{SERVICES}\nAbout us.\n",
+             empty: f"# Gadget Barn\n\n{SERVICES}\nNothing here today.\n"}
+
+    class Fixture:
+        manifest = ProviderManifest("fixture", "1")
+
+        def available(self, configured):
+            return True
+
+        async def acquire(self, request, services):
+            return {"url": request.url, "content": pages[request.url], "content_type": "text/markdown",
+                    "http_status": 200}
+    registry = ProviderRegistry()
+    registry.register(Fixture())
+    monkeypatch.setattr(providers, "DEFAULT_PROVIDERS", registry)
+    overrides = {"origin_route_hint_ttl_seconds": 0, "origin_min_interval_seconds": 0,
+                 "second_opinion_text_chars": 0, "completeness_escalation": False, "auto_items": True}
+    async with Runtime(tmp_path) as web:
+        capped = await web.read(SHOP, policy_overrides={**overrides, "max_items": 3})
+        assert web._sibling_texts(empty) == [pages[SHOP]]  # Only the cache: nothing is read for it.
+        alone = await web.read(empty, policy_overrides=overrides)
+        await web.read(about, policy_overrides=overrides)
+        subtracted = await web.read(empty, policy_overrides=overrides)
+    assert len(capped["items"]) == 3 and capped["items_truncated"] is True and capped["items_total"] == 5
+    assert capped["receipt"]["auto_items"]["truncated"] is True
+    assert len(alone["items"]) == 4  # The shop page shares no menu with it: the menu passes as items.
+    assert "items" not in subtracted and subtracted["items_quality"]["count"] == 0
+    with pytest.raises(ValueError):
+        WebPolicy(max_items=0)
