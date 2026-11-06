@@ -50,6 +50,7 @@ These tables are generated from the code with `scripts/web_policy_doc.py`.
 | `main_content` | `False` | Also return `main_text`: the article without menus, footers and banners. |
 | `interactions` | `()` | Safe browser actions on browser reads: `dismiss_consent` (reject, never accept), `load_more`, `reveal`. |
 | `auto_items` | `False` | Items from any listing page with no saved module, found in the page's own data; the draft module comes back too. |
+| `max_items` | `None` | Most items `auto_items` returns (`None`: 200; at most 500). A page with more sets `items_truncated` and `items_total`. |
 | `max_image_bytes` | 20 MB | Largest image accepted. |
 | `image_max_attempts` | `2` | Attempts per image. |
 | `image_retry_delay_seconds` | `0.25` | Delay between image attempts. |

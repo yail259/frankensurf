@@ -61,7 +61,7 @@ These map to [WebPolicy](/docs/reference/settings/) fields and work on
 | `--card-images`, `--scroll-screens N` | `card_images`, `scroll_screens` |
 | `--links`, `--max-links N` | `include_links`, `max_links` |
 | `--markdown-output` | `markdown_output` |
-| `--items` | `auto_items` |
+| `--items`, `--max-items N` | `auto_items`, `max_items` |
 
 `--items` (on `read` and `batch`) returns `items` from a listing page that has no saved
 module: one record per repeated card, from the page's own JSON first, else its repeated
@@ -72,8 +72,18 @@ or `location` on pages that carry those. Sponsored entries are left out. `items_
 grades the list (`good`, `partial` or `poor`, with a `reason`), and `auto_module` is the
 drafted module: save it with `module add` to get the same items on every later read.
 
+A title that names several offers ("Mouse from $129, White $159 (Was $259)") gives the item
+`offers`, a list of `label`, `price` and (when that offer shows one) `was_price`. Each offer
+pairs only its own prices, and the item's `price` is the offer whose label matches its name,
+else the first. Menus, page text and links every page of the site repeats are not items:
+a group of cards needs typed fields beyond its links, and when another page of the same
+site is already in the read cache, what the two share is left out.
+
+`--items` returns at most 200 items (`--max-items N` sets it, up to 500). A page with more
+says so: `items_truncated` is `true` and `items_total` is how many it holds.
+
 ```bash
-frankensurf read https://shop.example/clearance --items
+frankensurf read https://shop.example/clearance --items --max-items 500
 ```
 
 `map URL` (`--query`, `--limit`) and `crawl URL` (`--limit`, `--max-depth`, `--include-path`, `--exclude-path`,

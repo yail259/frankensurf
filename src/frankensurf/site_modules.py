@@ -446,7 +446,13 @@ class SiteModule:
         output = {"items": [], "count": 0, "first": {}, "matching_query": []}
         if self.items:
             spec = self.sources[self.items["from"]]
-            rows = _source_rows(spec, result, base)[:self.items["limit"]]
+            counted = {}
+            rows = _source_rows(spec, result, base, counted)
+            total = counted.get("total", len(rows))
+            rows = rows[:self.items["limit"]]
+            if total > len(rows):
+                # Capped: how many rows the page holds, so a caller can ask for more.
+                output.update(truncated=True, total=total)
             items = [_map_fields(row, self.items["fields"], base) for row in rows]
             join = self.items.get("join")
             if join:
@@ -574,7 +580,9 @@ def _next_flight(content):
 _DECODERS = {"next_flight": _next_flight}
 
 
-def _source_rows(spec, result, base):
+def _source_rows(spec, result, base, counted=None):
+    """The source's rows on the page (at most _MAX_ITEMS). counted, when
+    given, gets "total": how many the page holds when that is more."""
     kind = spec["kind"]
     if kind == "jsonld":
         for block in _jsonld_blocks(result.get("structured")):
@@ -603,7 +611,10 @@ def _source_rows(spec, result, base):
         content_type = str(result.get("content_type") or "")
         text = (result.get("content") if "html" not in content_type and content_type else None) \
             or result.get("markdown") or result.get("text") or ""
-        return markdown_records(text, base)[:_MAX_ITEMS]
+        rows = markdown_records(text, base)
+        if counted is not None:
+            counted["total"] = len(rows)
+        return rows[:_MAX_ITEMS]
     from bs4 import BeautifulSoup
     soup = BeautifulSoup((result.get("content") or "")[:4_000_000], "html.parser")
     if kind == "embedded_json":
@@ -617,7 +628,10 @@ def _source_rows(spec, result, base):
                 return _as_rows(value)
         return []
     rows = []
-    for element in soup.select(spec["item_selector"])[:_MAX_ITEMS]:
+    elements = soup.select(spec["item_selector"])
+    if counted is not None:
+        counted["total"] = len(elements)
+    for element in elements[:_MAX_ITEMS]:
         row = {}
         for field, rule in spec["fields"].items():
             target = element.select_one(rule["selector"]) if rule.get("selector") else element
