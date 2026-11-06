@@ -3829,18 +3829,26 @@ class Runtime:
         receipt = result.get("receipt") or {}
         if not effective.auto_items or receipt.get("status") != "observed" or not isinstance(url, str):
             return
-        from .module_discovery import discover
+        from .module_discovery import discover, items_quality
         from .site_modules import SiteModule
         found = discover(result, url, limit=1)
         if not found["drafts"]:
-            receipt["auto_items"] = {"found": False}
+            check = items_quality([], result, url)
+            result["items_quality"] = check
+            receipt["auto_items"] = {"found": False, "quality": check}
+            page = receipt.get("quality")
+            if check.get("page_prices", 0) >= 6 and isinstance(page, dict) and page.get("grade") == "good":
+                # A listing page whose listings could not be read is not a good read of it.
+                page["grade"] = "partial"
+                page["flags"] = [*page.get("flags", []), "no_items"]
             return
         record = found["drafts"][0]["module"]
         output = SiteModule.from_record(record).extract(result, url)
+        check = items_quality(output["items"], result, url)
         result["items"] = output["items"]
+        result["items_quality"] = check
         result["auto_module"] = record
-        receipt["auto_items"] = {"found": True, "count": output["count"],
-                                 "quality": found["drafts"][0].get("items_quality"),
+        receipt["auto_items"] = {"found": True, "count": output["count"], "quality": check,
                                  "source": record["sources"]["listing"]["kind"],
                                  "save": "site_modules put with result.auto_module to reuse it"}
 

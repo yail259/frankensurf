@@ -61,6 +61,20 @@ These map to [WebPolicy](/docs/reference/settings/) fields and work on
 | `--card-images`, `--scroll-screens N` | `card_images`, `scroll_screens` |
 | `--links`, `--max-links N` | `include_links`, `max_links` |
 | `--markdown-output` | `markdown_output` |
+| `--items` | `auto_items` |
+
+`--items` (on `read` and `batch`) returns `items` from a listing page that has no saved
+module: one record per repeated card, from the page's own JSON first, else its repeated
+HTML rows, else repeated cards in a text-only read's markdown. Each item has `name`, `url`,
+and, when the card shows them, `image`, `price`, `was_price`, `currency`, `availability`
+(`in_stock`, `out_of_stock`, `limited`, `expired`) and `stock_count`, plus `date`, `rating`
+or `location` on pages that carry those. Sponsored entries are left out. `items_quality`
+grades the list (`good`, `partial` or `poor`, with a `reason`), and `auto_module` is the
+drafted module: save it with `module add` to get the same items on every later read.
+
+```bash
+frankensurf read https://shop.example/clearance --items
+```
 
 `map URL` (`--query`, `--limit`) and `crawl URL` (`--limit`, `--max-depth`, `--include-path`, `--exclude-path`,
 `--entire-domain`, `--ignore-robots`): see [Map and crawl](/docs/crawl/).

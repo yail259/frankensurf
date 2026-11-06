@@ -59,9 +59,12 @@ async def read(url: str, provider: str | None = None, render: bool | None = None
     main_content=True returns the article without menus, footers or banners as
     text (receipt.main_content says how it was cut; full_text_chars is the size
     of the whole page's text). Use it for articles and news.
-    items=True returns items (name, url, price, image) from a listing page with no
-    saved module, found in the page's own data, plus result.auto_module: the
-    drafted module, which site_modules put saves for every later read.
+    items=True returns items (name, url, price, image, and when the card shows
+    them was_price, currency, availability, stock_count, date, rating, location)
+    from a listing page with no saved module: the page's own data first, else its
+    repeated rows or cards, sponsored entries left out. items_quality grades them
+    (good, partial or poor, with a reason). result.auto_module is the drafted
+    module, which site_modules put saves for every later read.
     allow_archive=True lets a walled page come from the Internet Archive's latest
     stored copy as the last resort; receipt.archived says when it was taken. Not
     live: don't use it for prices or stock.

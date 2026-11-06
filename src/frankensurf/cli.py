@@ -35,6 +35,7 @@ _POLICY_ARGUMENTS = {
     "card_images": "card_images",
     "links": "include_links",
     "markdown_output": "markdown_output",
+    "items": "auto_items",
     "max_links": "max_links",
     "scroll_screens": "scroll_screens",
     "search_source_candidates": "search_source_candidates",
@@ -656,6 +657,9 @@ def build_parser():
     parser.add_argument("--links", action="store_true", default=None,
         help="read: also return links, every link on the page (url and anchor text)")
     parser.add_argument("--max-links", type=int, help="read: most links to return with --links (default 500)")
+    parser.add_argument("--items", action="store_true", default=None,
+        help="read, batch: also return items from a listing page with no saved module (name, url, price,"
+             " was_price, availability, ...), items_quality, and auto_module to save with module add")
     parser.add_argument("--scroll-screens", type=int,
         help="Scroll this many screens before capture so lazy content loads")
     parser.add_argument("--expect", action="append",
